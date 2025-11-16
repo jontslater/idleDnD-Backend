@@ -1,0 +1,38 @@
+{
+  "name": "the-never-ending-war-backend",
+  "version": "1.0.0",
+  "description": "Firebase backend for The Never Ending War",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "deploy": "firebase deploy --only functions",
+    "serve": "firebase emulators:start",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync-heroes": "node scripts/sync-heroes.js",
+    "test-hero": "node scripts/sync-heroes.js --test"
+  },
+  "keywords": [
+    "firebase",
+    "backend",
+    "api",
+    "twitch",
+    "game"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "firebase-admin": "^12.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0",
+    "nodemon": "^3.0.2"
+  }
+}
