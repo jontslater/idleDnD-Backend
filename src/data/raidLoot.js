@@ -168,6 +168,45 @@ const LEGENDARY_BOSS_LOOT = {
         { name: 'Redemption', effect: 'healOnHit', value: 15, chance: 0.18, description: '18% chance: Heal 15 HP on spell cast' }
       ]
     }
+  },
+  elder_dragon_normal: {
+    'Elder Dragon Scale': {
+      slot: 'armor',
+      forRole: 'tank',
+      attack: 0,
+      defense: 25,
+      hp: 100,
+      procEffects: [
+        { name: 'Dragon Scale', effect: 'damageReduction', value: 0.15, chance: 0.2, description: '20% chance: Reduce incoming damage by 15%' }
+      ]
+    }
+  },
+  elder_dragon_heroic: {
+    'Elder Dragon\'s Claw': {
+      slot: 'weapon',
+      forRole: 'dps',
+      attack: 45,
+      defense: 0,
+      hp: 0,
+      procEffects: [
+        { name: 'Dragonfire', effect: 'fireProc', value: 0.4, chance: 0.3, description: '30% chance: Extra 40% fire damage' },
+        { name: 'Ancient Rage', effect: 'damageBonus', value: 0.25, chance: 0.2, description: '20% chance: +25% damage' }
+      ]
+    }
+  },
+  elder_dragon_mythic: {
+    'Primordial Dragon Heart': {
+      slot: 'accessory',
+      forRole: 'all',
+      attack: 20,
+      defense: 20,
+      hp: 150,
+      procEffects: [
+        { name: 'Dragon\'s Breath', effect: 'fireProc', value: 0.5, chance: 0.25, description: '25% chance: Extra 50% fire damage' },
+        { name: 'Ancient Power', effect: 'damageBonus', value: 0.3, chance: 0.2, description: '20% chance: +30% damage' },
+        { name: 'Dragon\'s Resilience', effect: 'damageReduction', value: 0.2, chance: 0.15, description: '15% chance: Reduce incoming damage by 20%' }
+      ]
+    }
   }
 };
 
@@ -270,7 +309,71 @@ function generateRaidLoot(raidId, difficulty, category, slot, bossLevel) {
     item.procEffects = generateRaidProcs(category, procCount);
   }
 
+  // Assign set name for raids (60% chance for set piece)
+  // Raids have higher set piece drop rate than regular bosses
+  const shouldBeSetPiece = Math.random() < 0.60;
+  
+  if (shouldBeSetPiece && rarity !== 'common') {
+    const setName = assignSetName(category, slot);
+    if (setName) {
+      item.setName = setName;
+    }
+  }
+
   return item;
+}
+
+/**
+ * Assign a set name to an item based on category and slot
+ * @param {string} category - 'tank', 'healer', or 'dps'
+ * @param {string} slot - Equipment slot
+ * @returns {string|null} Set name or null
+ */
+function assignSetName(category, slot) {
+  // Map category to set category key
+  let categoryKey = category;
+  if (category === 'dps') {
+    // For DPS, we'd need to know if it's physical or caster
+    // Default to physicalDps for now (can be refined later)
+    categoryKey = 'physicalDps';
+  }
+
+  // Simplified set definitions (matching game.js EQUIPMENT_SETS)
+  const SET_DEFINITIONS = {
+    tank: {
+      'Guardian\'s Bulwark': ['weapon', 'armor', 'shield', 'helm', 'boots'],
+      'Warden\'s Fortress': ['armor', 'shield', 'cloak', 'gloves', 'ring1']
+    },
+    healer: {
+      'Lifebinder\'s Grace': ['weapon', 'armor', 'accessory', 'cloak', 'ring1'],
+      'Divine Sanctuary': ['weapon', 'armor', 'helm', 'gloves', 'ring2']
+    },
+    physicalDps: {
+      'Berserker\'s Wrath': ['weapon', 'armor', 'gloves', 'boots', 'ring1'],
+      'Assassin\'s Shadow': ['weapon', 'armor', 'cloak', 'gloves', 'ring2']
+    },
+    casterDps: {
+      'Archmage\'s Power': ['weapon', 'armor', 'accessory', 'helm', 'ring1'],
+      'Warlock\'s Corruption': ['weapon', 'armor', 'cloak', 'gloves', 'ring2']
+    }
+  };
+
+  const setsForCategory = SET_DEFINITIONS[categoryKey] || {};
+  const matchingSets = [];
+
+  // Find all sets that include this slot
+  for (const [setName, pieces] of Object.entries(setsForCategory)) {
+    if (pieces.includes(slot)) {
+      matchingSets.push(setName);
+    }
+  }
+
+  // Randomly choose one if multiple sets match
+  if (matchingSets.length > 0) {
+    return matchingSets[Math.floor(Math.random() * matchingSets.length)];
+  }
+
+  return null;
 }
 
 /**

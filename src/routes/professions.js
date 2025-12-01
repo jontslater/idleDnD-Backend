@@ -198,6 +198,30 @@ router.post('/:userId/craft', async (req, res) => {
         ? { /* mining recipes */ }
         : { /* enchanting recipes */ };
     
+    // Determine applicable slots based on recipe key and profession type
+    let applicableSlots = [];
+    if (profession.type === 'mining') {
+      // Mining: weapon upgrades go to weapons, armor upgrades go to armor
+      if (recipeKey.includes('whetstone') || recipeKey.includes('oil') || recipeKey.includes('core') || recipeKey.includes('edge')) {
+        applicableSlots = ['weapon'];
+      } else if (recipeKey.includes('plating') || recipeKey.includes('reinforcement') || recipeKey.includes('enhancement') || recipeKey.includes('fortification')) {
+        applicableSlots = ['armor', 'helm', 'cloak', 'gloves', 'boots', 'shield'];
+      }
+    } else if (profession.type === 'enchanting') {
+      // Enchanting: weapon enchants go to weapons, armor enchants go to armor, some go to all
+      if (recipeKey.includes('fiery_weapon') || recipeKey.includes('vampiric')) {
+        applicableSlots = ['weapon'];
+      } else if (recipeKey.includes('frozen_armor') || recipeKey.includes('thorns')) {
+        applicableSlots = ['armor', 'helm', 'cloak', 'gloves', 'boots', 'shield'];
+      } else if (recipeKey.includes('swiftness') || recipeKey.includes('resilience')) {
+        applicableSlots = ['weapon', 'armor', 'accessory', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots', 'shield'];
+      } else if (recipeKey.includes('rune')) {
+        applicableSlots = []; // Runes are consumables
+      }
+    } else if (profession.type === 'herbalism') {
+      applicableSlots = []; // All herbalism items are consumables
+    }
+
     // Create the crafted item as a regular inventory item
     const craftedItem = {
       id: itemId,
@@ -214,6 +238,7 @@ router.post('/:userId/craft', async (req, res) => {
       recipeKey,
       tier: req.body.tier || 1,
       quantity,
+      applicableSlots, // Store slot restrictions
       craftedAt: Date.now()
     };
 
@@ -369,6 +394,51 @@ router.post('/:userId/apply', async (req, res) => {
     const equipment = hero.equipment[equipmentSlot];
     console.log(`✅ Found equipment in ${equipmentSlot}:`, equipment.name);
     
+    // Validate slot compatibility
+    if (foundItem.applicableSlots && foundItem.applicableSlots.length > 0) {
+      if (!foundItem.applicableSlots.includes(equipmentSlot)) {
+        return res.status(400).json({ 
+          error: `${foundItem.name} can only be applied to ${foundItem.applicableSlots.join(', ')} slots, not ${equipmentSlot}`,
+          applicableSlots: foundItem.applicableSlots
+        });
+      }
+    }
+    
+    // Check if item already has an enchantment (only one buff per item)
+    const enchantedItems = hero.enchantedItems || [];
+    const hasEnchantment = enchantedItems.some(ei => ei.itemId === equipment.id && ei.enchantments && ei.enchantments.length > 0);
+    
+    if (hasEnchantment) {
+      return res.status(400).json({ 
+        error: 'Item already has an enchantment. Remove it first or use a different item.' 
+      });
+    }
+    
+    // Check if item already has this same upgrade (prevent duplicates)
+    const existingUpgrades = equipment.appliedUpgrades || [];
+    const hasSameUpgrade = existingUpgrades.some(upgrade => 
+      upgrade.recipeKey === foundRecipeKey || upgrade.itemId === foundItem.id
+    );
+    
+    if (hasSameUpgrade) {
+      return res.status(400).json({ 
+        error: `This item already has ${foundItem.name}. Cannot apply the same upgrade twice.` 
+      });
+    }
+    
+    // Remove old upgrade bonuses if overwriting (only one upgrade per item)
+    if (existingUpgrades.length > 0) {
+      const oldUpgrade = existingUpgrades[0];
+      if (oldUpgrade.bonus) {
+        // Subtract old bonuses
+        equipment.attack = Math.max(0, (equipment.attack || 0) - (oldUpgrade.bonus.attack || 0));
+        equipment.defense = Math.max(0, (equipment.defense || 0) - (oldUpgrade.bonus.defense || 0));
+        equipment.hp = Math.max(0, (equipment.hp || 0) - (oldUpgrade.bonus.hp || 0));
+      }
+      // Clear old upgrades (will be replaced with new one)
+      equipment.appliedUpgrades = [];
+    }
+    
     // Apply the upgrade/enchantment based on profession type
     let upgradeApplied = false;
     let statBonus = {};
@@ -405,16 +475,13 @@ router.post('/:userId/apply', async (req, res) => {
     equipment.defense = (equipment.defense || 0) + (statBonus.defense || 0);
     equipment.hp = (equipment.hp || 0) + (statBonus.hp || 0);
 
-    // Track applied upgrades
-    if (!equipment.appliedUpgrades) {
-      equipment.appliedUpgrades = [];
-    }
-    equipment.appliedUpgrades.push({
+    // Track applied upgrade (only one per item)
+    equipment.appliedUpgrades = [{
       recipeKey: foundRecipeKey,
       itemId: foundItem.id,
       appliedAt: Date.now(),
       bonus: statBonus
-    });
+    }];
 
     // Remove item from inventory (consume it)
     hero.inventory.splice(itemIndex, 1);
@@ -475,8 +542,28 @@ router.post('/:userId/equip', async (req, res) => {
     const { slot, item } = req.body;
     const { userId } = req.params;
 
-    if (!['weapon', 'armor', 'accessory', 'shield'].includes(slot)) {
-      return res.status(400).json({ error: 'Invalid equipment slot' });
+    console.log(`⚔️ Equip request: userId=${userId}, slot=${slot}, item.slot=${item?.slot}, item.id=${item?.id}`);
+
+    if (!slot) {
+      return res.status(400).json({ error: 'Slot is required' });
+    }
+
+    if (!item) {
+      return res.status(400).json({ error: 'Item is required' });
+    }
+
+    if (!['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'boots', 'ring1', 'ring2'].includes(slot)) {
+      return res.status(400).json({ error: `Invalid equipment slot: ${slot}. Valid slots are: weapon, armor, accessory, shield, helm, cloak, gloves, boots, ring1, ring2` });
+    }
+
+    // Validate that item slot matches the target slot (if item has a slot property)
+    if (item.slot && item.slot !== slot) {
+      console.warn(`⚠️ Item slot (${item.slot}) doesn't match target slot (${slot}), but proceeding anyway`);
+    }
+
+    // Validate item has required properties
+    if (!item.id) {
+      return res.status(400).json({ error: 'Item must have an id property' });
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -486,9 +573,35 @@ router.post('/:userId/equip', async (req, res) => {
       return res.status(404).json({ error: 'Hero not found' });
     }
 
-    // Update equipment
+    const hero = doc.data();
+    
+    // Initialize inventory if it doesn't exist
+    if (!hero.inventory) {
+      hero.inventory = [];
+    }
+
+    // If there's already an item in this slot, add it to inventory (if not already there)
+    const equipment = hero.equipment || {};
+    const currentItem = equipment[slot];
+    if (currentItem) {
+      // Check if the current item is already in inventory to prevent duplicates
+      const alreadyInInventory = hero.inventory.some(invItem => invItem.id === currentItem.id);
+      if (!alreadyInInventory) {
+        hero.inventory.push(currentItem);
+      }
+    }
+
+    // Remove the item from inventory if it's being equipped from inventory
+    // Find the item in inventory by ID
+    const itemIndex = hero.inventory.findIndex(invItem => invItem.id === item.id);
+    if (itemIndex !== -1) {
+      hero.inventory.splice(itemIndex, 1);
+    }
+
+    // Update equipment and inventory
     await heroRef.update({
       [`equipment.${slot}`]: item,
+      inventory: hero.inventory,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -508,7 +621,7 @@ router.post('/:userId/unequip', async (req, res) => {
     const { slot } = req.body;
     const { userId } = req.params;
 
-    if (!['weapon', 'armor', 'accessory', 'shield'].includes(slot)) {
+    if (!['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'boots', 'ring1', 'ring2'].includes(slot)) {
       return res.status(400).json({ error: 'Invalid equipment slot' });
     }
 
@@ -519,13 +632,37 @@ router.post('/:userId/unequip', async (req, res) => {
       return res.status(404).json({ error: 'Hero not found' });
     }
 
-    // Unequip (set to null)
+    const hero = doc.data();
+    
+    // Initialize inventory if it doesn't exist
+    if (!hero.inventory) {
+      hero.inventory = [];
+    }
+
+    // Get the item from the equipment slot
+    const equipment = hero.equipment || {};
+    const itemToUnequip = equipment[slot];
+
+    if (!itemToUnequip) {
+      return res.status(400).json({ error: 'No item in this slot' });
+    }
+
+    // Check if item is already in inventory (to prevent duplicates)
+    const alreadyInInventory = hero.inventory.some(invItem => invItem.id === itemToUnequip.id);
+    
+    // Only add to inventory if it's not already there
+    if (!alreadyInInventory) {
+      hero.inventory.push(itemToUnequip);
+    }
+
+    // Update hero: set equipment slot to null and update inventory
     await heroRef.update({
       [`equipment.${slot}`]: null,
+      inventory: hero.inventory,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    res.json({ success: true, message: 'Item unequipped' });
+    res.json({ success: true, message: 'Item unequipped and added to inventory', item: itemToUnequip });
   } catch (error) {
     console.error('Error unequipping item:', error);
     res.status(500).json({ error: 'Failed to unequip item' });

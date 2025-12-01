@@ -73,12 +73,23 @@ import raidRoutes from './routes/raids.js';
 import worldbossRoutes from './routes/worldboss.js';
 import bitsRoutes from './routes/bits.js';
 import questRoutes from './routes/quests.js';
+import battlefieldRoutes from './routes/battlefields.js';
+import skillsRoutes from './routes/skills.js';
+import auctionRoutes from './routes/auction.js';
+import achievementRoutes from './routes/achievements.js';
+import leaderboardRoutes from './routes/leaderboards.js';
+import dungeonRoutes from './routes/dungeon.js';
+import enchantingRoutes from './routes/enchanting.js';
+import guildPerksRoutes from './routes/guildPerks.js';
+import chatRoutes from './routes/chat.js';
+import lootTokenRoutes from './routes/lootTokens.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
 
 // Use routes
 app.use('/api/auth', authRoutes);
+app.use('/api/chat', chatRoutes);
 app.use('/api/heroes', heroRoutes);
 app.use('/api/professions', professionsRoutes);
 app.use('/api/guilds', guildRoutes);
@@ -86,6 +97,15 @@ app.use('/api/raids', raidRoutes);
 app.use('/api/worldboss', worldbossRoutes);
 app.use('/api/bits', bitsRoutes);
 app.use('/api/quests', questRoutes);
+app.use('/api/battlefields', battlefieldRoutes);
+app.use('/api/skills', skillsRoutes);
+app.use('/api/auction', auctionRoutes);
+app.use('/api/achievements', achievementRoutes);
+app.use('/api/leaderboards', leaderboardRoutes);
+app.use('/api/dungeon', dungeonRoutes);
+app.use('/api/enchanting', enchantingRoutes);
+app.use('/api/guild-perks', guildPerksRoutes);
+app.use('/api/loot-tokens', lootTokenRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -258,8 +278,41 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Import WebSocket server
+import { initializeWebSocketServer, initializeTwitchEventHandlers } from './websocket/server.js';
+import { setupKeepalive } from './websocket/rooms.js';
+
 // Start server
-app.listen(PORT, async () => {
+// Debug: Log all registered routes (including login reward routes)
+if (process.env.NODE_ENV !== 'production') {
+  console.log('\n📋 Registered Routes:');
+  const printRoutes = (stack, prefix = '') => {
+    stack.forEach((layer) => {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(',').toUpperCase();
+        const fullPath = prefix + layer.route.path;
+        console.log(`  ${methods.padEnd(6)} ${fullPath}`);
+      } else if (layer.name === 'router' && layer.handle && layer.handle.stack) {
+        // Extract the mount path from the regex
+        const mountPath = layer.regexp.source
+          .replace('\\/?', '')
+          .replace('(?=\\/|$)', '')
+          .replace(/\\\//g, '/')
+          .replace(/\\\^/g, '^')
+          .replace(/\\\$/g, '$')
+          .replace(/\(/g, '')
+          .replace(/\)/g, '')
+          .replace(/\?/g, '');
+        const newPrefix = prefix + (mountPath || '/');
+        printRoutes(layer.handle.stack, newPrefix);
+      }
+    });
+  };
+  printRoutes(app._router.stack);
+  console.log('');
+}
+
+const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗
 ║   The Never Ending War - Backend API      ║
@@ -281,6 +334,8 @@ API Endpoints:
   GET    /api/heroes/:userId
   POST   /api/heroes/create
   PUT    /api/heroes/:userId
+  GET    /api/heroes/login-reward/:userId/status
+  POST   /api/heroes/login-reward/:userId
   
   Professions:
   POST   /api/professions/:userId/profession
@@ -323,6 +378,13 @@ Press Ctrl+C to stop
   initializeQuestSystem().catch(err => {
     console.error('❌ Failed to initialize quest system:', err);
   });
+  
+  // Initialize WebSocket server
+  const wss = initializeWebSocketServer(server);
+  if (wss) {
+    setupKeepalive(wss);
+    initializeTwitchEventHandlers();
+  }
 });
 
 // Export for Firebase Functions (optional)

@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 import { db } from '../index.js';
+import { generateGearItem, TANK_EQUIPMENT_SLOTS, EQUIPMENT_SLOTS, ROLE_CONFIG } from '../services/gearService.js';
 
 const router = express.Router();
 
@@ -67,20 +68,84 @@ router.post('/purchase', verifyTwitchToken, async (req, res) => {
     
     const heroDoc = heroSnapshot.docs[0];
     const hero = heroDoc.data();
+    
+    // Assign hero to streamer's battlefield if channelId is provided
+    // Format: twitch:channelId (channelId is the broadcaster's Twitch user ID)
+    if (channelId && !hero.currentBattlefieldId) {
+      const battlefieldId = `twitch:${channelId}`;
+      await heroDoc.ref.update({
+        currentBattlefieldId: battlefieldId,
+        currentBattlefieldType: 'streamer',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`🎯 Assigned hero ${userId} to streamer battlefield: ${battlefieldId}`);
+    } else if (channelId && hero.currentBattlefieldId !== `twitch:${channelId}`) {
+      // Update battlefield if hero is in a different one
+      const battlefieldId = `twitch:${channelId}`;
+      await heroDoc.ref.update({
+        currentBattlefieldId: battlefieldId,
+        currentBattlefieldType: 'streamer',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`🎯 Updated hero ${userId} battlefield to: ${battlefieldId}`);
+    }
     let message = '';
     
     // Process purchase based on type
     if (type === 'gear') {
-      // For now, just add tokens equivalent to the purchase
-      // The actual gear generation happens in the Electron app
-      const tokensToAdd = Math.floor(bits / 50); // 50 bits = 1 token equivalent
+      // Validate inputs
+      if (!rarity || !slot) {
+        return res.status(400).json({ error: 'Missing rarity or slot for gear purchase' });
+      }
       
-      await heroDoc.ref.update({
-        tokens: admin.firestore.FieldValue.increment(tokensToAdd),
+      // Validate role
+      const heroRole = hero.role || 'berserker';
+      if (!ROLE_CONFIG[heroRole]) {
+        return res.status(400).json({ error: `Invalid hero role: ${heroRole}` });
+      }
+      
+      // Validate slot for role
+      const category = ROLE_CONFIG[heroRole].category;
+      const availableSlots = category === 'tank' ? TANK_EQUIPMENT_SLOTS : EQUIPMENT_SLOTS;
+      
+      if (!availableSlots.includes(slot)) {
+        return res.status(400).json({ 
+          error: `Invalid slot ${slot} for ${heroRole}. ${category === 'tank' ? 'Tanks can use shield.' : 'Only tanks can use shield.'}` 
+        });
+      }
+      
+      // Generate gear item
+      const heroLevel = hero.level || 1;
+      let gearItem;
+      try {
+        gearItem = generateGearItem(heroRole, slot, rarity, heroLevel);
+      } catch (error) {
+        return res.status(400).json({ error: `Failed to generate gear: ${error.message}` });
+      }
+      
+      // Check if slot is occupied
+      const currentEquipment = hero.equipment || {};
+      const currentItem = currentEquipment[slot];
+      
+      // Prepare update
+      const updateData = {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      };
       
-      message = `Purchased ${rarity} ${slot} for ${bits} Bits! Added ${tokensToAdd} tokens to your balance.`;
+      if (currentItem) {
+        // Slot is occupied - add to inventory
+        const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
+        inventory.push(gearItem);
+        updateData.inventory = inventory;
+        message = `Purchased ${rarity} ${slot} for ${bits} Bits! Added to inventory (slot occupied by ${currentItem.name || 'current item'}).`;
+      } else {
+        // Slot is empty - auto-equip
+        updateData[`equipment.${slot}`] = gearItem;
+        message = `Purchased and equipped ${rarity} ${slot} for ${bits} Bits!`;
+      }
+      
+      // Update hero
+      await heroDoc.ref.update(updateData);
     } else if (type === 'consumable') {
       switch (item) {
         case 'health_potion':
@@ -136,12 +201,21 @@ router.post('/purchase', verifyTwitchToken, async (req, res) => {
     
     // Get updated hero
     const updatedHero = await heroDoc.ref.get();
+    const updatedHeroData = { id: updatedHero.id, ...updatedHero.data() };
     
-    res.json({
+    // Include gear item in response if it was a gear purchase
+    const response = {
       success: true,
       message,
-      hero: { id: updatedHero.id, ...updatedHero.data() }
-    });
+      hero: updatedHeroData
+    };
+    
+    if (type === 'gear') {
+      response.item = gearItem;
+      response.equipped = !currentItem;
+    }
+    
+    res.json(response);
   } catch (error) {
     console.error('Error processing Bits purchase:', error);
     res.status(500).json({ error: 'Failed to process purchase' });

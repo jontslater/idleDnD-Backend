@@ -65,7 +65,7 @@ router.post('/twitch', async (req, res) => {
       return res.status(400).json({ error: 'Failed to authenticate with Twitch' });
     }
 
-    const { access_token } = await twitchTokenResponse.json();
+    const { access_token, refresh_token } = await twitchTokenResponse.json();
 
     // Get Twitch user info
     const twitchUserResponse = await fetch('https://api.twitch.tv/helix/users', {
@@ -100,16 +100,58 @@ router.post('/twitch', async (req, res) => {
       // Existing hero found
       heroDoc = heroQuery.docs[0];
       
-      // Update last login
-      await heroDoc.ref.update({
+      // Update last login and store Twitch tokens (encrypted) for chat listener
+      // Only store if user is a streamer (has a battlefield)
+      const updateData = {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      
+      // Store Twitch access token for chat listener (encrypted at rest by Firebase)
+      // This allows the backend to listen to the streamer's chat automatically
+      if (access_token) {
+        updateData.twitchAccessToken = access_token;
+        if (refresh_token) {
+          updateData.twitchRefreshToken = refresh_token;
+        }
+        updateData.twitchTokenExpiresAt = Date.now() + (60 * 60 * 1000); // 1 hour from now
+        updateData.twitchUsername = twitchUser.login.toLowerCase(); // Store username for lookup
+      }
+      
+      await heroDoc.ref.update(updateData);
       
       hero = { id: heroDoc.id, ...heroDoc.data() };
     } else {
       // No hero found - user needs to create one in the Electron app
       console.log(`No hero found for Twitch user ${twitchUser.id} (${twitchUser.display_name})`);
       hero = null;
+    }
+    
+    // Always try to initialize chat listener if we have a token
+    // This allows streamers to connect to their chat automatically
+    const streamerUsername = twitchUser.login.toLowerCase();
+    if (access_token) {
+      const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
+      console.log(`🔌 Attempting to initialize chat listener for ${streamerUsername}...`);
+      console.log(`   Hero found: ${hero ? 'Yes' : 'No'}`);
+      console.log(`   Token available: Yes`);
+      
+      initializeStreamerChatListener(streamerUsername, access_token, refresh_token)
+        .then(client => {
+          if (client) {
+            console.log(`✅ Chat listener successfully initialized for ${streamerUsername}`);
+          } else {
+            console.log(`⚠️  Chat listener already active for ${streamerUsername}`);
+          }
+        })
+        .catch(err => {
+          console.error(`❌ Failed to initialize chat listener for ${streamerUsername}:`, err);
+          console.error(`   Error details:`, err.message || err);
+          console.error(`   This might be normal if the OAuth token doesn't have IRC chat scopes.`);
+          console.error(`   The token needs 'chat:read' scope to listen to chat.`);
+          console.error(`   Streamer can manually initialize via POST /api/chat/initialize`);
+        });
+    } else {
+      console.log(`⚠️  No access token available for ${streamerUsername} - chat listener not initialized`);
     }
 
     // Generate JWT token
@@ -259,7 +301,7 @@ router.post('/tiktok', async (req, res) => {
  */
 router.get('/me', verifyToken, async (req, res) => {
   try {
-    const { userId, displayName, twitchUserId, tiktokUserId, tiktokUsername } = req.user;
+    const { userId, displayName, twitchUserId, twitchUsername, tiktokUserId, tiktokUsername } = req.user;
 
     let hero = null;
 
@@ -274,9 +316,13 @@ router.get('/me', verifyToken, async (req, res) => {
       }
     }
 
+    // Use twitchUsername from JWT if available, fallback to displayName
+    // twitchUsername is the actual username (e.g., "tehchno"), displayName is the display name
+    const finalTwitchUsername = twitchUsername || displayName || null;
+
     res.json({
       id: userId || null,
-      twitchUsername: displayName || null,
+      twitchUsername: finalTwitchUsername,
       twitchId: twitchUserId || null,
       tiktokUsername: tiktokUsername || null,
       tiktokId: tiktokUserId || null,
