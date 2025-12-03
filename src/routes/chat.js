@@ -33,8 +33,12 @@ router.post('/join', async (req, res) => {
     // Normalize streamer username to lowercase
     const normalizedStreamerUsername = streamerUsername.toLowerCase().trim();
     
-    // Determine battlefield ID - prefer username over ID for consistency
-    const battlefieldId = `twitch:${normalizedStreamerUsername}`;
+    // Determine battlefield ID - use Twitch ID for consistency and reliability
+    // This ensures we can always find the battlefield, even if streamer has no hero document
+    // Format: twitch:12345678 (numeric Twitch user ID)
+    const battlefieldId = streamerId ? `twitch:${streamerId}` : `twitch:${normalizedStreamerUsername}`;
+    
+    console.log(`[Join] Battlefield ID: ${battlefieldId} (streamerId: ${streamerId}, username: ${normalizedStreamerUsername})`);
 
     // Check if hero already exists for this viewer
     const existingHeroesSnapshot = await db.collection('heroes')
@@ -87,7 +91,73 @@ router.post('/join', async (req, res) => {
 
     // Handle existing hero
     if (hero) {
-      // Check if hero is moving from a different battlefield
+      // CRITICAL: Remove ALL other heroes of this user from ALL battlefields
+      // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
+      // When joining with hero B, remove hero A/C/D from their battlefields
+      try {
+        const allUserHeroesSnapshot = await db.collection('heroes')
+          .where('twitchUserId', '==', viewerId)
+          .get();
+        
+        const otherHeroes = allUserHeroesSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(h => h.id !== hero.id && h.currentBattlefieldId); // Other heroes that are on battlefields
+        
+        if (otherHeroes.length > 0) {
+          console.log(`[Join] User ${viewerUsername} has ${otherHeroes.length} other heroes on battlefields. Removing them...`);
+          
+          // Broadcast removal for each hero on a battlefield
+          const { broadcastToRoom } = await import('../websocket/server.js');
+          
+          for (const otherHero of otherHeroes) {
+            const otherBattlefieldId = otherHero.currentBattlefieldId;
+            
+            // Extract Twitch ID from battlefield ID for broadcast
+            let otherStreamerTwitchId = null;
+            if (otherBattlefieldId.startsWith('twitch:')) {
+              const identifier = otherBattlefieldId.replace('twitch:', '');
+              if (/^\d+$/.test(identifier)) {
+                otherStreamerTwitchId = identifier;
+              } else {
+                // Legacy username format - look up
+                const snapshot = await db.collection('heroes')
+                  .where('twitchUsername', '==', identifier.toLowerCase())
+                  .limit(1)
+                  .get();
+                if (!snapshot.empty) {
+                  otherStreamerTwitchId = snapshot.docs[0].data().twitchUserId;
+                }
+              }
+            }
+            
+            // Broadcast removal from old battlefield
+            if (otherStreamerTwitchId) {
+              console.log(`📡 [Join] Broadcasting removal of hero ${otherHero.id} from battlefield ${otherBattlefieldId}`);
+              broadcastToRoom(String(otherStreamerTwitchId), {
+                type: 'hero_left_battlefield',
+                hero: { ...otherHero, id: otherHero.id },
+                message: `${otherHero.name || viewerUsername} has switched to another character`,
+                timestamp: Date.now()
+              });
+            }
+            
+            // Remove battlefield assignment from Firebase
+            const otherHeroRef = db.collection('heroes').doc(otherHero.id);
+            await otherHeroRef.update({
+              currentBattlefieldId: admin.firestore.FieldValue.delete(),
+              currentBattlefieldType: admin.firestore.FieldValue.delete(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            console.log(`✅ [Join] Removed hero ${otherHero.id} (${otherHero.name}) from battlefield ${otherBattlefieldId}`);
+          }
+        }
+      } catch (cleanupError) {
+        console.error('❌ [Join] Error cleaning up other heroes:', cleanupError);
+        // Continue even if cleanup fails - don't block the join
+      }
+      
+      // Check if THIS hero is moving from a different battlefield
       const oldBattlefieldId = hero.currentBattlefieldId || 'world';
       const isMovingBattlefield = oldBattlefieldId !== battlefieldId;
       
@@ -97,24 +167,64 @@ router.post('/join', async (req, res) => {
         try {
           const { broadcastToRoom } = await import('../websocket/server.js');
           const heroName = hero.name || hero.characterName || viewerUsername;
-          const oldRoomId = oldBattlefieldId;
           
-          console.log(`📡 Broadcasting hero_left_battlefield to old room: ${oldRoomId} (before update)`);
-          broadcastToRoom(oldRoomId, {
-            type: 'hero_left_battlefield',
-            hero: { ...hero, id: hero.id },
-            message: `${heroName} has joined another battle with ${normalizedStreamerUsername}`,
-            newBattlefieldId: battlefieldId,
-            timestamp: Date.now()
-          });
+          // Extract Twitch ID from old battlefield ID
+          // New format: twitch:12345678 (numeric ID)
+          // Old format: twitch:username (legacy, needs lookup)
+          let oldStreamerTwitchId = null;
+          
+          if (oldBattlefieldId.startsWith('twitch:')) {
+            const identifier = oldBattlefieldId.replace('twitch:', '');
+            
+            // Check if it's already a numeric ID (new format)
+            if (/^\d+$/.test(identifier)) {
+              oldStreamerTwitchId = identifier;
+              console.log(`[Join] Old battlefield uses numeric ID format: ${oldStreamerTwitchId}`);
+            } else {
+              // Legacy format (username) - need to look up
+              console.warn(`[Join] Old battlefield uses legacy username format, looking up Twitch ID...`);
+              const oldStreamerHeroSnapshot = await db.collection('heroes')
+                .where('twitchUsername', '==', identifier.toLowerCase())
+                .limit(1)
+                .get();
+              
+              if (!oldStreamerHeroSnapshot.empty) {
+                const oldStreamerHero = oldStreamerHeroSnapshot.docs[0].data();
+                oldStreamerTwitchId = oldStreamerHero.twitchUserId || oldStreamerHero.twitchId;
+                console.log(`[Join] Found Twitch ID from hero lookup: ${oldStreamerTwitchId}`);
+              } else {
+                console.error(`❌ [Join] CRITICAL: Could not find Twitch ID for old battlefield username: ${identifier}`);
+                console.error(`   Hero will NOT be removed from old battlefield!`);
+                console.error(`   Streamer '${identifier}' needs to log in at least once to create hero document.`);
+              }
+            }
+          }
+          
+          if (oldStreamerTwitchId) {
+            console.log(`📡 [Join] Broadcasting hero_left_battlefield to old battlefield Twitch ID: ${oldStreamerTwitchId} (battlefield: ${oldBattlefieldId})`);
+            broadcastToRoom(String(oldStreamerTwitchId), {
+              type: 'hero_left_battlefield',
+              hero: { ...hero, id: hero.id },
+              message: `${heroName} has joined another battle with ${normalizedStreamerUsername}`,
+              newBattlefieldId: battlefieldId,
+              timestamp: Date.now()
+            });
+            console.log(`✅ [Join] Successfully broadcast hero removal from old battlefield`);
+          } else {
+            console.error(`❌ [Join] CRITICAL: Failed to broadcast hero removal - no Twitch ID available`);
+            console.error(`   Old battlefield: ${oldBattlefieldId}`);
+            console.error(`   Hero ${hero.id} will be duplicated on both battlefields!`);
+          }
         } catch (broadcastError) {
-          console.warn('Failed to broadcast hero_left_battlefield to old battlefield:', broadcastError);
+          console.error('❌ [Join] Failed to broadcast hero_left_battlefield to old battlefield:', broadcastError);
           // Continue with update even if broadcast fails
         }
       }
       
       // Update existing hero's battlefield assignment and lastActiveAt
       const heroRef = db.collection('heroes').doc(hero.id);
+      console.log(`[Join] Updating Firebase for hero ${hero.id} - setting currentBattlefieldId to: ${battlefieldId}`);
+      
       await heroRef.update({
         currentBattlefieldId: battlefieldId,
         currentBattlefieldType: 'streamer',
@@ -122,51 +232,50 @@ router.post('/join', async (req, res) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
+      // Get updated hero and verify the write
       const updatedHero = await heroRef.get();
       const heroData = { ...updatedHero.data(), id: updatedHero.id };
+      
+      // CRITICAL: Verify the write succeeded
+      if (heroData.currentBattlefieldId === battlefieldId) {
+        console.log(`✅ [Join] Verified Firebase write - Hero ${hero.id} successfully assigned to battlefield: ${battlefieldId}`);
+      } else {
+        console.error(`❌ [Join] CRITICAL: Firebase write verification FAILED!`);
+        console.error(`   Expected: ${battlefieldId}`);
+        console.error(`   Got: ${heroData.currentBattlefieldId}`);
+        console.error(`   Hero ${hero.id} may not persist through reload!`);
+      }
       
       // Always broadcast to new battlefield that hero joined (for real-time browser source updates)
       // This ensures the browser source updates immediately, even when rejoining the same battlefield
       try {
         const { broadcastToRoom } = await import('../websocket/server.js');
         const heroName = heroData.name || heroData.characterName || viewerUsername;
-        const newRoomId = battlefieldId; // Already in format "twitch:username"
         
-        // Convert battlefield ID (twitch:username) to Twitch ID (numeric) for WebSocket room
-        // The WebSocket server expects numeric Twitch IDs
-        let streamerTwitchId = null;
-        if (newRoomId.startsWith('twitch:')) {
-          // Extract username from battlefieldId
-          const streamerUsername = newRoomId.replace('twitch:', '').toLowerCase();
-          // Look up streamer's Twitch ID from their hero document
-          const streamerHeroSnapshot = await db.collection('heroes')
-            .where('twitchUsername', '==', streamerUsername)
-            .limit(1)
-            .get();
-          
-          if (!streamerHeroSnapshot.empty) {
-            const streamerHero = streamerHeroSnapshot.docs[0].data();
-            streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
-          }
-        } else {
-          // If it's already a numeric ID, use it directly
-          streamerTwitchId = newRoomId;
+        // Extract Twitch ID from new battlefield ID
+        // New format: twitch:12345678 (should always be numeric now since we set it above)
+        let newStreamerTwitchId = null;
+        
+        if (battlefieldId.startsWith('twitch:')) {
+          newStreamerTwitchId = battlefieldId.replace('twitch:', '');
+          console.log(`[Join] New battlefield Twitch ID: ${newStreamerTwitchId}`);
         }
         
-        if (streamerTwitchId) {
-          console.log(`📡 Broadcasting hero_joined_battlefield to Twitch ID: ${streamerTwitchId} (battlefield: ${newRoomId})`);
-          broadcastToRoom(String(streamerTwitchId), {
+        if (newStreamerTwitchId) {
+          console.log(`📡 [Join] Broadcasting hero_joined_battlefield to Twitch ID: ${newStreamerTwitchId} (battlefield: ${battlefieldId})`);
+          broadcastToRoom(String(newStreamerTwitchId), {
             type: 'hero_joined_battlefield',
             hero: heroData,
             message: `${heroName} has joined ${normalizedStreamerUsername}'s battlefield`,
             oldBattlefieldId: isMovingBattlefield ? oldBattlefieldId : null,
             timestamp: Date.now()
           });
+          console.log(`✅ [Join] Successfully broadcast hero join to new battlefield`);
         } else {
-          console.warn(`⚠️ Could not find streamer Twitch ID for battlefield: ${newRoomId}`);
+          console.error(`❌ [Join] CRITICAL: Could not extract Twitch ID from battlefield: ${battlefieldId}`);
         }
       } catch (broadcastError) {
-        console.warn('Failed to broadcast hero_joined_battlefield to new battlefield:', broadcastError);
+        console.error('❌ [Join] Failed to broadcast hero_joined_battlefield to new battlefield:', broadcastError);
         // Continue even if broadcast fails - Firebase listener will still update
       }
       

@@ -292,7 +292,59 @@ router.post('/preferences/sprite-facing', async (req, res) => {
   }
 });
 
-// Get sprite facing preferences for a user
+// Helper function to get default facing direction based on role or enemy type
+function getDefaultFacingForRole(roleOrEnemyType) {
+  if (!roleOrEnemyType) return 'right'; // Default to right if unknown
+  
+  const normalized = roleOrEnemyType.toLowerCase();
+  
+  // Define roles that should face LEFT (opposite of default)
+  const leftFacingRoles = [
+    // HEALERS
+    'cleric', 'atoner', 'druid', 'lightbringer', 'shaman', 'mistweaver', 'chronomancer', 'bard',
+    // MELEE DPS
+    'berserker', 'crusader', 'assassin', 'reaper', 'bladedancer', 'monk', 'stormwarrior', 'hunter'
+  ];
+  
+  // Define enemy types that should face RIGHT (opposite of default)
+  // Most enemies face left, but these specific ones face right
+  const rightFacingEnemies = [
+    'demon lord',
+    'adult dragon',
+    'baby dragon',
+    'headless horseman',
+    'masked orc',
+    'witch'
+  ];
+  
+  // Check if role should face left (heroes)
+  if (leftFacingRoles.includes(normalized)) {
+    return 'left';
+  }
+  
+  // Check if it's an enemy that should face right
+  if (rightFacingEnemies.includes(normalized)) {
+    return 'right';
+  }
+  
+  // Determine default based on whether it's a hero or enemy
+  // List of all known enemy types to distinguish from hero roles
+  const knownEnemyTypes = [
+    'kobold warrior', 'baby dragon', 'imp', 'lizardman', 'masked orc',
+    'werewolf', 'skeleton mage', 'witch', 'mimic', 'gryphon', 'minotaur',
+    'headless horseman', 'adult dragon', 'demon lord'
+  ];
+  
+  // If it's an enemy type, default to left (most enemies face left)
+  if (knownEnemyTypes.includes(normalized)) {
+    return 'left';
+  }
+  
+  // If it's a hero role, default to right (most heroes face right)
+  return 'right';
+}
+
+// Get sprite facing preferences for a user (with defaults for roles)
 router.get('/preferences/sprite-facing/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -307,7 +359,50 @@ router.get('/preferences/sprite-facing/:userId', async (req, res) => {
       preferences[data.spriteName] = data.facing;
     });
     
-    res.json({ preferences });
+    // Merge with defaults - defaults only applied if no user preference exists
+    // This ensures all roles have a facing direction, but user preferences override defaults
+    const defaultPreferences = {};
+    
+    // Common hero roles with defaults
+    const allHeroRoles = [
+      // Tanks
+      'guardian', 'paladin', 'warden', 'bloodknight', 'vanguard', 'brewmaster',
+      // Healers
+      'cleric', 'atoner', 'druid', 'lightbringer', 'shaman', 'mistweaver', 'chronomancer', 'bard',
+      // Melee DPS
+      'berserker', 'crusader', 'assassin', 'reaper', 'bladedancer', 'monk', 'stormwarrior', 'hunter',
+      // Ranged DPS
+      'mage', 'warlock', 'necromancer', 'ranger', 'shadowpriest', 'mooncaller', 'stormcaller', 'frostmage', 'firemage', 'dragonsorcerer'
+    ];
+    
+    // Common enemy types with defaults
+    const allEnemyTypes = [
+      'Kobold Warrior', 'Baby Dragon', 'Imp', 'Lizardman', 'Masked Orc',
+      'Werewolf', 'Skeleton Mage', 'Witch', 'Mimic', 'Gryphon', 'Minotaur',
+      'Headless Horseman', 'Adult Dragon', 'Demon Lord'
+    ];
+    
+    // Add defaults for hero roles
+    allHeroRoles.forEach(role => {
+      if (!preferences[role]) {
+        defaultPreferences[role] = getDefaultFacingForRole(role);
+      }
+    });
+    
+    // Add defaults for enemy types
+    allEnemyTypes.forEach(enemyType => {
+      if (!preferences[enemyType]) {
+        defaultPreferences[enemyType] = getDefaultFacingForRole(enemyType);
+      }
+    });
+    
+    // Merge user preferences with defaults (user preferences take precedence)
+    const mergedPreferences = {
+      ...defaultPreferences,
+      ...preferences
+    };
+    
+    res.json({ preferences: mergedPreferences });
   } catch (error) {
     console.error('Error fetching sprite facing preferences:', error);
     res.status(500).json({ error: 'Failed to fetch sprite facing preferences' });

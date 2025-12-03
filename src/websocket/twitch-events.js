@@ -199,7 +199,9 @@ export function handleTwitchEvents() {
       // Process other game commands via backend
       try {
         const { processCommand } = await import('../services/commandHandler.js');
-        const result = await processCommand(command, args, username, userId, channelName);
+        // Get streamer's numeric Twitch ID from room-id tag for queue system
+        const streamerId = tags['room-id'];
+        const result = await processCommand(command, args, username, userId, channelName, streamerId);
         
         if (result.success) {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
@@ -534,7 +536,9 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
       // Process other game commands via backend
       try {
         const { processCommand } = await import('../services/commandHandler.js');
-        const result = await processCommand(command, args, username, userId, channelName);
+        // Get streamer's numeric Twitch ID from room-id tag for queue system
+        const streamerId = tags['room-id'];
+        const result = await processCommand(command, args, username, userId, channelName, streamerId);
         
         if (result.success) {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);

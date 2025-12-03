@@ -78,10 +78,13 @@ async function isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername) {
  * @param {string} streamerUsername - The streamer's channel
  * @returns {Promise<{success: boolean, message: string, data?: any}>}
  */
-export async function processCommand(command, args, viewerUsername, viewerId, streamerUsername) {
+export async function processCommand(command, args, viewerUsername, viewerId, streamerUsername, streamerId = null) {
   try {
-    const battlefieldId = `twitch:${streamerUsername.toLowerCase()}`;
+    // Use numeric streamerId if available (for queues), otherwise use username (legacy)
+    const battlefieldId = streamerId ? `twitch:${streamerId}` : `twitch:${streamerUsername.toLowerCase()}`;
     const commandLower = command.toLowerCase();
+    
+    console.log(`[Command] Processing !${command} - BattlefieldId: ${battlefieldId}, StreamerId: ${streamerId}`);
     
     // Commands that don't require hero to be in battlefield
     switch (commandLower) {
@@ -395,6 +398,58 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
       case 'rank':
         if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
         return await handleLeaderboardCommand(hero, viewerUsername);
+      
+      // ==================== QUEUE SYSTEM ====================
+      
+      case 'dungeons':
+        return await handleDungeonsListCommand(viewerUsername);
+      
+      case 'raids':
+        return await handleRaidsListCommand(viewerUsername);
+      
+      case 'dungeon':
+        // Streamer only - create dungeon queue
+        const isDungeonAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
+        if (!isDungeonAdmin) {
+          return { success: false, message: `@${viewerUsername} Only the streamer can create dungeon queues!` };
+        }
+        return await handleDungeonQueueCommand(args, viewerUsername, viewerId, streamerUsername, battlefieldId);
+      
+      case 'raid':
+        // Streamer only - create raid queue
+        const isRaidAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
+        if (!isRaidAdmin) {
+          return { success: false, message: `@${viewerUsername} Only the streamer can create raid queues!` };
+        }
+        return await handleRaidQueueCommand(args, viewerUsername, viewerId, streamerUsername, battlefieldId);
+      
+      case 'qdungeon':
+        if (!hero) return { success: false, message: `@${viewerUsername} You need a hero to join! Use !join [class] to create one.` };
+        return await handleQDungeonJoinCommand(args, hero, viewerUsername, viewerId, battlefieldId);
+      
+      case 'qraid':
+        if (!hero) return { success: false, message: `@${viewerUsername} You need a hero to join! Use !join [class] to create one.` };
+        return await handleQRaidJoinCommand(args, hero, viewerUsername, viewerId, battlefieldId);
+      
+      case 'qstatus':
+        return await handleQStatusCommand(battlefieldId, viewerUsername);
+      
+      case 'qstart':
+        const isQStartAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
+        if (!isQStartAdmin) {
+          return { success: false, message: `@${viewerUsername} Only the streamer can force start queues!` };
+        }
+        return await handleQStartCommand(battlefieldId, viewerUsername, streamerUsername);
+      
+      case 'qcancel':
+        const isQCancelAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
+        if (!isQCancelAdmin) {
+          return { success: false, message: `@${viewerUsername} Only the streamer can cancel queues!` };
+        }
+        return await handleQCancelCommand(battlefieldId, viewerUsername);
+      
+      case 'qleave':
+        return await handleQLeaveCommand(viewerId, viewerUsername);
       
       case 'level':
         return await handleLevelCommand(hero, args, viewerUsername, viewerId, streamerUsername, battlefieldId);
@@ -1963,4 +2018,444 @@ async function handleSyncCommand(username, userId, streamerUsername, battlefield
     success: true,
     message
   };
+}
+
+// ============================================================================
+// QUEUE SYSTEM COMMANDS
+// ============================================================================
+
+/**
+ * !dungeons - List available dungeons
+ */
+async function handleDungeonsListCommand(username) {
+  const { DUNGEON_REQUIREMENTS } = await import('../data/queueRequirements.js');
+  
+  const dungeons = Object.values(DUNGEON_REQUIREMENTS);
+  
+  let message = `📜 Available Dungeons:\n`;
+  dungeons.forEach((dungeon, index) => {
+    message += `${index + 1}. ${dungeon.name} (Lv${dungeon.minLevel}-${dungeon.maxLevel}, GS ${dungeon.minGearScore}+) - ${dungeon.totalPlayers} players\n`;
+  });
+  message += `\nStreamer: Use !dungeon [number] to create a queue!`;
+  
+  return {
+    success: true,
+    message: `@${username} ${message}`
+  };
+}
+
+/**
+ * !raids - List available raids
+ */
+async function handleRaidsListCommand(username) {
+  const { RAID_REQUIREMENTS } = await import('../data/queueRequirements.js');
+  
+  const raids = Object.values(RAID_REQUIREMENTS);
+  
+  let message = `📜 Available Raids:\n`;
+  raids.forEach((raid, index) => {
+    message += `${index + 1}. ${raid.name} (Lv${raid.minLevel}+, GS ${raid.minGearScore}+) - ${raid.totalPlayers} players\n`;
+  });
+  message += `\nStreamer: Use !raid [number] to create a queue!`;
+  
+  return {
+    success: true,
+    message: `@${username} ${message}`
+  };
+}
+
+/**
+ * !dungeon [number] - Create dungeon queue (streamer only)
+ */
+async function handleDungeonQueueCommand(args, username, userId, streamerUsername, battlefieldId) {
+  const { DUNGEON_REQUIREMENTS } = await import('../data/queueRequirements.js');
+  const { createQueue } = await import('./queueService.js');
+  
+  console.log(`[Queue Command] !dungeon called by ${username} (userId: ${userId})`);
+  console.log(`[Queue Command] BattlefieldId: ${battlefieldId}`);
+  
+  // Get dungeon number
+  const dungeonNumber = parseInt(args[0], 10);
+  
+  if (isNaN(dungeonNumber) || dungeonNumber < 1 || dungeonNumber > Object.keys(DUNGEON_REQUIREMENTS).length) {
+    return {
+      success: false,
+      message: `@${username} Invalid dungeon number! Use !dungeons to see available dungeons.`
+    };
+  }
+  
+  // Get dungeon by index
+  const dungeonKeys = Object.keys(DUNGEON_REQUIREMENTS);
+  const dungeonId = dungeonKeys[dungeonNumber - 1];
+  
+  console.log(`[Queue Command] Creating queue for dungeon: ${dungeonId}`);
+  
+  // Create queue
+  const result = await createQueue(battlefieldId, userId, streamerUsername, 'dungeon', dungeonId);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  const queue = result.queue;
+  
+  // AUTO-JOIN: Add streamer's hero to the queue automatically
+  const heroesSnapshot = await db.collection('heroes')
+    .where('twitchUserId', '==', userId)
+    .where('currentBattlefieldId', '==', battlefieldId)
+    .limit(1)
+    .get();
+  
+  if (!heroesSnapshot.empty) {
+    const heroDoc = heroesSnapshot.docs[0];
+    const hero = { id: heroDoc.id, ...heroDoc.data() };
+    
+    console.log(`[Queue] Auto-joining streamer ${username} to their own queue...`);
+    
+    const { joinQueue } = await import('./queueService.js');
+    const joinResult = await joinQueue(queue.code, hero, username, userId);
+    
+    if (joinResult.success) {
+      console.log(`[Queue] ✅ Streamer auto-joined successfully`);
+    } else {
+      console.warn(`[Queue] ⚠️ Streamer couldn't auto-join:`, joinResult.message);
+    }
+  } else {
+    console.warn(`[Queue] ⚠️ Streamer has no active hero to auto-join`);
+  }
+  
+  // Broadcast queue creation
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(userId, {
+    type: 'queue_created',
+    queue
+  });
+  
+  const publicMessage = `🏰 ${username} created a ${queue.name} queue!
+🎯 Requirements: Lv${queue.requirements.minLevel}-${queue.requirements.maxLevel}, Gear Score ${queue.requirements.minGearScore}+
+👥 Roles: ${queue.requirements.roles.tank.required} Tank, ${queue.requirements.roles.healer.required} Healer, ${queue.requirements.roles.dps.required} DPS
+⏰ Expires in 30 minutes
+
+📋 Check the Player Portal for the room code!
+Type !qdungeon [CODE] to join!`;
+  
+  return {
+    success: true,
+    message: publicMessage,
+    queue
+  };
+}
+
+/**
+ * !raid [number] - Create raid queue (streamer only)
+ */
+async function handleRaidQueueCommand(args, username, userId, streamerUsername, battlefieldId) {
+  const { RAID_REQUIREMENTS } = await import('../data/queueRequirements.js');
+  const { createQueue } = await import('./queueService.js');
+  
+  // Get raid number
+  const raidNumber = parseInt(args[0], 10);
+  
+  if (isNaN(raidNumber) || raidNumber < 1 || raidNumber > Object.keys(RAID_REQUIREMENTS).length) {
+    return {
+      success: false,
+      message: `@${username} Invalid raid number! Use !raids to see available raids.`
+    };
+  }
+  
+  // Get raid by index
+  const raidKeys = Object.keys(RAID_REQUIREMENTS);
+  const raidId = raidKeys[raidNumber - 1];
+  
+  // Create queue
+  const result = await createQueue(battlefieldId, userId, streamerUsername, 'raid', raidId);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  const queue = result.queue;
+  
+  // AUTO-JOIN: Add streamer's hero to the queue automatically
+  const heroesSnapshot = await db.collection('heroes')
+    .where('twitchUserId', '==', userId)
+    .where('currentBattlefieldId', '==', battlefieldId)
+    .limit(1)
+    .get();
+  
+  if (!heroesSnapshot.empty) {
+    const heroDoc = heroesSnapshot.docs[0];
+    const hero = { id: heroDoc.id, ...heroDoc.data() };
+    
+    console.log(`[Queue] Auto-joining streamer ${username} to their own raid queue...`);
+    
+    const { joinQueue } = await import('./queueService.js');
+    const joinResult = await joinQueue(queue.code, hero, username, userId);
+    
+    if (joinResult.success) {
+      console.log(`[Queue] ✅ Streamer auto-joined successfully`);
+    } else {
+      console.warn(`[Queue] ⚠️ Streamer couldn't auto-join:`, joinResult.message);
+    }
+  } else {
+    console.warn(`[Queue] ⚠️ Streamer has no active hero to auto-join`);
+  }
+  
+  // Broadcast queue creation
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(userId, {
+    type: 'queue_created',
+    queue
+  });
+  
+  const publicMessage = `🐉 ${username} created a ${queue.name} queue!
+🎯 Requirements: Lv${queue.requirements.minLevel}+, Gear Score ${queue.requirements.minGearScore}+
+👥 Roles: ${queue.requirements.roles.tank.required} Tanks, ${queue.requirements.roles.healer.required} Healers, ${queue.requirements.roles.dps.required} DPS
+⚠️ Minimum ${queue.requirements.minHealers} healer${queue.requirements.minHealers > 1 ? 's' : ''} required!
+⏰ Expires in 30 minutes
+
+📋 Check the Player Portal for the room code!
+Type !qraid [CODE] to join!`;
+  
+  return {
+    success: true,
+    message: publicMessage,
+    queue
+  };
+}
+
+/**
+ * !qdungeon [code] - Join dungeon queue
+ */
+async function handleQDungeonJoinCommand(args, hero, username, userId, battlefieldId) {
+  const { joinQueue } = await import('./queueService.js');
+  
+  if (!args[0]) {
+    return {
+      success: false,
+      message: `@${username} Please provide the room code! Example: !qdungeon HERO`
+    };
+  }
+  
+  const code = args[0].toUpperCase();
+  
+  // Join queue
+  const result = await joinQueue(code, hero, username, userId);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Broadcast queue update
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(result.queue.streamerId, {
+    type: 'queue_updated',
+    queue: result.queue
+  });
+  
+  // If ready, schedule auto-launch
+  if (result.isReady) {
+    setTimeout(async () => {
+      const { launchInstance, getActiveQueue } = await import('./queueService.js');
+      
+      // Check if queue still exists and is ready
+      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
+      if (currentQueue && currentQueue.isReady) {
+        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
+        
+        if (launchResult.success) {
+          broadcastToRoom(currentQueue.streamerId, {
+            type: 'instance_launched',
+            instanceId: launchResult.instanceId,
+            instance: launchResult.instance
+          });
+        }
+      }
+    }, 10000); // 10 second countdown
+  }
+  
+  return result;
+}
+
+/**
+ * !qraid [code] - Join raid queue
+ */
+async function handleQRaidJoinCommand(args, hero, username, userId, battlefieldId) {
+  const { joinQueue } = await import('./queueService.js');
+  
+  if (!args[0]) {
+    return {
+      success: false,
+      message: `@${username} Please provide the room code! Example: !qraid DRAG`
+    };
+  }
+  
+  const code = args[0].toUpperCase();
+  
+  // Join queue
+  const result = await joinQueue(code, hero, username, userId);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Broadcast queue update
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(result.queue.streamerId, {
+    type: 'queue_updated',
+    queue: result.queue
+  });
+  
+  // If ready, schedule auto-launch
+  if (result.isReady) {
+    setTimeout(async () => {
+      const { launchInstance, getActiveQueue } = await import('./queueService.js');
+      
+      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
+      if (currentQueue && currentQueue.isReady) {
+        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
+        
+        if (launchResult.success) {
+          broadcastToRoom(currentQueue.streamerId, {
+            type: 'instance_launched',
+            instanceId: launchResult.instanceId,
+            instance: launchResult.instance
+          });
+        }
+      }
+    }, 10000);
+  }
+  
+  return result;
+}
+
+/**
+ * !qstatus - Show queue status
+ */
+async function handleQStatusCommand(battlefieldId, username) {
+  const { getActiveQueue } = await import('./queueService.js');
+  const { formatQueueStatus, getNeededRoles } = await import('../data/queueRequirements.js');
+  
+  const queue = await getActiveQueue(battlefieldId);
+  
+  if (!queue) {
+    return {
+      success: false,
+      message: `@${username} No active queue! Streamer can create one with !dungeon [number] or !raid [number]`
+    };
+  }
+  
+  const statusStr = formatQueueStatus(queue);
+  const needed = getNeededRoles(queue);
+  
+  let message = `📋 Queue ${queue.code} (${queue.name}):\n${statusStr}`;
+  
+  if (queue.participants.length > 0) {
+    message += `\n\nParty: ${queue.participants.map(p => `${p.username} (${p.role.toUpperCase()})`).join(', ')}`;
+  }
+  
+  if (needed.length > 0) {
+    message += `\n\nStill needed: ${needed.join(', ')}`;
+    message += `\n\nType !q${queue.type} ${queue.code} to join!`;
+  } else {
+    message += `\n\n🎉 Group is ready! Launching soon...`;
+  }
+  
+  return {
+    success: true,
+    message: `@${username} ${message}`
+  };
+}
+
+/**
+ * !qstart - Force start queue (streamer only, requires filled roles)
+ */
+async function handleQStartCommand(battlefieldId, username, streamerName) {
+  const { getActiveQueue, launchInstance } = await import('./queueService.js');
+  const { areRolesFilled, getNeededRoles } = await import('../data/queueRequirements.js');
+  
+  const queue = await getActiveQueue(battlefieldId);
+  
+  if (!queue) {
+    return {
+      success: false,
+      message: `@${username} No active queue to start!`
+    };
+  }
+  
+  // Validate all required roles are filled
+  if (!areRolesFilled(queue)) {
+    const needed = getNeededRoles(queue);
+    return {
+      success: false,
+      message: `@${username} Cannot start! Missing required roles: ${needed.join(', ')}`
+    };
+  }
+  
+  // Launch instance
+  const result = await launchInstance(battlefieldId, queue);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Broadcast launch
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(queue.streamerId, {
+    type: 'instance_launched',
+    instanceId: result.instanceId,
+    instance: result.instance
+  });
+  
+  return {
+    success: true,
+    message: `⚡ ${username} is force-starting ${queue.name}! Launching NOW! ⚔️`
+  };
+}
+
+/**
+ * !qcancel - Cancel queue (streamer only)
+ */
+async function handleQCancelCommand(battlefieldId, username) {
+  const { cancelQueue } = await import('./queueService.js');
+  
+  const result = await cancelQueue(battlefieldId);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Broadcast cancellation
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(result.queue.streamerId, {
+    type: 'queue_cancelled',
+    queue: result.queue
+  });
+  
+  return {
+    success: true,
+    message: `@${username} ${result.message}`
+  };
+}
+
+/**
+ * !qleave - Leave queue
+ */
+async function handleQLeaveCommand(userId, username) {
+  const { leaveQueue } = await import('./queueService.js');
+  
+  const result = await leaveQueue(userId, username);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Broadcast queue update
+  const { broadcastToRoom } = await import('../websocket/server.js');
+  broadcastToRoom(result.queue.streamerId, {
+    type: 'queue_updated',
+    queue: result.queue
+  });
+  
+  return result;
 }

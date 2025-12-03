@@ -380,11 +380,13 @@ router.post('/', async (req, res) => {
 // Update hero
 router.put('/:userId', async (req, res) => {
   try {
-    const heroRef = db.collection('heroes').doc(req.params.userId);
+    const heroId = req.params.userId;
+    const heroRef = db.collection('heroes').doc(heroId);
     const doc = await heroRef.get();
     
     if (!doc.exists) {
-      return res.status(404).json({ error: 'Hero not found' });
+      console.warn(`⚠️ [Update Hero] Hero not found: ${heroId} - This hero may have been deleted or never existed`);
+      return res.status(404).json({ error: 'Hero not found', heroId });
     }
     
     const updateData = {
