@@ -16,6 +16,10 @@ let twitchClient = null; // Legacy bot client (fallback)
 const streamerClients = new Map(); // streamerUsername -> tmi.Client
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
+// Track active chatters per channel (rolling 1-hour window)
+// Map<channelName, Map<userId, lastChatTime>>
+const activeChattersByChannel = new Map();
+
 /**
  * Initialize Twitch event handlers
  * This will be called from the main server
@@ -71,6 +75,36 @@ export function handleTwitchEvents() {
     const username = tags.username;
     const userId = tags['user-id'];
     const channelName = channel.replace('#', '').toLowerCase();
+    
+    // Track this user as active chatter (for viewer bonuses)
+    if (!activeChattersByChannel.has(channelName)) {
+      activeChattersByChannel.set(channelName, new Map());
+    }
+    const chatters = activeChattersByChannel.get(channelName);
+    chatters.set(userId, Date.now());
+    
+    // Find hero ID for this user and broadcast chat activity (for rested XP)
+    try {
+      const { db } = await import('../index.js');
+      const heroSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', userId)
+        .where('currentBattlefieldId', '==', `twitch:${channelName}`)
+        .limit(1)
+        .get();
+      
+      if (!heroSnapshot.empty) {
+        const heroDoc = heroSnapshot.docs[0];
+        broadcastToRoom(channelName, {
+          type: 'chat_activity',
+          username,
+          userId,
+          heroId: heroDoc.id,
+          timestamp: Date.now()
+        });
+      }
+    } catch (err) {
+      console.error('[Chatter Tracking] Error finding hero for chat activity:', err);
+    }
     
     // Log all messages for debugging
     if (message.trim().startsWith('!')) {
@@ -616,3 +650,45 @@ export function getStreamerClient(streamerUsername) {
   }
   return null;
 }
+
+// ====== ACTIVE CHATTER TRACKING & BROADCASTING ======
+
+// Clean up inactive chatters (every minute)
+setInterval(() => {
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  
+  activeChattersByChannel.forEach((chatters, channelName) => {
+    let removedCount = 0;
+    chatters.forEach((lastChatTime, userId) => {
+      if (lastChatTime < oneHourAgo) {
+        chatters.delete(userId);
+        removedCount++;
+      }
+    });
+    
+    if (removedCount > 0) {
+      console.log(`[Chatter Cleanup] 🧹 Removed ${removedCount} inactive chatters from ${channelName} (${chatters.size} remain)`);
+    }
+  });
+}, 60 * 1000); // Every minute
+
+// Broadcast chatter count (every 30 seconds)
+setInterval(() => {
+  activeChattersByChannel.forEach((chatters, channelName) => {
+    const count = chatters.size;
+    
+    // Broadcast to browser sources for this channel
+    // Use channel name as room identifier (streamers connect with their twitchId or username)
+    broadcastToRoom(channelName, {
+      type: 'chatter_count_update',
+      count: count,
+      timestamp: Date.now()
+    });
+    
+    if (count > 0) {
+      console.log(`[Chatter Broadcast] 👥 ${channelName}: ${count} active chatters`);
+    }
+  });
+}, 30 * 1000); // Every 30 seconds
+
+console.log('[Chatter Tracking] ✅ Initialized active chatter tracking and broadcasting');

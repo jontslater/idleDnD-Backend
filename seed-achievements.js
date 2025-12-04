@@ -505,4 +505,3 @@ seedAchievements().catch((error) => {
   console.error('❌ Error seeding achievements:', error);
   process.exit(1);
 });
-

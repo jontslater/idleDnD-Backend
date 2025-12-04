@@ -12,12 +12,24 @@ Refactor `!join` and `!leave` commands to use transactions, battlefield assessme
 - Multiple heroes per user are supported
 - Switching battlefields removes hero from old battlefield
 - Firebase listeners update browser source in real-time
+- ✅ **Wave count persistence** - Saved to localStorage per battlefield
+- ✅ **Hero resurrection visual fix** - Dead heroes return to idle when healed
+- ✅ **Dynamic hero/enemy positioning** - Never overflow screen (60/40 split)
+- ✅ **OBS-optimized layout** - Transparent background, bottom-aligned, minimal status panel
+- ✅ **Guild System (Hero-Based)** - Each hero can join different guilds
+- ✅ **Scheduled Guild Raids** - Schedule raids, self-signup, auto-start, delete/cancel
+- ✅ **Raid Simulation** - Choose Live (100%) or Simulate (70%) rewards
+- ✅ **Smart Healer AI** - Emergency (tanks <50%), Critical (<30%), Normal (lowest HP%)
+- ✅ **XP Bug Fixed** - Exponential maxXp formula (100 * 1.5^(level-1))
 
 ### ❌ **What Needs Improvement:**
 1. **No battlefield assessment** - New heroes don't auto-create based on what role is needed
 2. **No starter gear/XP boost** - New heroes start with nothing
 3. **Not using transactions** - Race conditions possible with concurrent joins
 4. **!leave logic** - Already uses `FieldValue.delete()` (actually working!)
+5. **No WebSocket in browser source** - Chat commands don't trigger real-time updates
+6. **No rested XP system** - Missing time-based + chat activity bonuses
+7. **No active chatter tracking** - Backend doesn't track/broadcast chatter count
 
 ---
 
@@ -265,8 +277,9 @@ const transaction = await db.runTransaction(async (t) => {
 3. ✅ Creates hero with needed role (tank/healer/DPS)
 4. ✅ Hero has starter gear equipped
 5. ✅ Hero has 1-hour XP boost active
-6. ✅ Hero appears on browser source immediately
+6. ✅ Hero appears on browser source immediately (via WebSocket + Firebase)
 7. ✅ Refresh browser - hero persists
+8. ✅ Rested XP starts accumulating from join time
 
 ### **Scenario 2: Existing User Joins (Multiple Heroes)**
 1. User types `!join` (has 3 heroes)
@@ -291,6 +304,255 @@ const transaction = await db.runTransaction(async (t) => {
 5. ✅ Streamer A refreshes - hero still gone
 6. ✅ Streamer B refreshes - hero still there
 
+### **Scenario 5: WebSocket Real-Time Updates**
+1. User types `!join` in Twitch chat
+2. ✅ Backend processes command
+3. ✅ Backend broadcasts to WebSocket
+4. ✅ Browser source receives message immediately
+5. ✅ Firebase updates (triggers hero list refresh)
+6. ✅ Hero appears on screen within 500ms
+
+### **Scenario 6: Rested XP & Chat Activity**
+1. User joins battlefield (`!join`)
+2. ✅ Join time tracked
+3. Wait 5 minutes without chatting
+4. ✅ Hero gains 1% of max XP (base rested XP)
+5. User chats in Twitch (any message)
+6. Wait 5 minutes
+7. ✅ Hero gains 1.5% of max XP (rested XP × 1.5 chat bonus)
+8. Wait 1 hour without chatting
+9. ✅ Hero gains only base rested XP (chat bonus expired)
+
+### **Scenario 7: Viewer Bonuses from Active Chatters**
+1. 10 users chat in last hour
+2. ✅ Backend tracks 10 active chatters
+3. ✅ Backend broadcasts chatter count every 30s
+4. ✅ Browser source displays: "10👥 +10%"
+5. ✅ Damage/healing/defense bonuses applied in combat
+6. User stops chatting for 1 hour
+7. ✅ Count drops to 9, bonuses recalculate
+
+---
+
+### **Phase 5: WebSocket Integration for Browser Source** 🔌
+
+**Goal:** Connect `CleanBattlefieldSource.tsx` to WebSocket server to receive real-time Twitch chat events (commands, redeems, etc.)
+
+**Location:** `E:\IdleDnD-Web\src\pages\CleanBattlefieldSource.tsx`
+
+**Current Issue:**
+- ❌ Browser source does NOT listen to WebSocket
+- ❌ Chat commands (`!join`, `!leave`, etc.) don't update browser source in real-time
+- ❌ Channel point redeems don't trigger visual effects
+
+**Implementation:**
+
+1. **Import WebSocket hook:**
+   ```typescript
+   import { useWebSocket } from '../hooks/useWebSocket';
+   ```
+
+2. **Extract twitchId from battlefieldId:**
+   ```typescript
+   // Get twitchId from battlefieldId (format: "twitch:1087777297")
+   const twitchId = battlefieldId?.split(':')[1] || null;
+   ```
+
+3. **Create message handler:**
+   ```typescript
+   const handleWebSocketMessage = useCallback((message: any) => {
+     console.log('[WebSocket] 📨 Received:', message);
+     
+     switch (message.type) {
+       case 'hero_joined':
+         console.log(`[WebSocket] ✅ ${message.hero.name} joined!`);
+         // Firebase listener will auto-update, no manual action needed
+         break;
+       
+       case 'hero_left':
+         console.log(`[WebSocket] 👋 ${message.hero.name} left!`);
+         // Firebase listener will auto-update
+         break;
+       
+       case 'channel_point_redeem':
+         console.log(`[WebSocket] 🎁 ${message.username} redeemed: ${message.reward}`);
+         // Handle visual effects for redeems
+         break;
+       
+       case 'chatter_count_update':
+         console.log(`[WebSocket] 👥 Active chatters: ${message.count}`);
+         setActiveChatterCount(message.count);
+         break;
+       
+       default:
+         console.log('[WebSocket] Unknown message type:', message.type);
+     }
+   }, []);
+   ```
+
+4. **Connect to WebSocket:**
+   ```typescript
+   // Connect to WebSocket for real-time events
+   useWebSocket(twitchId, handleWebSocketMessage);
+   ```
+
+---
+
+### **Phase 6: Rested XP System** 💤
+
+**Goal:** Implement rested XP bonus for heroes based on:
+1. **Time on battlefield** - passive XP gain over time
+2. **Chat activity** - bonus XP for users who chat in last hour
+
+**Location:** `E:\IdleDnD-Web\src\pages\CleanBattlefieldSource.tsx`
+
+**Rested XP Formula:**
+```typescript
+// Time-based rested XP
+const hoursOnBattlefield = (Date.now() - joinTime) / (1000 * 60 * 60);
+const timeBasedXP = Math.floor(hero.maxXp * Math.min(hoursOnBattlefield * 0.01, 0.5)); // 1% per hour, max 50%
+
+// Chat activity bonus (if user chatted in last hour)
+const chatBonus = lastChatTime && (Date.now() - lastChatTime < 3600000) ? 1.5 : 1.0;
+
+const totalRestedXP = Math.floor(timeBasedXP * chatBonus);
+```
+
+**Implementation:**
+
+1. **Track hero join time:**
+   ```typescript
+   const heroBattlefieldJoinTime = useRef<Map<string, number>>(new Map());
+   
+   // When hero joins battlefield, track join time
+   useEffect(() => {
+     heroes.forEach(hero => {
+       if (!heroBattlefieldJoinTime.current.has(hero.id)) {
+         heroBattlefieldJoinTime.current.set(hero.id, Date.now());
+       }
+     });
+   }, [heroes]);
+   ```
+
+2. **Track chat activity (from WebSocket):**
+   ```typescript
+   const lastChatTime = useRef<Map<string, number>>(new Map());
+   
+   // Update chat time when WebSocket receives chat message
+   case 'chat_activity':
+     const heroId = findHeroByTwitchId(message.userId);
+     if (heroId) {
+       lastChatTime.current.set(heroId, Date.now());
+     }
+     break;
+   ```
+
+3. **Grant rested XP periodically:**
+   ```typescript
+   // Grant rested XP every 5 minutes
+   useEffect(() => {
+     const interval = setInterval(() => {
+       setHeroes(current => {
+         return current.map(hero => {
+           const joinTime = heroBattlefieldJoinTime.current.get(hero.id);
+           if (!joinTime) return hero;
+           
+           const hoursOnBattlefield = (Date.now() - joinTime) / (1000 * 60 * 60);
+           const baseRestedXP = Math.floor(hero.maxXp * Math.min(hoursOnBattlefield * 0.01, 0.5));
+           
+           // Chat activity bonus
+           const lastChat = lastChatTime.current.get(hero.id);
+           const chatBonus = lastChat && (Date.now() - lastChat < 3600000) ? 1.5 : 1.0;
+           
+           const restedXP = Math.floor(baseRestedXP * chatBonus);
+           
+           if (restedXP > 0) {
+             // Show rested XP SCT
+             const heroElement = document.querySelector(`[data-hero-id="${hero.id}"]`);
+             if (heroElement) {
+               const rect = heroElement.getBoundingClientRect();
+               addSCT(`+${restedXP} Rested XP`, rect.left + rect.width / 2, rect.top + 30, 'xp');
+             }
+             
+             // Reset join time to prevent double-counting
+             heroBattlefieldJoinTime.current.set(hero.id, Date.now());
+             
+             return { ...hero, xp: (hero.xp || 0) + restedXP };
+           }
+           
+           return hero;
+         });
+       });
+     }, 5 * 60 * 1000); // Every 5 minutes
+     
+     return () => clearInterval(interval);
+   }, [heroes]);
+   ```
+
+---
+
+### **Phase 7: Backend - Track Active Chatters** 📊
+
+**Goal:** Track users who have chatted in the last hour and broadcast count to browser sources for viewer bonuses.
+
+**Location:** `E:\IdleDnD-Backend\src\websocket\twitch-events.js`
+
+**Implementation:**
+
+1. **Track active chatters:**
+   ```javascript
+   // Map of channelId -> Set of userIds who chatted in last hour
+   const activeChattersByChannel = new Map();
+   
+   // When chat message received (line 67)
+   client.on('message', async (channel, tags, message, self) => {
+     const channelName = channel.replace('#', '').toLowerCase();
+     const userId = tags['user-id'];
+     
+     // Track this user as active chatter
+     if (!activeChattersByChannel.has(channelName)) {
+       activeChattersByChannel.set(channelName, new Map());
+     }
+     
+     const chatters = activeChattersByChannel.get(channelName);
+     chatters.set(userId, Date.now());
+     
+     // ... existing command handling ...
+   });
+   ```
+
+2. **Clean up old chatters (every minute):**
+   ```javascript
+   // Remove chatters who haven't chatted in 1 hour
+   setInterval(() => {
+     const oneHourAgo = Date.now() - (60 * 60 * 1000);
+     
+     activeChattersByChannel.forEach((chatters, channelName) => {
+       chatters.forEach((lastChatTime, userId) => {
+         if (lastChatTime < oneHourAgo) {
+           chatters.delete(userId);
+         }
+       });
+     });
+   }, 60 * 1000); // Every minute
+   ```
+
+3. **Broadcast chatter count (every 30 seconds):**
+   ```javascript
+   setInterval(() => {
+     activeChattersByChannel.forEach((chatters, channelName) => {
+       const count = chatters.size;
+       
+       // Broadcast to browser sources for this channel
+       broadcastToRoom(channelName, {
+         type: 'chatter_count_update',
+         count: count,
+         timestamp: Date.now()
+       });
+     });
+   }, 30 * 1000); // Every 30 seconds
+   ```
+
 ---
 
 ## **Files to Modify**
@@ -307,9 +569,20 @@ const transaction = await db.runTransaction(async (t) => {
 
 ### **Frontend:**
 1. ✏️ `E:\IdleDnD-Web\src\pages\CleanBattlefieldSource.tsx`
+   - ✅ Add WebSocket integration (`useWebSocket` hook)
+   - ✅ Add rested XP system (time-based + chat activity bonuses)
+   - ✅ Track hero join times
+   - ✅ Handle chatter count updates from WebSocket
    - Remove `localStorage` logic for `removedHeroIds`
    - Simplify `displayHeroes` to trust Firebase
    - Remove `pendingJoinedHeroes` temporary state
+
+### **Backend WebSocket:**
+1. ✏️ `E:\IdleDnD-Backend\src\websocket\twitch-events.js`
+   - ✅ Track active chatters per channel (rolling 1-hour window)
+   - ✅ Broadcast chatter count every 30 seconds
+   - ✅ Clean up inactive chatters every minute
+   - ✅ Send `chat_activity` events for rested XP tracking
 
 ---
 
@@ -357,22 +630,38 @@ User mentioned: *"work on the join and leave commands with the help I gave you f
 - **Phase 1 (Assessment):** 30 minutes
 - **Phase 2 (Starter Gear):** 45 minutes
 - **Phase 3 (Transactions):** 1 hour
-- **Phase 4 (Frontend):** 30 minutes
-- **Testing:** 1 hour
-- **Total:** ~3.5 hours
+- **Phase 4 (Frontend Cleanup):** 30 minutes
+- **Phase 5 (WebSocket Integration):** 45 minutes
+- **Phase 6 (Rested XP System):** 1 hour
+- **Phase 7 (Backend Chatter Tracking):** 45 minutes
+- **Testing:** 1.5 hours
+- **Total:** ~6.5 hours
 
 ---
 
 ## **Success Criteria** 🎯
 
+### **Join/Leave Commands:**
 ✅ New users auto-join as the role their battlefield needs most
 ✅ New users start with gear and 1-hour XP boost
 ✅ No duplicate heroes on battlefields (enforced by transactions)
 ✅ Join/leave persist through refresh (no localStorage hacks)
-✅ All 4 test scenarios pass
+
+### **WebSocket Integration:**
+✅ Browser source connects to WebSocket on load
+✅ Real-time updates when users join/leave
+✅ Chatter count updates every 30 seconds
+✅ Viewer bonuses applied in combat
+
+### **Rested XP:**
+✅ Heroes gain 1% max XP per hour on battlefield
+✅ Chat activity grants 1.5x rested XP multiplier
+✅ Rested XP awarded every 5 minutes
+✅ SCT displays rested XP gains
+
+### **Testing:**
+✅ All 7 test scenarios pass
 
 ---
 
 **Ready to implement! 🚀**
-
-

@@ -7,6 +7,7 @@ const router = express.Router();
 // Get all raids
 router.get('/', async (req, res) => {
   try {
+    console.log('[Raids API] GET /api/raids - query:', req.query);
     const { type, status } = req.query;
     let query = db.collection('raids');
     
@@ -20,6 +21,8 @@ router.get('/', async (req, res) => {
     
     const snapshot = await query.get();
     const raids = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    console.log(`[Raids API] Returning ${raids.length} raid(s):`, raids.map(r => ({ id: r.id, name: r.name })));
     
     res.json(raids);
   } catch (error) {
@@ -299,9 +302,11 @@ router.get('/available/:userId', async (req, res) => {
       });
     }
     
-    // Import raid data - get ALL raids, not just available ones
-    const { RAIDS } = await import('../data/raids.js');
-    const allRaids = Object.values(RAIDS);
+    // Get raids from Firebase (not hardcoded data)
+    const raidsSnapshot = await db.collection('raids').get();
+    const allRaids = raidsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    console.log(`[Raids API] Available raids for hero Lv${heroLevel}, iScore ${itemScore}: ${allRaids.length} raid(s)`);
     
     res.json({
       heroLevel,
@@ -1528,6 +1533,398 @@ router.post('/instance/:instanceId/chat', async (req, res) => {
   } catch (error) {
     console.error('Error sending chat message:', error);
     res.status(500).json({ error: 'Failed to send chat message' });
+  }
+});
+
+// ==================== RAID SIMULATION ====================
+
+// Simulate a raid (instant, reduced rewards)
+router.post('/:raidId/simulate', async (req, res) => {
+  try {
+    const { raidId } = req.params;
+    const { participants } = req.body; // Array of hero IDs
+    
+    console.log(`[Simulate] Simulating raid ${raidId}`);
+    console.log(`[Simulate] Received participants:`, participants);
+    console.log(`[Simulate] Participants type:`, typeof participants);
+    console.log(`[Simulate] Is array:`, Array.isArray(participants));
+    
+    if (!participants || !Array.isArray(participants) || participants.length === 0) {
+      return res.status(400).json({ error: 'No participants provided' });
+    }
+    
+    // Get raid data
+    const raidDoc = await db.collection('raids').doc(raidId).get();
+    if (!raidDoc.exists) {
+      return res.status(404).json({ error: 'Raid not found' });
+    }
+    const raid = raidDoc.data();
+    
+    // Fetch hero data
+    const heroes = [];
+    for (const heroId of participants) {
+      console.log(`[Simulate] Fetching hero: ${heroId}`);
+      const heroDoc = await db.collection('heroes').doc(heroId).get();
+      if (heroDoc.exists) {
+        const heroData = heroDoc.data();
+        // Store document ID separately to avoid confusion with hero.id field
+        heroes.push({ 
+          docId: heroDoc.id,  // Firestore document ID (for updates)
+          ...heroData         // Hero data (includes internal id field)
+        });
+        console.log(`[Simulate] ✅ Found hero: ${heroData.name} (Lv${heroData.level}) - DocID: ${heroDoc.id}`);
+      } else {
+        console.log(`[Simulate] ❌ Hero not found: ${heroId}`);
+      }
+    }
+    
+    console.log(`[Simulate] Total heroes found: ${heroes.length}`);
+    
+    if (heroes.length === 0) {
+      return res.status(400).json({ error: 'No valid heroes found', providedIds: participants });
+    }
+    
+    // Calculate average stats
+    const avgLevel = heroes.reduce((sum, h) => sum + (h.level || 1), 0) / heroes.length;
+    const avgItemScore = heroes.reduce((sum, h) => {
+      let score = 0;
+      if (h.equipment) {
+        Object.values(h.equipment).forEach(item => {
+          if (item) {
+            score += (item.attack || 0) + (item.defense || 0) + ((item.hp || 0) / 2);
+          }
+        });
+      }
+      return sum + score;
+    }, 0) / heroes.length;
+    
+    // Calculate success chance
+    const raidScore = (raid.minLevel || 1) + ((raid.minItemScore || 0) / 10);
+    const heroScore = avgLevel + (avgItemScore / 100);
+    const successChance = Math.min(0.95, Math.max(0.1, heroScore / raidScore));
+    
+    console.log(`[Simulate] Hero score: ${heroScore.toFixed(1)}, Raid score: ${raidScore.toFixed(1)}, Success: ${(successChance * 100).toFixed(1)}%`);
+    
+    // Roll for success
+    const succeeded = Math.random() < successChance;
+    
+    // Calculate rewards (70% for simulation)
+    const baseXP = (raid.rewards?.experience || 1000) * (succeeded ? 0.7 : 0.2);
+    const baseGold = (raid.rewards?.gold || 100) * (succeeded ? 0.7 : 0.2);
+    const xpPerHero = Math.floor(baseXP / heroes.length);
+    const goldPerHero = Math.floor(baseGold / heroes.length);
+    
+    // Apply rewards to heroes
+    const batch = db.batch();
+    const rewardedHeroes = [];
+    
+    for (const hero of heroes) {
+      const heroRef = db.collection('heroes').doc(hero.docId); // Use Firestore document ID!
+      
+      batch.update(heroRef, {
+        xp: admin.firestore.FieldValue.increment(xpPerHero),
+        gold: admin.firestore.FieldValue.increment(goldPerHero),
+        'stats.raidSimulations': admin.firestore.FieldValue.increment(1),
+        'stats.raidSimulationWins': admin.firestore.FieldValue.increment(succeeded ? 1 : 0),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      rewardedHeroes.push({
+        name: hero.name,
+        xp: xpPerHero,
+        gold: goldPerHero
+      });
+    }
+    
+    await batch.commit();
+    
+    console.log(`[Simulate] ${succeeded ? '✅ SUCCESS' : '❌ FAILURE'} - Distributed rewards to ${heroes.length} heroes`);
+    
+    res.json({
+      success: true,
+      outcome: succeeded ? 'success' : 'failure',
+      successChance: Math.floor(successChance * 100),
+      rewards: {
+        xpPerHero,
+        goldPerHero,
+        rewardedHeroes
+      },
+      message: succeeded 
+        ? `Success! Each hero received ${xpPerHero} XP and ${goldPerHero}g (70% simulation penalty)`
+        : `Raid failed! Each hero received ${xpPerHero} XP and ${goldPerHero}g (consolation rewards)`
+    });
+  } catch (error) {
+    console.error('Error simulating raid:', error);
+    res.status(500).json({ error: 'Failed to simulate raid' });
+  }
+});
+
+// ==================== SCHEDULED GUILD RAIDS ====================
+
+// Create a scheduled guild raid (guild leader schedules raid for later)
+router.post('/:raidId/schedule', async (req, res) => {
+  try {
+    const { raidId } = req.params;
+    const { guildId, scheduledTime, organizer, organizerName, initialAssignments, status } = req.body;
+    
+    console.log(`[Scheduled Raid] Creating scheduled raid for guild ${guildId}, raid ${raidId}`);
+    
+    // Get the raid data to include name and details
+    const raidDoc = await db.collection('raids').doc(raidId).get();
+    const raidData = raidDoc.exists ? raidDoc.data() : null;
+    
+    // Create scheduled raid signup
+    const scheduledRaid = {
+      raidId,
+      raidName: raidData?.name || raidId,
+      raidDifficulty: raidData?.difficulty || 'normal',
+      minPlayers: raidData?.minPlayers || 5,
+      maxPlayers: raidData?.maxPlayers || 10,
+      minLevel: raidData?.minLevel || 1,
+      minItemScore: raidData?.minItemScore || 0,
+      guildId,
+      scheduledTime: scheduledTime ? admin.firestore.Timestamp.fromDate(new Date(scheduledTime)) : null,
+      organizer,
+      organizerName,
+      status: status || 'recruiting',
+      participants: initialAssignments || [],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    const docRef = await db.collection('scheduledGuildRaids').add(scheduledRaid);
+    
+    console.log(`[Scheduled Raid] Created signup ${docRef.id} for ${raidData?.name || raidId}`);
+    
+    res.json({
+      success: true,
+      signupId: docRef.id
+    });
+  } catch (error) {
+    console.error('Error creating scheduled raid:', error);
+    res.status(500).json({ error: 'Failed to create scheduled raid' });
+  }
+});
+
+// Get scheduled raids for a battlefield (for browser source auto-start)
+router.get('/scheduled/battlefield/:battlefieldId', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    
+    // Find all scheduled raids where participants have heroes on this battlefield
+    const heroesSnapshot = await db.collection('heroes')
+      .where('currentBattlefieldId', '==', battlefieldId)
+      .get();
+    
+    const heroIds = heroesSnapshot.docs.map(doc => doc.id);
+    
+    if (heroIds.length === 0) {
+      return res.json([]);
+    }
+    
+    // Find scheduled raids with these heroes
+    const scheduledSnapshot = await db.collection('scheduledGuildRaids')
+      .where('status', 'in', ['recruiting', 'ready', 'pending'])
+      .get();
+    
+    const relevantRaids = scheduledSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(raid => {
+        // Check if any participants are from this battlefield
+        return raid.participants?.some(p => heroIds.includes(p.heroId));
+      });
+    
+    console.log(`[Scheduled Raids] Found ${relevantRaids.length} for battlefield ${battlefieldId}`);
+    
+    res.json(relevantRaids);
+  } catch (error) {
+    console.error('Error fetching battlefield scheduled raids:', error);
+    res.status(500).json({ error: 'Failed to fetch scheduled raids' });
+  }
+});
+
+// Get scheduled raids for a guild
+router.get('/scheduled/guild/:guildId', async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    
+    // Simplified query (no composite index needed)
+    const snapshot = await db.collection('scheduledGuildRaids')
+      .where('guildId', '==', guildId)
+      .get();
+    
+    // Filter and sort in memory
+    const scheduledRaids = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(raid => ['recruiting', 'ready', 'pending'].includes(raid.status))
+      .sort((a, b) => {
+        const timeA = a.scheduledTime?.seconds || 0;
+        const timeB = b.scheduledTime?.seconds || 0;
+        return timeA - timeB;
+      });
+    
+    console.log(`[Scheduled Raids] Found ${scheduledRaids.length} for guild ${guildId}`);
+    
+    res.json(scheduledRaids);
+  } catch (error) {
+    console.error('Error fetching scheduled raids:', error);
+    res.status(500).json({ error: 'Failed to fetch scheduled raids' });
+  }
+});
+
+// Sign up for a scheduled raid (member self-signup)
+router.post('/scheduled/:signupId/signup', async (req, res) => {
+  try {
+    const { signupId } = req.params;
+    const { heroId, heroName, heroLevel, heroRole, itemScore } = req.body;
+    
+    const signupRef = db.collection('scheduledGuildRaids').doc(signupId);
+    const signupDoc = await signupRef.get();
+    
+    if (!signupDoc.exists) {
+      return res.status(404).json({ error: 'Scheduled raid not found' });
+    }
+    
+    const signup = signupDoc.data();
+    
+    // Check if already signed up
+    if (signup.participants.some((p) => p.heroId === heroId)) {
+      return res.status(400).json({ error: 'Already signed up for this raid' });
+    }
+    
+    // Add participant
+    const newParticipant = {
+      userId: heroId, // For compatibility
+      heroId,
+      heroName,
+      heroLevel,
+      heroRole,
+      itemScore,
+      signedUpAt: admin.firestore.Timestamp.now()
+    };
+    
+    await signupRef.update({
+      participants: admin.firestore.FieldValue.arrayUnion(newParticipant),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`[Scheduled Raid] ${heroName} signed up for ${signupId}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error signing up for scheduled raid:', error);
+    res.status(500).json({ error: 'Failed to sign up' });
+  }
+});
+
+// Leave a scheduled raid
+router.post('/scheduled/:signupId/leave', async (req, res) => {
+  try {
+    const { signupId } = req.params;
+    const { heroId } = req.body;
+    
+    const signupRef = db.collection('scheduledGuildRaids').doc(signupId);
+    const signupDoc = await signupRef.get();
+    
+    if (!signupDoc.exists) {
+      return res.status(404).json({ error: 'Scheduled raid not found' });
+    }
+    
+    const signup = signupDoc.data();
+    const updatedParticipants = signup.participants.filter((p) => p.heroId !== heroId);
+    
+    await signupRef.update({
+      participants: updatedParticipants,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`[Scheduled Raid] Hero ${heroId} left ${signupId}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error leaving scheduled raid:', error);
+    res.status(500).json({ error: 'Failed to leave raid' });
+  }
+});
+
+// Delete/cancel a scheduled raid
+router.delete('/scheduled/:signupId', async (req, res) => {
+  try {
+    const { signupId } = req.params;
+    const { organizerId } = req.body;
+    
+    const signupRef = db.collection('scheduledGuildRaids').doc(signupId);
+    const signupDoc = await signupRef.get();
+    
+    if (!signupDoc.exists) {
+      return res.status(404).json({ error: 'Scheduled raid not found' });
+    }
+    
+    const signup = signupDoc.data();
+    
+    // Only organizer can delete
+    if (signup.organizer !== organizerId) {
+      return res.status(403).json({ error: 'Only the organizer can cancel this raid' });
+    }
+    
+    // Delete the scheduled raid
+    await signupRef.delete();
+    
+    console.log(`[Scheduled Raid] Deleted ${signupId} by ${organizerId}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting scheduled raid:', error);
+    res.status(500).json({ error: 'Failed to delete raid' });
+  }
+});
+
+// Start a scheduled raid manually (before scheduled time)
+router.post('/scheduled/:signupId/start', async (req, res) => {
+  try {
+    const { signupId } = req.params;
+    
+    const signupRef = db.collection('scheduledGuildRaids').doc(signupId);
+    const signupDoc = await signupRef.get();
+    
+    if (!signupDoc.exists) {
+      return res.status(404).json({ error: 'Scheduled raid not found' });
+    }
+    
+    const signup = signupDoc.data();
+    
+    // Start the raid
+    const heroIds = signup.participants.map((p) => p.heroId);
+    
+    // Use the existing startRaid logic
+    const startResponse = await fetch(`http://localhost:${process.env.PORT || 3001}/api/raids/${signup.raidId}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participants: heroIds })
+    });
+    
+    const startData = await startResponse.json();
+    
+    if (!startData.success) {
+      return res.status(400).json({ error: startData.message || 'Failed to start raid' });
+    }
+    
+    // Mark scheduled raid as started
+    await signupRef.update({
+      status: 'started',
+      instanceId: startData.instanceId,
+      startedAt: admin.firestore.Timestamp.now()
+    });
+    
+    console.log(`[Scheduled Raid] Started ${signupId} → instance ${startData.instanceId}`);
+    
+    res.json({
+      success: true,
+      instanceId: startData.instanceId
+    });
+  } catch (error) {
+    console.error('Error starting scheduled raid:', error);
+    res.status(500).json({ error: 'Failed to start raid' });
   }
 });
 
