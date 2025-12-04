@@ -383,3 +383,5 @@ case 'switch':
 3. 🔄 Make `!switch [number]` an alias for `!join [number]` for user convenience
 4. 📝 Update docs to promote `!join [number]` as the primary hero switching method
 
+
+

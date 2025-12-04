@@ -383,3 +383,5 @@ When testing backend, check logs for:
 ❌ CRITICAL: Cannot broadcast hero removal
 ```
 
+
+
