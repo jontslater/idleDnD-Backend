@@ -16,10 +16,6 @@ let twitchClient = null; // Legacy bot client (fallback)
 const streamerClients = new Map(); // streamerUsername -> tmi.Client
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
-// Track active chatters per channel (rolling 1-hour window)
-// Map<streamerTwitchId, Map<userId, lastChatTime>>
-const activeChattersByChannel = new Map();
-
 /**
  * Initialize Twitch event handlers
  * This will be called from the main server
@@ -75,43 +71,6 @@ export function handleTwitchEvents() {
     const username = tags.username;
     const userId = tags['user-id'];
     const channelName = channel.replace('#', '').toLowerCase();
-    const streamerTwitchId = tags['room-id']; // Numeric Twitch ID of the streamer
-    
-    console.log(`[Chatter Debug] 📝 Message from ${username} in ${channelName}, room-id: ${streamerTwitchId}`);
-    
-    // Track this user as active chatter (for viewer bonuses)
-    // Use streamerTwitchId as key so broadcasts go to correct WebSocket room
-    if (streamerTwitchId) {
-      console.log(`[Chatter Tracking] ✅ Tracking ${username} (${userId}) in streamer ${streamerTwitchId}`);
-      if (!activeChattersByChannel.has(streamerTwitchId)) {
-        activeChattersByChannel.set(streamerTwitchId, new Map());
-      }
-      const chatters = activeChattersByChannel.get(streamerTwitchId);
-      chatters.set(userId, Date.now());
-      
-      // Find hero ID for this user and broadcast chat activity (for rested XP)
-      try {
-        const { db } = await import('../index.js');
-        const heroSnapshot = await db.collection('heroes')
-          .where('twitchUserId', '==', userId)
-          .where('currentBattlefieldId', '==', `twitch:${streamerTwitchId}`)
-          .limit(1)
-          .get();
-        
-        if (!heroSnapshot.empty) {
-          const heroDoc = heroSnapshot.docs[0];
-          broadcastToRoom(streamerTwitchId, {
-            type: 'chat_activity',
-            username,
-            userId,
-            heroId: heroDoc.id,
-            timestamp: Date.now()
-          });
-        }
-      } catch (err) {
-        console.error('[Chatter Tracking] Error finding hero for chat activity:', err);
-      }
-    }
     
     // Log all messages for debugging
     if (message.trim().startsWith('!')) {
@@ -455,43 +414,6 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
     const username = tags.username;
     const userId = tags['user-id'];
     const channelName = channel.replace('#', '').toLowerCase();
-    const streamerTwitchId = tags['room-id']; // Numeric Twitch ID of the streamer
-    
-    console.log(`[Chatter Debug] 📝 Message from ${username} in ${channelName}, room-id: ${streamerTwitchId}`);
-    
-    // Track this user as active chatter (for viewer bonuses)
-    // Use streamerTwitchId as key so broadcasts go to correct WebSocket room
-    if (streamerTwitchId) {
-      console.log(`[Chatter Tracking] ✅ Tracking ${username} (${userId}) in streamer ${streamerTwitchId}`);
-      if (!activeChattersByChannel.has(streamerTwitchId)) {
-        activeChattersByChannel.set(streamerTwitchId, new Map());
-      }
-      const chatters = activeChattersByChannel.get(streamerTwitchId);
-      chatters.set(userId, Date.now());
-      
-      // Find hero ID for this user and broadcast chat activity (for rested XP)
-      try {
-        const { db } = await import('../index.js');
-        const heroSnapshot = await db.collection('heroes')
-          .where('twitchUserId', '==', userId)
-          .where('currentBattlefieldId', '==', `twitch:${streamerTwitchId}`)
-          .limit(1)
-          .get();
-        
-        if (!heroSnapshot.empty) {
-          const heroDoc = heroSnapshot.docs[0];
-          broadcastToRoom(streamerTwitchId, {
-            type: 'chat_activity',
-            username,
-            userId,
-            heroId: heroDoc.id,
-            timestamp: Date.now()
-          });
-        }
-      } catch (err) {
-        console.error('[Chatter Tracking] Error finding hero for chat activity:', err);
-      }
-    }
     
     // Log all messages for debugging
     if (message.trim().startsWith('!')) {
@@ -694,46 +616,3 @@ export function getStreamerClient(streamerUsername) {
   }
   return null;
 }
-
-// ====== ACTIVE CHATTER TRACKING & BROADCASTING ======
-
-// Clean up inactive chatters (every minute)
-setInterval(() => {
-  const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  
-  activeChattersByChannel.forEach((chatters, streamerTwitchId) => {
-    let removedCount = 0;
-    chatters.forEach((lastChatTime, userId) => {
-      if (lastChatTime < oneHourAgo) {
-        chatters.delete(userId);
-        removedCount++;
-      }
-    });
-    
-    if (removedCount > 0) {
-      console.log(`[Chatter Cleanup] 🧹 Removed ${removedCount} inactive chatters from streamer ${streamerTwitchId} (${chatters.size} remain)`);
-    }
-  });
-}, 60 * 1000); // Every minute
-
-// Broadcast chatter count (every 30 seconds)
-const broadcastInterval = setInterval(() => {
-  console.log(`[Chatter Broadcast] 🔄 Running broadcast cycle... (${activeChattersByChannel.size} channels tracked)`);
-  
-  activeChattersByChannel.forEach((chatters, streamerTwitchId) => {
-    const count = chatters.size;
-    
-    console.log(`[Chatter Broadcast] 👥 Streamer ${streamerTwitchId}: ${count} active chatters`);
-    
-    // Broadcast to browser sources for this streamer
-    // Use numeric Twitch ID as room identifier (matches WebSocket connection)
-    broadcastToRoom(streamerTwitchId, {
-      type: 'chatter_count_update',
-      count: count,
-      timestamp: Date.now()
-    });
-  });
-}, 30 * 1000); // Every 30 seconds
-
-console.log('[Chatter Tracking] ✅ Initialized active chatter tracking and broadcasting');
-console.log('[Chatter Tracking] 📡 Broadcast interval running every 30 seconds');

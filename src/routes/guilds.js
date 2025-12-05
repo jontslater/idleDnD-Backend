@@ -59,35 +59,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'createdBy is required' });
     }
     
-    // Initialize guild with creator as leader
     const guildData = {
       ...req.body,
-      createdBy: req.body.createdBy, // Hero ID
-      createdByHeroName: req.body.creatorHeroName || req.body.creatorUsername || 'Unknown', // Hero name for display
       memberIds: [req.body.createdBy],
-      members: [
-        {
-          userId: req.body.createdBy,
-          username: req.body.creatorHeroName || req.body.creatorUsername || 'Unknown',
-          rank: 'leader',
-          contributionPoints: 0,
-          heroRole: req.body.heroRole || 'warrior',
-          heroLevel: req.body.heroLevel || 1,
-          joinedAt: admin.firestore.Timestamp.now()
-        }
-      ],
-      level: 1,
-      gold: 0,
-      maxMembers: 50,
-      joinMode: req.body.joinMode || 'open',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     
     const docRef = await db.collection('guilds').add(guildData);
     const doc = await docRef.get();
-    
-    console.log(`[Guild] ✅ Created guild: ${req.body.name} by ${req.body.createdBy}`);
     
     res.status(201).json({ id: doc.id, ...doc.data() });
   } catch (error) {

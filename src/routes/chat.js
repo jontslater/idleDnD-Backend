@@ -7,96 +7,6 @@ import fetch from 'node-fetch';
 const router = express.Router();
 
 /**
- * Assess what role the battlefield needs most
- * @param {string} battlefieldId - The battlefield to assess
- * @returns {Promise<string>} - 'tank', 'healer', or 'dps'
- */
-async function assessBattlefieldNeeds(battlefieldId) {
-  // Get all heroes currently on the battlefield
-  const heroesSnapshot = await db.collection('heroes')
-    .where('currentBattlefieldId', '==', battlefieldId)
-    .get();
-  
-  if (heroesSnapshot.empty) {
-    // No heroes on battlefield - default to tank (every party needs a tank!)
-    console.log(`[Assessment] No heroes on battlefield ${battlefieldId} - defaulting to tank`);
-    return 'tank';
-  }
-  
-  const heroes = heroesSnapshot.docs.map(doc => doc.data());
-  
-  // Count heroes by category (tank, healer, dps)
-  const counts = { tank: 0, healer: 0, dps: 0 };
-  
-  heroes.forEach(hero => {
-    const category = ROLE_CONFIG[hero.role]?.category || 'dps';
-    counts[category] = (counts[category] || 0) + 1;
-  });
-  
-  console.log(`[Assessment] Battlefield ${battlefieldId} composition:`, counts);
-  
-  // Priority: Healer > Tank > DPS
-  // Every party needs at least 1 healer, 1 tank
-  if (counts.healer === 0) {
-    console.log(`[Assessment] No healers - assigning healer`);
-    return 'healer';
-  }
-  if (counts.tank === 0) {
-    console.log(`[Assessment] No tanks - assigning tank`);
-    return 'tank';
-  }
-  
-  // If we have healer + tank, return the lowest count
-  const lowest = Object.entries(counts).sort((a, b) => a[1] - b[1])[0][0];
-  console.log(`[Assessment] Balanced party - assigning lowest count: ${lowest} (${counts[lowest]} existing)`);
-  return lowest;
-}
-
-/**
- * Generate starter gear for a new hero
- * @param {string} role - The hero's role/class
- * @returns {object} - Equipment object with starter items
- */
-function generateStarterGear(role) {
-  const category = ROLE_CONFIG[role]?.category || 'dps';
-  const displayName = ROLE_CONFIG[role]?.displayName || role;
-  
-  const gear = {
-    weapon: {
-      name: `Starter ${displayName} Weapon`,
-      rarity: 'common',
-      attack: category === 'dps' ? 15 : 10,
-      defense: 0,
-      hp: 0,
-      level: 1
-    },
-    armor: {
-      name: `Starter ${category === 'tank' ? 'Plate' : category === 'healer' ? 'Cloth' : 'Leather'} Armor`,
-      rarity: 'common',
-      attack: 0,
-      defense: category === 'tank' ? 20 : 10,
-      hp: category === 'tank' ? 50 : 25,
-      level: 1
-    }
-  };
-  
-  // Shield for tanks only
-  if (category === 'tank') {
-    gear.shield = {
-      name: 'Starter Shield',
-      rarity: 'common',
-      attack: 0,
-      defense: 15,
-      hp: 30,
-      level: 1
-    };
-  }
-  
-  console.log(`[Starter Gear] Generated ${Object.keys(gear).length} items for ${displayName} (${category})`);
-  return gear;
-}
-
-/**
  * Handle !join command from Twitch chat
  * POST /api/chat/join
  * Body: {
@@ -163,9 +73,8 @@ router.post('/join', async (req, res) => {
           error: `@${viewerUsername} No characters found. Use !join [class] to create one!` 
         });
       }
-    } else if (!existingHeroesSnapshot.empty && !classKey) {
-      // Use the most recently active hero ONLY if no specific class was requested
-      // If user types "!join bloodknight", they want a NEW bloodknight, not their existing monk
+    } else if (!existingHeroesSnapshot.empty) {
+      // Use the most recently active hero (by lastActiveAt, fallback to updatedAt)
       const heroes = existingHeroesSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
       heroes.sort((a, b) => {
         // Prefer lastActiveAt, fallback to updatedAt
@@ -178,106 +87,82 @@ router.post('/join', async (req, res) => {
         return bTime - aTime;
       });
       hero = heroes[0];
-      console.log(`[Join] Using existing hero: ${hero.name} (${hero.role})`);
     }
 
-    // Handle existing hero - Use TRANSACTION for atomicity
+    // Handle existing hero
     if (hero) {
-      console.log(`[Join] 🔒 Using transaction to join ${hero.name} (${hero.id}) to battlefield ${battlefieldId}`);
-      
-      // Collect data before transaction
-      const oldBattlefieldId = hero.currentBattlefieldId || 'world';
-      const isMovingBattlefield = oldBattlefieldId !== battlefieldId;
-      
-      // Execute atomic transaction to update all heroes
-      let transactionResult;
+      // CRITICAL: Remove ALL other heroes of this user from ALL battlefields
+      // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
+      // When joining with hero B, remove hero A/C/D from their battlefields
       try {
-        transactionResult = await db.runTransaction(async (transaction) => {
-          // 1. Get all user's heroes in the transaction
-          const allUserHeroesSnapshot = await transaction.get(
-            db.collection('heroes').where('twitchUserId', '==', viewerId)
-          );
+        const allUserHeroesSnapshot = await db.collection('heroes')
+          .where('twitchUserId', '==', viewerId)
+          .get();
+        
+        const otherHeroes = allUserHeroesSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(h => h.id !== hero.id && h.currentBattlefieldId); // Other heroes that are on battlefields
+        
+        if (otherHeroes.length > 0) {
+          console.log(`[Join] User ${viewerUsername} has ${otherHeroes.length} other heroes on battlefields. Removing them...`);
           
-          const allHeroes = allUserHeroesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          const selectedHero = allHeroes.find(h => h.id === hero.id);
-          
-          if (!selectedHero) {
-            throw new Error('Hero not found in transaction');
-          }
-          
-          // 2. Clear ALL other heroes' battlefield assignments
-          const otherHeroes = allHeroes.filter(h => h.id !== hero.id && h.currentBattlefieldId);
+          // Broadcast removal for each hero on a battlefield
+          const { broadcastToRoom } = await import('../websocket/server.js');
           
           for (const otherHero of otherHeroes) {
+            const otherBattlefieldId = otherHero.currentBattlefieldId;
+            
+            // Extract Twitch ID from battlefield ID for broadcast
+            let otherStreamerTwitchId = null;
+            if (otherBattlefieldId.startsWith('twitch:')) {
+              const identifier = otherBattlefieldId.replace('twitch:', '');
+              if (/^\d+$/.test(identifier)) {
+                otherStreamerTwitchId = identifier;
+              } else {
+                // Legacy username format - look up
+                const snapshot = await db.collection('heroes')
+                  .where('twitchUsername', '==', identifier.toLowerCase())
+                  .limit(1)
+                  .get();
+                if (!snapshot.empty) {
+                  otherStreamerTwitchId = snapshot.docs[0].data().twitchUserId;
+                }
+              }
+            }
+            
+            // Broadcast removal from old battlefield
+            if (otherStreamerTwitchId) {
+              console.log(`📡 [Join] Broadcasting removal of hero ${otherHero.id} from battlefield ${otherBattlefieldId}`);
+              broadcastToRoom(String(otherStreamerTwitchId), {
+                type: 'hero_left_battlefield',
+                hero: { ...otherHero, id: otherHero.id },
+                message: `${otherHero.name || viewerUsername} has switched to another character`,
+                timestamp: Date.now()
+              });
+            }
+            
+            // Remove battlefield assignment from Firebase
             const otherHeroRef = db.collection('heroes').doc(otherHero.id);
-            transaction.update(otherHeroRef, {
+            await otherHeroRef.update({
               currentBattlefieldId: admin.firestore.FieldValue.delete(),
               currentBattlefieldType: admin.firestore.FieldValue.delete(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
-          }
-          
-          // 3. Update selected hero's battlefield assignment
-          const heroRef = db.collection('heroes').doc(hero.id);
-          transaction.update(heroRef, {
-            currentBattlefieldId: battlefieldId,
-            currentBattlefieldType: 'streamer',
-            lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-          
-          return { selectedHero, otherHeroes };
-        });
-        
-        console.log(`✅ [Join] Transaction succeeded - ${transactionResult.otherHeroes.length} other heroes cleared, hero ${hero.id} assigned to ${battlefieldId}`);
-      } catch (transactionError) {
-        console.error('❌ [Join] Transaction failed:', transactionError);
-        return res.status(500).json({ error: 'Failed to join battlefield - transaction error' });
-      }
-      
-      // AFTER transaction succeeds, broadcast removals (non-critical)
-      try {
-        const { broadcastToRoom } = await import('../websocket/server.js');
-        
-        // Broadcast removal for each other hero that was on a battlefield
-        for (const otherHero of transactionResult.otherHeroes) {
-          const otherBattlefieldId = otherHero.currentBattlefieldId;
-          
-          // Extract Twitch ID from battlefield ID for broadcast
-          let otherStreamerTwitchId = null;
-          if (otherBattlefieldId.startsWith('twitch:')) {
-            const identifier = otherBattlefieldId.replace('twitch:', '');
-            if (/^\d+$/.test(identifier)) {
-              otherStreamerTwitchId = identifier;
-            } else {
-              // Legacy username format - look up
-              const snapshot = await db.collection('heroes')
-                .where('twitchUsername', '==', identifier.toLowerCase())
-                .limit(1)
-                .get();
-              if (!snapshot.empty) {
-                otherStreamerTwitchId = snapshot.docs[0].data().twitchUserId;
-              }
-            }
-          }
-          
-          // Broadcast removal from old battlefield
-          if (otherStreamerTwitchId) {
-            console.log(`📡 [Join] Broadcasting removal of ${otherHero.name} from battlefield ${otherBattlefieldId}`);
-            broadcastToRoom(String(otherStreamerTwitchId), {
-              type: 'hero_left_battlefield',
-              hero: { ...otherHero, id: otherHero.id },
-              message: `${otherHero.name || viewerUsername} switched to another character`,
-              timestamp: Date.now()
-            });
+            
+            console.log(`✅ [Join] Removed hero ${otherHero.id} (${otherHero.name}) from battlefield ${otherBattlefieldId}`);
           }
         }
-      } catch (broadcastError) {
-        console.error('❌ [Join] Error broadcasting hero removals (non-fatal):', broadcastError);
-        // Continue even if broadcast fails - Firebase listeners will still update
+      } catch (cleanupError) {
+        console.error('❌ [Join] Error cleaning up other heroes:', cleanupError);
+        // Continue even if cleanup fails - don't block the join
       }
       
-      // If hero was moving from another battlefield, broadcast removal
+      // Check if THIS hero is moving from a different battlefield
+      const oldBattlefieldId = hero.currentBattlefieldId || 'world';
+      const isMovingBattlefield = oldBattlefieldId !== battlefieldId;
+      
+      // If moving battlefields, broadcast to old battlefield FIRST (before updating)
+      // This ensures immediate removal from the old battlefield
       if (isMovingBattlefield && oldBattlefieldId && oldBattlefieldId !== battlefieldId && oldBattlefieldId !== 'world') {
         try {
           const { broadcastToRoom } = await import('../websocket/server.js');
@@ -336,8 +221,18 @@ router.post('/join', async (req, res) => {
         }
       }
       
-      // Get updated hero data after transaction
+      // Update existing hero's battlefield assignment and lastActiveAt
       const heroRef = db.collection('heroes').doc(hero.id);
+      console.log(`[Join] Updating Firebase for hero ${hero.id} - setting currentBattlefieldId to: ${battlefieldId}`);
+      
+      await heroRef.update({
+        currentBattlefieldId: battlefieldId,
+        currentBattlefieldType: 'streamer',
+        lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Get updated hero and verify the write
       const updatedHero = await heroRef.get();
       const heroData = { ...updatedHero.data(), id: updatedHero.id };
       
@@ -401,24 +296,10 @@ router.post('/join', async (req, res) => {
     // If no hero found and no heroIndex specified, create a new hero
     if (!hero) {
       // Determine class to join as
-      let role = classKey;
+      let role = classKey || 'berserker';
       
-      // If no class specified, assess what the battlefield needs
-      if (!role) {
-        console.log(`[Join] No class specified - assessing battlefield needs for ${viewerUsername}`);
-        const neededCategory = await assessBattlefieldNeeds(battlefieldId);
-        console.log(`[Join] Battlefield needs: ${neededCategory}. Auto-selecting...`);
-        
-        // Pick a random class from the needed category
-        const classesInCategory = Object.keys(ROLE_CONFIG).filter(
-          k => ROLE_CONFIG[k].category === neededCategory
-        );
-        role = classesInCategory[Math.floor(Math.random() * classesInCategory.length)];
-        
-        console.log(`[Join] 🎯 Auto-selected: ${role} (${ROLE_CONFIG[role].displayName}) for ${viewerUsername}`);
-      }
-      // Handle category shortcuts (tank, healer, dps) - user override
-      else if (role === 'tank') {
+      // Handle category shortcuts (tank, healer, dps)
+      if (role === 'tank') {
         const tankClasses = Object.keys(ROLE_CONFIG).filter(k => ROLE_CONFIG[k].category === 'tank');
         role = tankClasses[Math.floor(Math.random() * tankClasses.length)];
       } else if (role === 'healer') {
@@ -434,12 +315,8 @@ router.post('/join', async (req, res) => {
         return res.status(400).json({ error: `Invalid class: ${role}` });
       }
 
-      // Create new hero with starter gear and XP boost
+      // Create new hero
       const config = ROLE_CONFIG[role];
-      const starterGear = generateStarterGear(role);
-      
-      console.log(`[Join] 🎁 Creating new hero for ${viewerUsername} with starter gear and XP boost`);
-      
       const heroData = {
         name: viewerUsername,
         twitchUserId: viewerId,
@@ -457,10 +334,10 @@ router.post('/join', async (req, res) => {
         lastTokenClaim: Date.now(),
         lastCommandTime: Date.now(),
         equipment: {
-          weapon: starterGear.weapon || null,
-          armor: starterGear.armor || null,
+          weapon: null,
+          armor: null,
           accessory: null,
-          shield: starterGear.shield || null,
+          shield: null,
           helm: null,
           cloak: null,
           gloves: null,
@@ -480,14 +357,6 @@ router.post('/join', async (req, res) => {
           health: 0
         },
         activeBuffs: {},
-        shopBuffs: {
-          xpBoost: {
-            multiplier: 2.0, // 100% bonus XP
-            remainingDuration: 3600000, // 1 hour (in milliseconds)
-            lastUpdateTime: Date.now(),
-            startTime: Date.now()
-          }
-        },
         profession: null,
         skills: {},
         skillPoints: 0,
@@ -499,12 +368,6 @@ router.post('/join', async (req, res) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
-      
-      console.log(`[Join] ✨ New hero created with:
-        - Role: ${config.displayName} (${role})
-        - Starter Gear: ${Object.keys(starterGear).join(', ')}
-        - XP Boost: 2.0x for 1 hour
-        - Battlefield: ${battlefieldId}`);
 
       const docRef = await db.collection('heroes').add(heroData);
       const doc = await docRef.get();

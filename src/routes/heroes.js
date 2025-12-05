@@ -630,14 +630,24 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
 });
 
 // Gold Sinks - Balanced, not gacha
-// Upgrade equipment level (1-5 levels)
+// Upgrade equipment with custom stat selection (2 of 4 random stats)
 router.post('/:userId/upgrade-item', async (req, res) => {
   try {
     const { userId } = req.params;
-    const { itemId, levels = 1 } = req.body; // levels: 1-5
+    const { itemId, selectedStats, upgradeLevel } = req.body; // upgradeLevel is optional - which level to upgrade/replace
 
-    if (!itemId || levels < 1 || levels > 5) {
-      return res.status(400).json({ error: 'Invalid request. Levels must be 1-5' });
+    console.log(`[Upgrade] Received upgrade request: userId=${userId}, itemId=${itemId}, upgradeLevel=${upgradeLevel}, selectedStats:`, selectedStats);
+
+    // Validate selectedStats (must be exactly 2)
+    if (!selectedStats || !Array.isArray(selectedStats) || selectedStats.length !== 2) {
+      return res.status(400).json({ error: 'Invalid request. Must select exactly 2 stats.' });
+    }
+
+    // Validate each stat
+    for (const stat of selectedStats) {
+      if (!stat.type || typeof stat.value !== 'number') {
+        return res.status(400).json({ error: 'Invalid stat format. Each stat must have type and value.' });
+      }
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -678,33 +688,60 @@ router.post('/:userId/upgrade-item', async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Calculate upgrade cost (balanced: 100g per level, scales with current item level)
-    const currentLevel = item.level || 1;
-    const baseCost = 100; // Base cost per level
-    const levelMultiplier = 1 + (currentLevel * 0.1); // 10% increase per level
-    const totalCost = Math.floor(baseCost * levels * levelMultiplier);
+    // Check max upgrade level (max 2 upgrade levels)
+    const currentLevel = item.upgradeLevel || 0;
+    const maxLevel = 2;
+    if (currentLevel >= maxLevel) {
+      return res.status(400).json({ error: 'Item is already fully upgraded (max level +2)' });
+    }
+
+    // Calculate upgrade cost (matches frontend formula)
+    const rarityMultipliers = {
+      'common': 1.0,
+      'uncommon': 1.5,
+      'rare': 2.0,
+      'epic': 3.0,
+      'legendary': 5.0,
+      'artifact': 10.0
+    };
+
+    const baseCost = 100;
+    const rarityMultiplier = rarityMultipliers[item.rarity?.toLowerCase() || 'common'] || 1.0;
+    const upgradeCost = Math.ceil(baseCost * rarityMultiplier * Math.pow(1.5, currentLevel));
 
     const currentGold = hero.gold || 0;
-    if (currentGold < totalCost) {
+    if (currentGold < upgradeCost) {
       return res.status(400).json({ 
-        error: `Not enough gold! Need ${totalCost}g, have ${currentGold}g` 
+        error: `Not enough gold! Need ${upgradeCost}g, have ${currentGold}g` 
       });
     }
 
-    // Upgrade item
-    const newLevel = currentLevel + levels;
-    const statMultiplier = 1 + (newLevel * 0.05); // 5% stat increase per level
-
+    // Prepare upgraded item with new upgrade stats
+    // New stats REPLACE existing stats at that level (not stack)
+    const newLevel = currentLevel + 1;
+    const existingUpgradeStats = item.upgradeStats || [];
+    
+    // Replace stats at this level if they exist, otherwise add new level
+    const newUpgradeEntry = {
+      level: newLevel,
+      selectedStats: selectedStats.map(stat => ({
+        type: stat.type,
+        value: stat.value
+      }))
+    };
+    
+    // Replace existing stats at this level, or add new
+    const filteredUpgradeStats = existingUpgradeStats.filter((upgrade) => upgrade.level !== newLevel);
+    const updatedUpgradeStats = [...filteredUpgradeStats, newUpgradeEntry];
+    
     const upgradedItem = {
       ...item,
-      level: newLevel,
-      attack: Math.floor((item.attack || 0) * statMultiplier),
-      defense: Math.floor((item.defense || 0) * statMultiplier),
-      hp: Math.floor((item.hp || 0) * statMultiplier)
+      upgradeLevel: newLevel,
+      upgradeStats: updatedUpgradeStats
     };
 
     const updates = {
-      gold: currentGold - totalCost,
+      gold: currentGold - upgradeCost,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
@@ -720,13 +757,14 @@ router.post('/:userId/upgrade-item', async (req, res) => {
 
     await heroRef.update(updates);
 
-    console.log(`⚡ ${userId} upgraded item ${itemId} by ${levels} level(s) for ${totalCost}g`);
+    const statNames = selectedStats.map(s => `${s.value}% ${s.type}`).join(' & ');
+    console.log(`⚡ ${userId} upgraded item ${itemId} to +${newLevel} with stats: ${statNames} (cost: ${upgradeCost}g)`);
 
     res.json({ 
       success: true, 
-      message: `Item upgraded to level ${newLevel}! Gold remaining: ${currentGold - totalCost}g`,
+      message: `Item upgraded to +${newLevel}! Selected: ${statNames}. Gold remaining: ${currentGold - upgradeCost}g`,
       item: upgradedItem,
-      newGold: currentGold - totalCost
+      newGold: currentGold - upgradeCost
     });
   } catch (error) {
     console.error('Error upgrading item:', error);
