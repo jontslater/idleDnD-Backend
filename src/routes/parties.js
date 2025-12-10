@@ -352,6 +352,9 @@ router.post('/:partyId/invite', async (req, res) => {
     const inviterMember = party.memberData.find(m => m.userId === inviterId);
     const inviterName = inviterMember?.username || inviterId;
 
+    // Check if this is a test player (userId starts with 'test-')
+    const isTestPlayer = actualInviteeUserId.startsWith('test-');
+    
     // Create invite - use normalized user ID and hero data
     const inviteData = {
       partyId,
@@ -371,6 +374,56 @@ router.post('/:partyId/invite', async (req, res) => {
     const inviteRef = await db.collection('partyInvites').add(inviteData);
 
     console.log(`[Parties] Invite sent: ${inviterId} -> ${actualInviteeUserId} (normalized from ${inviteeId}) for party ${partyId}`);
+
+    // Auto-accept for test players (userId starts with 'test-')
+    if (isTestPlayer) {
+      try {
+        // Get party to check size
+        const partyRef = db.collection('parties').doc(partyId);
+        const partyDoc = await partyRef.get();
+        
+        if (partyDoc.exists) {
+          const party = partyDoc.data();
+          const queueType = party.queueType || 'dungeon';
+          const maxSize = PARTY_LIMITS[queueType] || PARTY_LIMITS.dungeon;
+          
+          // Only auto-accept if party isn't full
+          if (party.members.length < maxSize) {
+            // Add member to party
+            await partyRef.update({
+              members: admin.firestore.FieldValue.arrayUnion(actualInviteeUserId),
+              memberData: admin.firestore.FieldValue.arrayUnion({
+                userId: actualInviteeUserId,
+                username: inviteeName || actualInviteeUserId,
+                heroId: actualHeroId,
+                heroName: actualHeroName,
+                heroRole: actualHeroRole,
+                heroLevel: actualHeroLevel
+              }),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Mark invite as accepted
+            await inviteRef.update({ 
+              status: 'accepted',
+              acceptedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            console.log(`[Parties] Test player ${actualInviteeUserId} auto-accepted invite to party ${partyId}`);
+            
+            return res.json({
+              success: true,
+              inviteId: inviteRef.id,
+              message: 'Test player auto-accepted invite and joined party',
+              autoAccepted: true
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[Parties] Error auto-accepting invite for test player:`, error);
+        // Continue with normal invite flow if auto-accept fails
+      }
+    }
 
     res.json({
       success: true,
@@ -776,8 +829,11 @@ router.post('/:partyId/cancel-queue', async (req, res) => {
       queueType: null,
       raidId: null,
       dungeonType: null,
+      dungeonId: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    
+    console.log(`[Parties] Party ${partyId} queue cancelled, status reset to forming`);
 
     console.log(`[Parties] Party ${partyId} queue cancelled by leader ${userId}`);
 
@@ -800,9 +856,18 @@ router.post('/:partyId/cancel-queue', async (req, res) => {
 router.post('/:partyId/queue', async (req, res) => {
   try {
     const { partyId } = req.params;
-    const { queueType, raidId, dungeonType } = req.body;
+    const { queueType, raidId, dungeonType, dungeonId, fillParty } = req.body;
+
+    console.log(`[Parties] 🔵 Queue request received for party ${partyId}:`, {
+      queueType,
+      raidId,
+      dungeonType,
+      dungeonId,
+      fillParty
+    });
 
     if (!queueType || !['dungeon', 'raid'].includes(queueType)) {
+      console.log(`[Parties] ❌ Invalid queueType: ${queueType}`);
       return res.status(400).json({ error: 'queueType must be "dungeon" or "raid"' });
     }
 
@@ -819,10 +884,55 @@ router.post('/:partyId/queue', async (req, res) => {
     }
 
     const party = partyDoc.data();
+    
+    // Validate party size against requirements
+    if (queueType === 'raid' && raidId) {
+      const { getRaidById } = await import('../data/raids.js');
+      const raidData = getRaidById(raidId);
+      
+      if (raidData) {
+        // Only validate if fillParty is false (immediate start)
+        // If fillParty is true, allow smaller parties to queue and wait for matchmaking
+        if (fillParty === false && party.memberData.length < raidData.minPlayers) {
+          return res.status(400).json({ 
+            error: `Party too small for ${raidData.name}. Need at least ${raidData.minPlayers} players to start immediately, but party has ${party.memberData.length}. Enable "Fill Party" to wait for matchmaking, or invite more members.`
+          });
+        }
+        if (party.memberData.length > raidData.maxPlayers) {
+          return res.status(400).json({ 
+            error: `Party too large for ${raidData.name}. Maximum ${raidData.maxPlayers} players, but party has ${party.memberData.length}.`
+          });
+        }
+      }
+    }
+    
+    // Validate dungeon party size if fillParty is false
+    if (queueType === 'dungeon' && fillParty === false && dungeonId) {
+      const { getDungeonById } = await import('../data/dungeons.js');
+      const dungeonData = getDungeonById(dungeonId);
+      
+      if (dungeonData) {
+        if (party.memberData.length < dungeonData.minPlayers) {
+          return res.status(400).json({ 
+            error: `Party too small for ${dungeonData.name}. Need at least ${dungeonData.minPlayers} players to start immediately, but party has ${party.memberData.length}. Enable "Fill Party" to wait for matchmaking, or invite more members.`
+          });
+        }
+      }
+    }
 
-    // Check party status
-    if (party.status !== PARTY_STATUS.FORMING) {
-      return res.status(400).json({ error: 'Party must be in forming status to queue' });
+    // Check party status - allow queuing if party is forming or just returned from instance
+    if (party.status !== PARTY_STATUS.FORMING && party.status !== PARTY_STATUS.IN_INSTANCE) {
+      return res.status(400).json({ error: 'Party must be in forming or in_instance status to queue' });
+    }
+    
+    // If party is in_instance, reset to forming before queueing
+    if (party.status === PARTY_STATUS.IN_INSTANCE) {
+      await partyRef.update({
+        status: PARTY_STATUS.FORMING,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      party.status = PARTY_STATUS.FORMING; // Update local party object
+      console.log(`[Parties] Reset party ${partyId} from in_instance to forming before queueing`);
     }
 
     // Validate party size
@@ -830,15 +940,258 @@ router.post('/:partyId/queue', async (req, res) => {
     if (party.members.length > maxSize) {
       return res.status(400).json({ error: `Party too large for ${queueType} (max ${maxSize} members)` });
     }
+    
+    console.log(`[Parties] Party status after reset: ${party.status}, memberData length: ${party.memberData?.length || 0}`);
 
     // Get all party member hero data
+    if (!party.memberData || party.memberData.length === 0) {
+      console.log(`[Parties] ❌ No memberData found in party`);
+      return res.status(400).json({ error: 'Party has no members' });
+    }
+    
+    console.log(`[Parties] 🔍 Fetching hero data for ${party.memberData.length} members...`);
     const heroPromises = party.memberData.map(member => 
       db.collection('heroes').doc(member.heroId).get()
     );
     const heroDocs = await Promise.all(heroPromises);
+    console.log(`[Parties] ✅ Fetched ${heroDocs.length} hero documents`);
 
     const queueResults = [];
     const errors = [];
+
+    // Check if we should start immediately (fillParty = false and party meets requirements)
+    if (queueType === 'raid' && fillParty === false && raidId) {
+      const { getRaidById } = await import('../data/raids.js');
+      const raidData = getRaidById(raidId);
+      
+      console.log(`[Parties] Checking immediate start for raid: fillParty=${fillParty}, partySize=${party.memberData?.length || 0}, minPlayers=${raidData?.minPlayers || 'N/A'}, maxPlayers=${raidData?.maxPlayers || 'N/A'}`);
+      
+      if (raidData && party.memberData && party.memberData.length >= raidData.minPlayers && party.memberData.length <= raidData.maxPlayers) {
+        // Party meets requirements - start immediately!
+        console.log(`[Parties] ✅ Party meets requirements, starting raid immediately`);
+        try {
+          // Prepare participants for raid instance
+          const raidParticipants = [];
+          for (let i = 0; i < party.memberData.length; i++) {
+            const member = party.memberData[i];
+            const heroDoc = heroDocs[i];
+            
+            if (!heroDoc.exists) {
+              errors.push({ userId: member.userId, error: 'Hero not found' });
+              continue;
+            }
+            
+            const hero = heroDoc.data();
+            const heroItemScore = calculateItemScore(hero.equipment || {});
+            const normalizedRole = normalizeRole(member.heroRole || hero.role);
+            
+            // Check requirements
+            if (hero.level < raidData.minLevel || heroItemScore < raidData.minItemScore) {
+              errors.push({ 
+                userId: member.userId, 
+                error: `Requirements not met. Need Level ${raidData.minLevel} and ${raidData.minItemScore} item score` 
+              });
+              continue;
+            }
+            
+            raidParticipants.push({
+              userId: member.userId,
+              username: member.username || 'Unknown',
+              heroId: member.heroId,
+              heroName: member.heroName || hero.name || 'Unknown',
+              heroLevel: hero.level || 1,
+              heroRole: normalizedRole,
+              itemScore: heroItemScore,
+              isAlive: true
+            });
+          }
+          
+          if (raidParticipants.length === party.memberData.length) {
+            // Generate wave enemies for each wave (except final boss wave)
+            const totalWaves = raidData.waves || 3;
+            const waveEnemies = [];
+            
+            for (let wave = 0; wave < totalWaves - 1; wave++) {
+              // Generate enemies for this wave
+              const enemyPool = [
+                { name: 'Goblin', weight: 3 },
+                { name: 'Orc', weight: 2 },
+                { name: 'Skeleton', weight: 2 },
+                { name: 'Imp', weight: 2 },
+                { name: 'Witch', weight: 1 },
+                { name: 'Skeleton Mage', weight: 1 }
+              ];
+              
+              // Heroic and Mythic add more dangerous enemies
+              if (raidData.difficulty === 'heroic' || raidData.difficulty === 'mythic') {
+                enemyPool.push(
+                  { name: 'Demon Lord', weight: 1 },
+                  { name: 'Adult Dragon', weight: 0.5 }
+                );
+              }
+              
+              // Calculate enemy count (scales with wave)
+              const baseCount = 2 + Math.floor(wave / 2);
+              const enemyCount = Math.min(baseCount, 5); // Cap at 5 enemies per wave
+              
+              // Select random enemies based on weights
+              const selectedEnemies = [];
+              const totalWeight = enemyPool.reduce((sum, e) => sum + e.weight, 0);
+              
+              for (let i = 0; i < enemyCount; i++) {
+                let random = Math.random() * totalWeight;
+                for (const enemy of enemyPool) {
+                  random -= enemy.weight;
+                  if (random <= 0) {
+                    selectedEnemies.push(enemy.name);
+                    break;
+                  }
+                }
+              }
+              
+              // Convert to comma-separated string format expected by frontend
+              waveEnemies.push(selectedEnemies.join(','));
+            }
+            
+            // All members valid - create raid instance immediately
+            const raidInstance = {
+              raidId: raidData.id,
+              organizerId: party.leaderId || party.members[0],
+              participants: raidParticipants,
+              participantIds: raidParticipants.map(p => p.userId),
+              status: 'active', // Use 'active' to match frontend listener query
+              currentWave: 0,
+              waves: totalWaves,
+              waveEnemies: waveEnemies, // Generated wave enemies
+              boss: {
+                name: raidData.boss.name,
+                hp: raidData.boss.hp,
+                maxHp: raidData.boss.hp,
+                attack: raidData.boss.attack,
+                defense: raidData.boss.defense || 0,
+                level: raidData.boss.level,
+                xp: raidData.boss.xp || 1000
+              },
+              combatLog: [],
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              partyId // Link to party
+            };
+            
+            const instanceRef = await db.collection('raidInstances').add(raidInstance);
+            
+            // Update all heroes to have activeInstance pointing to this raid
+            const participantHeroIds = raidParticipants.map(p => p.heroId);
+            const updatePromises = participantHeroIds.map(async (heroId) => {
+              try {
+                await db.collection('heroes').doc(heroId).update({
+                  activeInstance: {
+                    type: 'raid',
+                    instanceId: instanceRef.id
+                  },
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+              } catch (error) {
+                console.error(`[Parties] Failed to update hero ${heroId} with active instance:`, error);
+              }
+            });
+            
+            await Promise.all(updatePromises);
+            console.log(`[Parties] ✅ Updated all ${raidParticipants.length} heroes with active raid instance`);
+            
+            // Update party status
+            await partyRef.update({
+              status: PARTY_STATUS.IN_INSTANCE,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            console.log(`[Parties] ✅ Raid instance created: ${instanceRef.id}`);
+            return res.json({
+              success: true,
+              queued: 0,
+              total: party.memberData.length,
+              message: `Raid started immediately with ${party.memberData.length} party member(s)`,
+              instanceCreated: true,
+              instanceId: instanceRef.id
+            });
+          }
+        } catch (error) {
+          console.error(`[Parties] ❌ Failed to start raid immediately for party ${partyId}:`, error);
+          console.error(`[Parties] Error stack:`, error.stack);
+          // Fall through to queue normally if immediate start fails
+        }
+      } else {
+        console.log(`[Parties] ⚠️ Party does not meet requirements for immediate start: size=${party.memberData?.length || 0}, min=${raidData?.minPlayers || 'N/A'}, max=${raidData?.maxPlayers || 'N/A'}`);
+      }
+    }
+    
+    console.log(`[Parties] 📝 Proceeding to queue members (fillParty=${fillParty}, queueType=${queueType})...`);
+    
+    if (queueType === 'dungeon' && fillParty === false) {
+      const { getDungeonById } = await import('../data/dungeons.js');
+      const { createDungeonInstanceForGroup } = await import('./dungeon-matchmaking.js');
+      
+      const targetDungeonId = dungeonId || 'goblin_cave';
+      const dungeonData = getDungeonById(targetDungeonId);
+      
+      if (dungeonData && party.memberData.length >= dungeonData.minPlayers && party.memberData.length <= dungeonData.maxPlayers) {
+        // Party meets requirements - start immediately!
+        try {
+          // Prepare queue entries format for createDungeonInstanceForGroup
+          const queueMembers = [];
+          for (let i = 0; i < party.memberData.length; i++) {
+            const member = party.memberData[i];
+            const heroDoc = heroDocs[i];
+            
+            if (!heroDoc.exists) {
+              errors.push({ userId: member.userId, error: 'Hero not found' });
+              continue;
+            }
+            
+            const hero = heroDoc.data();
+            const heroItemScore = calculateItemScore(hero.equipment || {});
+            const normalizedRole = normalizeRole(member.heroRole || hero.role);
+            
+            queueMembers.push({
+              id: `temp-${member.userId}`, // Temporary ID for queue entry format
+              userId: member.userId,
+              heroId: member.heroId,
+              role: normalizedRole,
+              originalRole: member.heroRole || hero.role,
+              itemScore: heroItemScore,
+              dungeonType: dungeonType || 'normal',
+              dungeonId: targetDungeonId,
+              partyId
+            });
+          }
+          
+          if (queueMembers.length === party.memberData.length) {
+            // All members valid - create dungeon instance immediately
+            await createDungeonInstanceForGroup({
+              members: queueMembers,
+              partyId
+            }, dungeonData);
+            
+            // Update party status
+            await partyRef.update({
+              status: PARTY_STATUS.IN_INSTANCE,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            return res.json({
+              success: true,
+              queued: 0,
+              total: party.memberData.length,
+              message: `Dungeon started immediately with ${party.memberData.length} party member(s)`,
+              instanceCreated: true
+            });
+          }
+        } catch (error) {
+          console.error(`[Parties] Failed to start dungeon immediately for party ${partyId}:`, error);
+          // Fall through to queue normally if immediate start fails
+        }
+      }
+    }
 
     // Queue each party member
     for (let i = 0; i < party.memberData.length; i++) {
@@ -853,6 +1206,9 @@ router.post('/:partyId/queue', async (req, res) => {
       const hero = heroDoc.data();
       const heroLevel = hero.level || 1;
       const heroItemScore = calculateItemScore(hero.equipment || {});
+      
+      // Debug logging for item score calculation
+      console.log(`[Parties] Member ${member.userId} (${member.heroName || hero.name}): level=${heroLevel}, itemScore=${heroItemScore}, equipment keys:`, Object.keys(hero.equipment || {}));
 
       // Normalize role
       const normalizedRole = normalizeRole(member.heroRole || hero.role);
@@ -865,11 +1221,31 @@ router.post('/:partyId/queue', async (req, res) => {
             .limit(1)
             .get();
 
+          // Check if already in queue (but allow if it's from the same party - they might be re-queueing)
           if (!existingQueue.empty) {
-            errors.push({ userId: member.userId, error: 'Already in dungeon queue' });
-            continue;
+            const existingEntry = existingQueue.docs[0].data();
+            if (existingEntry.partyId !== partyId) {
+              errors.push({ userId: member.userId, error: 'Already in dungeon queue with a different party' });
+              continue;
+            }
+            // If same party, remove old entry first (re-queueing scenario)
+            await existingQueue.docs[0].ref.delete();
+            console.log(`[Parties] Removed old dungeon queue entry for member ${member.userId} (re-queueing)`);
           }
 
+          // Get available dungeons to determine which one to queue for
+          const { getDungeonById } = await import('../data/dungeons.js');
+          
+          // Use provided dungeonId or default to goblin_cave
+          const targetDungeonId = dungeonId || 'goblin_cave';
+          
+          // Validate dungeon exists
+          const dungeonData = getDungeonById(targetDungeonId);
+          if (!dungeonData) {
+            errors.push({ userId: member.userId, error: `Dungeon ${targetDungeonId} not found` });
+            continue;
+          }
+          
           const queueEntry = {
             userId: member.userId,
             heroId: member.heroId,
@@ -877,7 +1253,9 @@ router.post('/:partyId/queue', async (req, res) => {
             originalRole: member.heroRole || hero.role,
             itemScore: heroItemScore,
             dungeonType: dungeonType || 'normal',
+            dungeonId: targetDungeonId, // Specify which dungeon to queue for
             partyId, // Link to party
+            fillParty: fillParty !== false, // Default to true (wait for matchmaking), false = start immediately with party only
             queuedAt: admin.firestore.FieldValue.serverTimestamp(),
             expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000))
           };
@@ -899,8 +1277,9 @@ router.post('/:partyId/queue', async (req, res) => {
           if (heroLevel < raidData.minLevel || heroItemScore < raidData.minItemScore) {
             errors.push({ 
               userId: member.userId, 
-              error: `Requirements not met. Need Level ${raidData.minLevel} and ${raidData.minItemScore} item score` 
+              error: `Requirements not met. Need Level ${raidData.minLevel}+ (has ${heroLevel}) and ${raidData.minItemScore}+ Item Score (has ${heroItemScore})` 
             });
+            console.log(`[Parties] Member ${member.userId} failed requirements: level ${heroLevel}/${raidData.minLevel}, itemScore ${heroItemScore}/${raidData.minItemScore}`);
             continue;
           }
 
@@ -930,8 +1309,22 @@ router.post('/:partyId/queue', async (req, res) => {
             itemScore: heroItemScore,
             role: normalizedRole,
             partyId, // Link to party
+            fillParty: fillParty !== false, // Store fillParty flag (default to true)
             joinedAt: Date.now()
           };
+
+          // Check if already in queue (but allow if it's from the same party - they might be re-queueing)
+          const existingInQueue = raidQueue.participants.find(p => p.userId === member.userId);
+          if (existingInQueue && existingInQueue.partyId !== partyId) {
+            errors.push({ userId: member.userId, error: 'Already in raid queue with a different party' });
+            console.log(`[Parties] Member ${member.userId} already in raid queue with different party`);
+            continue;
+          }
+          // If same party, remove old entry first (re-queueing scenario)
+          if (existingInQueue && existingInQueue.partyId === partyId) {
+            raidQueue.participants = raidQueue.participants.filter(p => p.userId !== member.userId);
+            console.log(`[Parties] Removed old queue entry for member ${member.userId} (re-queueing)`);
+          }
 
           raidQueue.participants.push(participant);
 
@@ -940,6 +1333,7 @@ router.post('/:partyId/queue', async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
 
+          console.log(`[Parties] Successfully queued member ${member.userId} for raid ${raidId}`);
           queueResults.push({ userId: member.userId, success: true, type: 'raid', raidId });
         }
       } catch (error) {
@@ -959,23 +1353,52 @@ router.post('/:partyId/queue', async (req, res) => {
       });
     }
 
-    // Note: Matchmaking will be triggered automatically by the existing queue system
-    // when members are added to dungeonQueue or raidQueues collections
-    // The matchmaking functions check these collections periodically
+    // Trigger matchmaking immediately after queueing
+    if (queueResults.length > 0) {
+      if (queueType === 'dungeon') {
+        try {
+          const { tryMatchmaking } = await import('./dungeon-matchmaking.js');
+          await tryMatchmaking();
+          console.log(`[Parties] ✅ Triggered dungeon matchmaking after party queue`);
+        } catch (error) {
+          console.error(`[Parties] Failed to trigger dungeon matchmaking:`, error);
+          // Don't fail the request if matchmaking trigger fails
+        }
+      } else if (queueType === 'raid' && raidId) {
+        try {
+          const { getRaidById } = await import('../data/raids.js');
+          const { tryRaidMatchmaking } = await import('./raids.js');
+          const raidData = getRaidById(raidId);
+          if (raidData) {
+            await tryRaidMatchmaking(raidId, raidData);
+            console.log(`[Parties] ✅ Triggered raid matchmaking after party queue`);
+          }
+        } catch (error) {
+          console.error(`[Parties] Failed to trigger raid matchmaking:`, error);
+        }
+      }
+    }
+
+    console.log(`[Parties] Queue result: ${queueResults.length} queued, ${errors.length} errors out of ${party.memberData.length} members`);
+    if (errors.length > 0) {
+      console.log(`[Parties] Queue errors:`, errors);
+    }
 
     res.json({
       success: queueResults.length > 0,
       queued: queueResults.length,
-      total: party.members.length,
+      total: party.memberData.length,
       errors: errors.length > 0 ? errors : undefined,
       message: errors.length > 0 
-        ? `Queued ${queueResults.length} of ${party.members.length} members. Some members failed to queue.`
+        ? `Queued ${queueResults.length} of ${party.memberData.length} members. Some members failed to queue.`
         : `Successfully queued all ${queueResults.length} party members for ${queueType}`
     });
 
   } catch (error) {
-    console.error('[Parties] Error queueing party:', error);
-    res.status(500).json({ error: 'Failed to queue party' });
+    console.error('[Parties] ❌ Error queueing party:', error);
+    console.error('[Parties] Error stack:', error.stack);
+    console.error('[Parties] Error message:', error.message);
+    res.status(500).json({ error: 'Failed to queue party', details: error.message });
   }
 });
 
@@ -1004,9 +1427,20 @@ function calculateItemScore(equipment) {
   
   let score = 0;
   Object.values(equipment).forEach(item => {
-    if (item && item.baseStats) {
-      const stats = item.baseStats;
-      score += (stats.attack || 0) + (stats.defense || 0) + (stats.hp || 0) / 10;
+    if (item) {
+      // If item has itemScore directly, use it
+      if (item.itemScore) {
+        score += item.itemScore;
+      }
+      // Otherwise, calculate from stats
+      else if (item.baseStats) {
+        const stats = item.baseStats;
+        score += (stats.attack || 0) + (stats.defense || 0) + (stats.hp || 0) / 10;
+      }
+      // Or if stats are directly on the item
+      else {
+        score += (item.attack || 0) + (item.defense || 0) + (item.hp || 0) / 10;
+      }
     }
   });
   

@@ -41,6 +41,12 @@ export async function checkAchievements(userId, actionType, actionValue = 1) {
         case 'totalHealing':
           progress = hero.stats?.totalHealing || 0;
           break;
+        case 'tauntCount':
+          progress = hero.stats?.totalTaunts || 0;
+          break;
+        case 'totalBlocked':
+          progress = hero.stats?.totalBlocked || 0;
+          break;
         case 'level':
           progress = hero.level || 1;
           break;

@@ -1,8 +1,31 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { tryMatchmaking as tryFlexibleMatchmaking } from './dungeon-matchmaking.js';
 
 const router = express.Router();
+
+// Role normalization: Map hero roles to tank/healer/dps categories
+function normalizeRole(heroRole) {
+  if (!heroRole) return 'dps';
+  
+  const roleLower = heroRole.toLowerCase();
+  
+  // Tank roles
+  const tankRoles = ['guardian', 'paladin', 'warden', 'bloodknight', 'vanguard', 'brewmaster'];
+  if (tankRoles.includes(roleLower) || roleLower === 'tank') {
+    return 'tank';
+  }
+  
+  // Healer roles
+  const healerRoles = ['cleric', 'atoner', 'druid', 'lightbringer', 'shaman', 'mistweaver', 'chronomancer', 'bard'];
+  if (healerRoles.includes(roleLower) || roleLower === 'healer') {
+    return 'healer';
+  }
+  
+  // Everything else is DPS
+  return 'dps';
+}
 
 // Get queue status (must be before /queue route)
 router.get('/queue/status', async (req, res) => {
@@ -54,16 +77,96 @@ router.get('/queue/status', async (req, res) => {
 // Join queue
 router.post('/queue', async (req, res) => {
   try {
-    const { userId, heroId, role, itemScore, dungeonType = 'normal' } = req.body;
+    const { userId, heroId, role, itemScore, dungeonType = 'normal', dungeonId } = req.body;
     
     if (!userId || !heroId || !role) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    const validRoles = ['tank', 'healer', 'dps'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+    // Check if this is a solo dungeon - if so, start immediately
+    // Since we're limiting to Goblin Cave for launch, check if it's the only available dungeon
+    const { getAllDungeons, getDungeonById } = await import('../data/dungeons.js');
+    const allDungeons = getAllDungeons();
+    
+    // LAUNCH: Only Goblin Cave is available, check if it's solo
+    const launchDungeonId = 'goblin_cave';
+    const launchDungeon = getDungeonById(launchDungeonId);
+    
+    // If the only available dungeon is solo (no minPlayers or minPlayers === 1), start it immediately
+    if (launchDungeon && launchDungeon.type === 'solo' && (!launchDungeon.minPlayers || launchDungeon.minPlayers === 1)) {
+      // Solo dungeon - start immediately without queueing
+      console.log(`[Solo Dungeon] Starting ${launchDungeon.name} immediately for ${userId}`);
+      
+      // Create instance directly using the start endpoint logic
+      const heroDoc = await db.collection('heroes').doc(heroId).get();
+      if (!heroDoc.exists) {
+        return res.status(404).json({ error: 'Hero not found' });
+      }
+      
+      const hero = heroDoc.data();
+      const twitchUserId = hero.twitchUserId;
+      if (!twitchUserId) {
+        return res.status(400).json({ 
+          error: `Hero ${heroId} is missing twitchUserId field` 
+        });
+      }
+      
+      const participantData = [{
+        userId: heroId,
+        heroId: heroId,
+        twitchUserId: twitchUserId,
+        username: hero.name || heroId,
+        heroName: hero.name,
+        heroRole: hero.role,
+        heroLevel: hero.level || 1,
+        currentHp: hero.hp || hero.maxHp,
+        maxHp: hero.maxHp,
+        isAlive: true,
+        deaths: 0
+      }];
+      
+      const participantIds = [twitchUserId];
+      
+      // Create dungeon instance
+      const dungeonInstance = {
+        dungeonId: launchDungeon.id,
+        difficulty: launchDungeon.difficulty || 'normal',
+        status: 'active',
+        organizerId: userId,
+        participants: participantData,
+        participantIds: participantIds,
+        currentRoom: 0,
+        maxRooms: launchDungeon.rooms.length,
+        rooms: launchDungeon.rooms,
+        combatLog: [],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      
+      const instanceRef = await db.collection('dungeonInstances').add(dungeonInstance);
+      
+      // Update hero to have activeInstance pointing to this dungeon
+      await db.collection('heroes').doc(heroId).update({
+        activeInstance: {
+          type: 'dungeon',
+          instanceId: instanceRef.id
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      console.log(`[Solo Dungeon] ✅ Created dungeon instance ${instanceRef.id} for ${launchDungeon.name}`);
+      
+      return res.json({ 
+        success: true, 
+        soloDungeon: true,
+        instanceId: instanceRef.id,
+        message: `Started ${launchDungeon.name}`
+      });
     }
+    
+    // Group dungeon - add to queue for matchmaking
+    // Normalize role to tank/healer/dps
+    const normalizedRole = normalizeRole(role);
     
     // Check if already in queue
     const existingQueue = await db.collection('dungeonQueue')
@@ -79,10 +182,11 @@ router.post('/queue', async (req, res) => {
     const queueEntry = {
       userId,
       heroId,
-      role,
+      role: normalizedRole, // Use normalized role for matchmaking
+      originalRole: role, // Keep original for display
       itemScore: itemScore || 0,
       dungeonType,
-      queuedAt: admin.firestore.Timestamp.now(),
+      queuedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000)) // 30 min
     };
     
@@ -139,42 +243,10 @@ router.post('/group/accept', async (req, res) => {
   }
 });
 
-// Matchmaking logic
+// Matchmaking logic - now uses flexible 2-5 player matching
 async function tryMatchmaking() {
-  try {
-    const queueSnapshot = await db.collection('dungeonQueue').get();
-    const queue = queueSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    // Group: 1 tank, 1 healer, 3 DPS
-    const tanks = queue.filter(q => q.role === 'tank');
-    const healers = queue.filter(q => q.role === 'healer');
-    const dps = queue.filter(q => q.role === 'dps');
-    
-    // Try to form groups
-    while (tanks.length > 0 && healers.length > 0 && dps.length >= 3) {
-      const group = {
-        tank: tanks.shift(),
-        healer: healers.shift(),
-        dps: [dps.shift(), dps.shift(), dps.shift()]
-      };
-      
-      // Remove from queue
-      const idsToRemove = [
-        group.tank.id,
-        group.healer.id,
-        ...group.dps.map(d => d.id)
-      ];
-      
-      for (const id of idsToRemove) {
-        await db.collection('dungeonQueue').doc(id).delete();
-      }
-      
-      // Create group notification (would send to all members)
-      console.log(`✅ Group formed: Tank, Healer, 3 DPS`);
-    }
-  } catch (error) {
-    console.error('Error in matchmaking:', error);
-  }
+  // Use the new flexible matchmaking
+  return await tryFlexibleMatchmaking();
 }
 
 function estimateWaitTime(roleCounts, userRole) {
@@ -429,6 +501,42 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
+    // Reset party status back to 'forming' for all parties that were in this instance
+    try {
+      const partyIds = new Set();
+      
+      // Check parties collection for any party with members in this instance
+      for (const participantId of updatedParticipantIds) {
+        const partySnapshot = await db.collection('parties')
+          .where('members', 'array-contains', participantId)
+          .where('status', '==', 'in_instance')
+          .get();
+        
+        partySnapshot.docs.forEach(doc => {
+          partyIds.add(doc.id);
+        });
+      }
+      
+      // Reset all parties back to 'forming'
+      const resetPromises = Array.from(partyIds).map(async (partyId) => {
+        try {
+          const partyRef = db.collection('parties').doc(partyId);
+          await partyRef.update({
+            status: 'forming',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          console.log(`[Dungeon] ✅ Reset party ${partyId} status to 'forming' after dungeon completion`);
+        } catch (error) {
+          console.error(`[Dungeon] Failed to reset party ${partyId}:`, error);
+        }
+      });
+      
+      await Promise.all(resetPromises);
+    } catch (error) {
+      console.error('[Dungeon] Error resetting party statuses:', error);
+      // Don't fail the request if party reset fails
+    }
+    
     // Distribute rewards to participants
     const rewardPromises = participantsData.map(async (participant) => {
       if (!participant.isAlive && participant.deaths > 2) {
@@ -516,15 +624,30 @@ router.get('/available/:userId', async (req, res) => {
     }
     
     // Import dungeon data
-    const { getAllDungeons } = await import('../data/dungeons.js');
+    const { getAllDungeons, getDungeonById } = await import('../data/dungeons.js');
     const allDungeons = getAllDungeons();
     
-    // Filter dungeons by level and item score requirements
-    const availableDungeons = allDungeons.filter(dungeon => {
-      if (dungeon.minLevel && heroLevel < dungeon.minLevel) return false;
-      if (dungeon.minItemScore && itemScore < dungeon.minItemScore) return false;
-      return true;
-    });
+    // LAUNCH: Only return Goblin Cave for now (we'll add more after launch)
+    const launchDungeonId = 'goblin_cave';
+    const launchDungeon = getDungeonById(launchDungeonId);
+    
+    // Filter by level and item score requirements
+    let availableDungeons = [];
+    if (launchDungeon) {
+      const meetsLevel = !launchDungeon.minLevel || heroLevel >= launchDungeon.minLevel;
+      const meetsItemScore = !launchDungeon.minItemScore || itemScore >= launchDungeon.minItemScore;
+      
+      if (meetsLevel && meetsItemScore) {
+        availableDungeons = [launchDungeon];
+      }
+    }
+    
+    // TODO: After launch, uncomment this to show all available dungeons:
+    // const availableDungeons = allDungeons.filter(dungeon => {
+    //   if (dungeon.minLevel && heroLevel < dungeon.minLevel) return false;
+    //   if (dungeon.minItemScore && itemScore < dungeon.minItemScore) return false;
+    //   return true;
+    // });
     
     res.json({
       heroLevel,
@@ -534,6 +657,36 @@ router.get('/available/:userId', async (req, res) => {
   } catch (error) {
     console.error('Error fetching available dungeons:', error);
     res.status(500).json({ error: 'Failed to fetch available dungeons' });
+  }
+});
+
+// Get all dungeons (for display - shows all with availability flag)
+router.get('/', async (req, res) => {
+  try {
+    const { getAllDungeons } = await import('../data/dungeons.js');
+    const allDungeons = getAllDungeons();
+    
+    // LAUNCH: Only Goblin Cave is available for launch
+    const launchDungeonId = 'goblin_cave';
+    
+    const dungeons = allDungeons.map(dungeon => ({
+      id: dungeon.id,
+      name: dungeon.name,
+      type: dungeon.type,
+      difficulty: dungeon.difficulty,
+      minLevel: dungeon.minLevel,
+      minItemScore: dungeon.minItemScore,
+      description: dungeon.description,
+      estimatedDuration: dungeon.estimatedDuration,
+      rewards: dungeon.rewards,
+      rooms: dungeon.rooms?.length || 0,
+      available: dungeon.id === launchDungeonId // Only Goblin Cave is available
+    }));
+    
+    res.json(dungeons);
+  } catch (error) {
+    console.error('Error fetching dungeons:', error);
+    res.status(500).json({ error: 'Failed to fetch dungeons' });
   }
 });
 

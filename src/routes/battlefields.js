@@ -314,7 +314,9 @@ function getDefaultFacingForRole(roleOrEnemyType) {
     'baby dragon',
     'headless horseman',
     'masked orc',
-    'witch'
+    'witch',
+    'corrupted high priest',
+    'cultist'
   ];
   
   // Check if role should face left (heroes)
@@ -332,7 +334,9 @@ function getDefaultFacingForRole(roleOrEnemyType) {
   const knownEnemyTypes = [
     'kobold warrior', 'baby dragon', 'imp', 'lizardman', 'masked orc',
     'werewolf', 'skeleton mage', 'witch', 'mimic', 'gryphon', 'minotaur',
-    'headless horseman', 'adult dragon', 'demon lord'
+    'headless horseman', 'adult dragon', 'demon lord', 'elder dragon',
+    'goblin', 'goblin chief', 'corrupted high priest', 'cultist',
+    'dragon_1', 'dragon_2', 'dragon_3'
   ];
   
   // If it's an enemy type, default to left (most enemies face left)
@@ -379,7 +383,9 @@ router.get('/preferences/sprite-facing/:userId', async (req, res) => {
     const allEnemyTypes = [
       'Kobold Warrior', 'Baby Dragon', 'Imp', 'Lizardman', 'Masked Orc',
       'Werewolf', 'Skeleton Mage', 'Witch', 'Mimic', 'Gryphon', 'Minotaur',
-      'Headless Horseman', 'Adult Dragon', 'Demon Lord'
+      'Headless Horseman', 'Adult Dragon', 'Demon Lord', 'Elder Dragon',
+      'Goblin', 'Goblin Chief', 'Corrupted High Priest', 'Cultist',
+      'Dragon_1', 'Dragon_2', 'Dragon_3'
     ];
     
     // Add defaults for hero roles

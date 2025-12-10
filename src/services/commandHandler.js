@@ -390,6 +390,10 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
         if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
         return await handleSkillsCommand(hero, viewerUsername);
       
+      case 'potion':
+        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
+        return await handlePotionCommand(hero, viewerUsername, viewerId);
+      
       case 'dispel':
         if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
         return await handleDispelCommand(hero, args, viewerUsername, battlefieldId);
@@ -1083,8 +1087,26 @@ async function handleClaimCommand(hero, username) {
   const lastClaim = hero.lastTokenClaim || hero.joinedAt || now;
   const timeSinceClaim = now - lastClaim;
   
-  // Idle tokens: 2-3 per hour
-  const tokensPerHour = 2.5;
+  // Base idle tokens: 2.5 per hour
+  let tokensPerHour = 2.5;
+  
+  // Founder pack bonuses (add to base rate)
+  const founderTier = hero.founderPackTier || null;
+  const founderBonuses = {
+    'bronze': 0.5,   // +0.5 tokens/hour (total: 3.0)
+    'silver': 1.0,   // +1.0 tokens/hour (total: 3.5)
+    'gold': 1.5,     // +1.5 tokens/hour (total: 4.0)
+    'platinum': 2.0  // +2.0 tokens/hour (total: 4.5)
+  };
+  
+  if (founderTier) {
+    const bonus = founderBonuses[founderTier.toLowerCase()] || 0;
+    if (bonus > 0) {
+      tokensPerHour += bonus;
+      console.log(`[Claim] ${username} has ${founderTier} founder pack: +${bonus} tokens/hour (total: ${tokensPerHour}/hr)`);
+    }
+  }
+  
   const hoursSinceClaim = timeSinceClaim / (1000 * 60 * 60);
   const tokensToClaim = Math.floor(hoursSinceClaim * tokensPerHour);
   
@@ -1096,8 +1118,8 @@ async function handleClaimCommand(hero, username) {
     };
   }
 
-  // Cap at reasonable amount (e.g., 24 hours worth = 60 tokens max)
-  const maxTokens = 60;
+  // Cap at reasonable amount (e.g., 24 hours worth based on boosted rate)
+  const maxTokens = Math.floor(tokensPerHour * 24); // 24 hours worth of tokens at current rate
   const actualTokens = Math.min(tokensToClaim, maxTokens);
   
   const newTokens = (hero.tokens || 0) + actualTokens;
@@ -1112,12 +1134,18 @@ async function handleClaimCommand(hero, username) {
   });
 
   const hours = Math.floor(hoursSinceClaim);
-  const message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
+  let message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
+  
+  // Show founder bonus in message if applicable
+  if (founderTier && founderBonuses[founderTier.toLowerCase()]) {
+    const tierName = founderTier.charAt(0).toUpperCase() + founderTier.slice(1);
+    message += ` [${tierName} Founder: ${tokensPerHour.toFixed(1)}/hr]`;
+  }
 
   return {
     success: true,
     message,
-    data: { tokensClaimed: actualTokens, totalTokens: newTokens, hoursSinceClaim: hours }
+    data: { tokensClaimed: actualTokens, totalTokens: newTokens, hoursSinceClaim: hours, tokensPerHour }
   };
 }
 
@@ -1155,7 +1183,7 @@ async function handleClassesCommand(username) {
  * Handle !help command
  */
 async function handleHelpCommand(username) {
-  const combat = '!attack (!a) !heal (!h) !defend !cast !dispel !rest';
+  const combat = '!attack (!a) !heal (!h) !defend !cast !dispel !rest !potion';
   const info = '!stats (!s) !gear (!g) !heroes !classes';
   const shop = '!shop !buy !use !claim !tokens';
   const profession = '!profession !gather !recipes !craft !elixirs';
@@ -1694,6 +1722,63 @@ async function handleQuestCommand(hero, args, username, userId) {
 }
 
 /**
+ * Handle !potion command - Use a health potion from inventory
+ */
+async function handlePotionCommand(hero, username, userId) {
+  try {
+    const inventory = hero.inventory || [];
+    
+    // Find a health potion
+    const potionIndex = inventory.findIndex(item => 
+      item.itemKey === 'healthpotion' || 
+      item.type === 'potion' ||
+      (item.name && item.name.toLowerCase().includes('health potion'))
+    );
+    
+    if (potionIndex === -1) {
+      return {
+        success: false,
+        message: `@${username} You don't have any Health Potions! Buy some from the shop (!shop).`
+      };
+    }
+    
+    const potion = inventory[potionIndex];
+    const currentHp = hero.hp || 0;
+    const maxHp = hero.maxHp || 100;
+    const healAmount = Math.floor(maxHp * 0.5); // Heal 50% of max HP
+    const newHp = Math.min(maxHp, currentHp + healAmount);
+    const actualHeal = newHp - currentHp;
+    
+    // Overheal converts to shield
+    const overheal = healAmount - actualHeal;
+    const newShield = (hero.shield || 0) + overheal;
+    
+    // Remove potion from inventory
+    inventory.splice(potionIndex, 1);
+    
+    // Update hero
+    await db.collection('heroes').doc(hero.id).update({
+      hp: newHp,
+      shield: newShield,
+      inventory: inventory,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    const shieldText = newShield > 0 ? ` (+${overheal} shield)` : '';
+    return {
+      success: true,
+      message: `@${username} Used Health Potion! Restored ${actualHeal} HP${shieldText}. (${newHp}/${maxHp} HP)`
+    };
+  } catch (error) {
+    console.error('Error using potion:', error);
+    return {
+      success: false,
+      message: `@${username} Failed to use potion. Please try again.`
+    };
+  }
+}
+
+/**
  * Handle !profession command
  */
 async function handleProfessionCommand(hero, args, username) {
@@ -1789,7 +1874,8 @@ async function handleRecipesCommand(hero, args, username) {
       'iron_reinforcement',
       'steel_reinforcement',
       'mithril_reinforcement',
-      'adamantite_reinforcement'
+      'adamantite_reinforcement',
+      'gem_socket'
     ],
     enchanting: [
       'minor_fiery_weapon',

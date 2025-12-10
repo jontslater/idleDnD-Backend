@@ -4,21 +4,24 @@
  */
 
 const DUNGEONS = {
-  // ==================== SOLO DUNGEONS (Level 10+) ====================
+  // ==================== GROUP DUNGEONS (Level 10+, 2-5 players) ====================
   goblin_cave: {
     id: 'goblin_cave',
     name: 'Goblin Cave',
-    type: 'solo',
+    type: 'group',
     difficulty: 'normal',
     minLevel: 10,
     minItemScore: 200,
-    description: 'A small cave infested with goblins. Perfect for solo adventurers.',
+    minPlayers: 2,
+    maxPlayers: 5,
+    description: 'A small cave infested with goblins. Perfect for groups of 2-5 adventurers.',
     rooms: [
       {
         id: 'entrance',
         name: 'Cave Entrance',
         enemies: [
-          { type: 'Goblin', count: 3, level: 10 }
+          { type: 'Goblin', count: 2, level: 10 },
+          { type: 'Goblin Chief', count: 1, level: 10 } // Mix of both types
         ],
         isBoss: false
       },
@@ -26,7 +29,8 @@ const DUNGEONS = {
         id: 'main_chamber',
         name: 'Main Chamber',
         enemies: [
-          { type: 'Goblin', count: 5, level: 12 }
+          { type: 'Goblin', count: 3, level: 12 },
+          { type: 'Goblin Chief', count: 2, level: 12 } // Mix of both types
         ],
         isBoss: false
       },

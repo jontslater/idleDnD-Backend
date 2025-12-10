@@ -8,23 +8,60 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { type, status } = req.query;
-    let query = db.collection('raids');
     
+    // Get raids from data file (not Firestore - raids are static data)
+    // NOTE: Raids are defined in ../data/raids.js, NOT in Firestore
+    const { RAIDS } = await import('../data/raids.js');
+    
+    console.log('[GET /api/raids] Loaded raids from data file:', Object.keys(RAIDS).length, 'raids');
+    
+    // LAUNCH: Only Corrupted Temple is available for launch
+    const launchRaidId = 'corrupted_temple';
+    
+    let raids = Object.values(RAIDS).map(raid => ({
+      id: raid.id,
+      name: raid.name,
+      difficulty: raid.difficulty,
+      type: raid.type || (raid.difficulty === 'normal' ? 'daily' : raid.difficulty === 'heroic' ? 'weekly' : 'monthly'), // Map difficulty to type
+      minLevel: raid.minLevel,
+      minItemScore: raid.minItemScore,
+      minPlayers: raid.minPlayers,
+      maxPlayers: raid.maxPlayers,
+      waves: raid.waves,
+      description: raid.description,
+      estimatedDuration: raid.estimatedDuration,
+      rewards: raid.rewards,
+      available: raid.id === launchRaidId, // Only Corrupted Temple is available
+      // Include boss info but not all mechanics
+      boss: {
+        name: raid.boss.name,
+        hp: raid.boss.hp,
+        attack: raid.boss.attack,
+        defense: raid.boss.defense,
+        level: raid.boss.level
+      }
+    }));
+    
+    console.log('[GET /api/raids] Mapped raids:', raids.map(r => r.id).join(', '));
+    
+    // Filter by type if provided
     if (type) {
-      query = query.where('type', '==', type);
+      raids = raids.filter(raid => raid.type === type);
+      console.log('[GET /api/raids] Filtered by type:', type, '->', raids.length, 'raids');
     }
     
+    // Filter by status if provided (though status doesn't really apply to static raids)
+    // This is mainly for future scheduled raids if needed
     if (status) {
-      query = query.where('status', '==', status);
+      // For now, all static raids are 'available'
+      raids = raids.filter(raid => !status || status === 'available');
     }
     
-    const snapshot = await query.get();
-    const raids = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
+    console.log('[GET /api/raids] Returning', raids.length, 'raids');
     res.json(raids);
   } catch (error) {
-    console.error('Error fetching raids:', error);
-    res.status(500).json({ error: 'Failed to fetch raids' });
+    console.error('[GET /api/raids] Error fetching raids:', error);
+    res.status(500).json({ error: 'Failed to fetch raids', details: error.message });
   }
 });
 
@@ -299,14 +336,36 @@ router.get('/available/:userId', async (req, res) => {
       });
     }
     
-    // Import raid data - get ALL raids, not just available ones
-    const { RAIDS } = await import('../data/raids.js');
+    // Import raid data
+    const { RAIDS, getRaidById } = await import('../data/raids.js');
     const allRaids = Object.values(RAIDS);
+    
+    // LAUNCH: Only return Corrupted Temple for now (we'll add more after launch)
+    const launchRaidId = 'corrupted_temple';
+    const launchRaid = getRaidById(launchRaidId);
+    
+    // Filter by level and item score requirements
+    let availableRaids = [];
+    if (launchRaid) {
+      const meetsLevel = !launchRaid.minLevel || heroLevel >= launchRaid.minLevel;
+      const meetsItemScore = !launchRaid.minItemScore || itemScore >= launchRaid.minItemScore;
+      
+      if (meetsLevel && meetsItemScore) {
+        availableRaids = [launchRaid];
+      }
+    }
+    
+    // TODO: After launch, uncomment this to show all available raids:
+    // const availableRaids = allRaids.filter(raid => {
+    //   if (raid.minLevel && heroLevel < raid.minLevel) return false;
+    //   if (raid.minItemScore && itemScore < raid.minItemScore) return false;
+    //   return true;
+    // });
     
     res.json({
       heroLevel,
       itemScore,
-      availableRaids: allRaids
+      availableRaids
     });
   } catch (error) {
     console.error('❌ Error fetching available raids:', error);
@@ -1124,7 +1183,7 @@ router.post('/queue/:raidId/leave', async (req, res) => {
 });
 
 // Raid matchmaking function (similar to dungeon matchmaking)
-async function tryRaidMatchmaking(raidId, raidData) {
+export async function tryRaidMatchmaking(raidId, raidData) {
   try {
     const queueRef = db.collection('raidQueues').doc(raidId);
     const queueDoc = await queueRef.get();
@@ -1134,10 +1193,246 @@ async function tryRaidMatchmaking(raidId, raidData) {
     const queue = queueDoc.data();
     const participants = queue.participants || [];
     
+    // PRIORITY 1: Check for complete parties first
+    const partyGroups = new Map(); // partyId -> array of participants
+    participants.forEach(p => {
+      if (p.partyId) {
+        if (!partyGroups.has(p.partyId)) {
+          partyGroups.set(p.partyId, []);
+        }
+        partyGroups.get(p.partyId).push(p);
+      }
+    });
+    
+    // Try to match complete parties (all members together)
+    for (const [partyId, partyMembers] of partyGroups.entries()) {
+      const firstMember = partyMembers[0];
+      const fillParty = firstMember?.fillParty !== false; // Default to true
+      
+      if (partyMembers.length >= raidData.minPlayers && partyMembers.length <= raidData.maxPlayers) {
+        // Check if party has sufficient composition
+        const partyTanks = partyMembers.filter(p => p.role === 'tank');
+        const partyHealers = partyMembers.filter(p => p.role === 'healer');
+        const partyDps = partyMembers.filter(p => p.role === 'dps');
+        
+        const requiredTanks = 2;
+        const requiredHealers = Math.min(3, Math.ceil(raidData.minPlayers * 0.2));
+        const requiredDps = raidData.minPlayers - requiredTanks - requiredHealers;
+        
+        // Check if party meets minimum requirements
+        // If fillParty is false, start immediately if party meets min requirements
+        // If fillParty is true, only start if party is full or meets requirements
+        if (partyTanks.length >= requiredTanks && 
+            partyHealers.length >= requiredHealers && 
+            partyDps.length >= requiredDps) {
+          
+          // If fillParty is false and party meets min requirements, start immediately
+          if (!fillParty || partyMembers.length === raidData.maxPlayers) {
+          
+          // Match the entire party together
+          const participantIds = partyMembers.map(p => p.userId);
+          
+          // Remove party from queue
+          const remainingParticipants = participants.filter(p => 
+            !participantIds.includes(p.userId)
+          );
+          
+          if (remainingParticipants.length === 0) {
+            await queueRef.delete();
+          } else {
+            await queueRef.update({
+              participants: remainingParticipants,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
+          
+          // Update party status
+          try {
+            const partyRef = db.collection('parties').doc(partyId);
+            await partyRef.update({
+              status: 'in_instance',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          } catch (error) {
+            console.error(`[Raid Matchmaking] Failed to update party ${partyId} status:`, error);
+          }
+          
+          // Create raid instance directly (like dungeon matchmaking)
+          try {
+            // Load participant hero data
+            const participantData = [];
+            for (const member of partyMembers) {
+              const heroDoc = await db.collection('heroes').doc(member.heroId).get();
+              if (!heroDoc.exists) {
+                console.warn(`[Raid Matchmaking] Hero not found: ${member.heroId}, skipping...`);
+                continue;
+              }
+              const hero = heroDoc.data();
+              const twitchUserId = hero.twitchUserId || member.userId;
+              
+              // Calculate item score
+              let itemScore = 0;
+              if (hero.equipment) {
+                Object.values(hero.equipment).forEach(item => {
+                  if (item) {
+                    if (item.itemScore) {
+                      itemScore += item.itemScore;
+                    } else {
+                      const baseScore = (item.attack || 0) + (item.defense || 0) + ((item.hp || 0) / 2);
+                      const rarityBonus = item.rarity === 'legendary' ? 1.5 : 
+                                          item.rarity === 'epic' ? 1.3 : 
+                                          item.rarity === 'rare' ? 1.1 : 1.0;
+                      itemScore += Math.floor(baseScore * rarityBonus);
+                    }
+                  }
+                });
+              }
+              
+              participantData.push({
+                userId: member.userId,
+                heroId: member.heroId,
+                username: member.heroName || hero.name || member.userId,
+                heroName: member.heroName || hero.name,
+                heroLevel: member.heroLevel || hero.level || 1,
+                heroRole: member.role || hero.role,
+                itemScore: itemScore,
+                isAlive: true,
+                damageDealt: 0,
+                healingDone: 0,
+                damageTaken: 0,
+                deaths: 0,
+                currentHp: hero.stats?.hp || hero.hp || hero.stats?.maxHp || hero.maxHp || 100,
+                maxHp: hero.stats?.maxHp || hero.maxHp || 100
+              });
+            }
+            
+            if (participantData.length < raidData.minPlayers) {
+              console.warn(`[Raid Matchmaking] Not enough valid heroes: ${participantData.length} < ${raidData.minPlayers}`);
+              continue;
+            }
+            
+            // Extract participant IDs for querying
+            const participantUserIds = participantData.map(p => p.userId).filter(Boolean);
+            
+            // Use first member as organizer
+            const organizerId = partyMembers[0].userId;
+            
+            // Generate wave enemies for each wave (except final boss wave)
+            const totalWaves = raidData.waves || 3;
+            const waveEnemies = [];
+            
+            for (let wave = 0; wave < totalWaves - 1; wave++) {
+              // Generate enemies for this wave
+              const enemyPool = [
+                { name: 'Goblin', weight: 3 },
+                { name: 'Orc', weight: 2 },
+                { name: 'Skeleton', weight: 2 },
+                { name: 'Imp', weight: 2 },
+                { name: 'Witch', weight: 1 },
+                { name: 'Skeleton Mage', weight: 1 }
+              ];
+              
+              // Heroic and Mythic add more dangerous enemies
+              if (raidData.difficulty === 'heroic' || raidData.difficulty === 'mythic') {
+                enemyPool.push(
+                  { name: 'Demon Lord', weight: 1 },
+                  { name: 'Adult Dragon', weight: 0.5 }
+                );
+              }
+              
+              // Calculate enemy count (scales with wave)
+              const baseCount = 2 + Math.floor(wave / 2);
+              const enemyCount = Math.min(baseCount, 5); // Cap at 5 enemies per wave
+              
+              // Select random enemies based on weights
+              const selectedEnemies = [];
+              const totalWeight = enemyPool.reduce((sum, e) => sum + e.weight, 0);
+              
+              for (let i = 0; i < enemyCount; i++) {
+                let random = Math.random() * totalWeight;
+                for (const enemy of enemyPool) {
+                  random -= enemy.weight;
+                  if (random <= 0) {
+                    selectedEnemies.push(enemy.name);
+                    break;
+                  }
+                }
+              }
+              
+              // Convert to comma-separated string format expected by frontend
+              waveEnemies.push(selectedEnemies.join(','));
+            }
+            
+            // Create raid instance
+            const raidInstance = {
+              raidId: raidData.id,
+              difficulty: raidData.difficulty,
+              status: 'in_progress',
+              organizerId: organizerId,
+              participants: participantData,
+              participantIds: participantUserIds,
+              currentWave: 0,
+              waves: totalWaves,
+              waveEnemies: waveEnemies, // Generated wave enemies
+              boss: {
+                name: raidData.boss.name,
+                hp: raidData.boss.hp,
+                maxHp: raidData.boss.hp,
+                attack: raidData.boss.attack,
+                defense: raidData.boss.defense || 0,
+                level: raidData.boss.level,
+                xp: raidData.boss.xp || 1000
+              },
+              combatLog: [],
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              partyId: partyId
+            };
+            
+            const instanceRef = await db.collection('raidInstances').add(raidInstance);
+            
+            console.log(`[Raid Matchmaking] 🏰 Created raid instance ${instanceRef.id} for party ${partyId}: ${raidData.name} (${participantData.length} players)`);
+            
+            // Update all heroes to have activeInstance pointing to this raid
+            const participantHeroIds = participantData.map(p => p.heroId);
+            const updatePromises = participantHeroIds.map(async (heroId) => {
+              try {
+                await db.collection('heroes').doc(heroId).update({
+                  activeInstance: {
+                    type: 'raid',
+                    instanceId: instanceRef.id
+                  },
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+              } catch (error) {
+                console.error(`[Raid Matchmaking] Failed to update hero ${heroId} with active instance:`, error);
+              }
+            });
+            
+            await Promise.all(updatePromises);
+            console.log(`[Raid Matchmaking] ✅ Updated all ${participantData.length} heroes with active raid instance`);
+            
+            console.log(`✅ Party ${partyId} matched for raid ${raidId}: ${partyTanks.length} tanks, ${partyHealers.length} healers, ${partyDps.length} DPS`);
+            return; // Return after matching a party
+          } catch (err) {
+            console.error('Error creating raid instance from matchmaking:', err);
+          }
+          } // End of fillParty check
+        }
+      }
+    }
+    
+    // PRIORITY 2: Match individual players (existing logic)
+    // Remove party members from arrays (they're already processed or incomplete)
+    const individualParticipants = participants.filter(p => 
+      !p.partyId || !partyGroups.has(p.partyId) || 
+      partyGroups.get(p.partyId).length < raidData.minPlayers
+    );
+    
     // Group by role
-    const tanks = participants.filter((p) => p.role === 'tank');
-    const healers = participants.filter((p) => p.role === 'healer');
-    const dps = participants.filter((p) => p.role === 'dps');
+    const tanks = individualParticipants.filter((p) => p.role === 'tank');
+    const healers = individualParticipants.filter((p) => p.role === 'healer');
+    const dps = individualParticipants.filter((p) => p.role === 'dps');
     
     // Raid composition: 2 tanks, 2-3 healers, rest DPS
     const requiredTanks = 2;
@@ -1173,19 +1468,116 @@ async function tryRaidMatchmaking(raidId, raidData) {
         });
       }
       
-      // Start raid instance
+      // Create raid instance directly (like dungeon matchmaking)
       try {
-        const startResponse = await fetch(`http://localhost:${process.env.PORT || 3001}/api/raids/${raidId}/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ participants: participantIds })
+        // Load participant hero data
+        const participantData = [];
+        for (const member of allGroupMembers) {
+          const heroDoc = await db.collection('heroes').doc(member.heroId).get();
+          if (!heroDoc.exists) {
+            console.warn(`[Raid Matchmaking] Hero not found: ${member.heroId}, skipping...`);
+            continue;
+          }
+          const hero = heroDoc.data();
+          
+          // Calculate item score
+          let itemScore = 0;
+          if (hero.equipment) {
+            Object.values(hero.equipment).forEach(item => {
+              if (item) {
+                if (item.itemScore) {
+                  itemScore += item.itemScore;
+                } else {
+                  const baseScore = (item.attack || 0) + (item.defense || 0) + ((item.hp || 0) / 2);
+                  const rarityBonus = item.rarity === 'legendary' ? 1.5 : 
+                                      item.rarity === 'epic' ? 1.3 : 
+                                      item.rarity === 'rare' ? 1.1 : 1.0;
+                  itemScore += Math.floor(baseScore * rarityBonus);
+                }
+              }
+            });
+          }
+          
+          participantData.push({
+            userId: member.userId,
+            heroId: member.heroId,
+            username: member.heroName || hero.name || member.userId,
+            heroName: member.heroName || hero.name,
+            heroLevel: member.heroLevel || hero.level || 1,
+            heroRole: member.role || hero.role,
+            itemScore: itemScore,
+            isAlive: true,
+            damageDealt: 0,
+            healingDone: 0,
+            damageTaken: 0,
+            deaths: 0,
+            currentHp: hero.stats?.hp || hero.hp || hero.stats?.maxHp || hero.maxHp || 100,
+            maxHp: hero.stats?.maxHp || hero.maxHp || 100
+          });
+        }
+        
+        if (participantData.length < raidData.minPlayers) {
+          console.warn(`[Raid Matchmaking] Not enough valid heroes: ${participantData.length} < ${raidData.minPlayers}`);
+          return;
+        }
+        
+        // Extract participant IDs for querying
+        const participantUserIds = participantData.map(p => p.userId).filter(Boolean);
+        
+        // Use first member as organizer
+        const organizerId = allGroupMembers[0].userId;
+        
+        // Create raid instance
+        const raidInstance = {
+          raidId: raidData.id,
+          difficulty: raidData.difficulty,
+          status: 'in_progress',
+          organizerId: organizerId,
+          participants: participantData,
+          participantIds: participantUserIds,
+          currentWave: 0,
+          waves: raidData.waves || 5,
+          waveEnemies: raidData.waveEnemies || [],
+          boss: {
+            name: raidData.boss.name,
+            hp: raidData.boss.hp,
+            maxHp: raidData.boss.hp,
+            attack: raidData.boss.attack,
+            defense: raidData.boss.defense || 0,
+            level: raidData.boss.level,
+            xp: raidData.boss.xp || 1000
+          },
+          combatLog: [],
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        
+        const instanceRef = await db.collection('raidInstances').add(raidInstance);
+        
+        console.log(`[Raid Matchmaking] 🏰 Created raid instance ${instanceRef.id} for group: ${raidData.name} (${participantData.length} players)`);
+        
+        // Update all heroes to have activeInstance pointing to this raid
+        const participantHeroIds = participantData.map(p => p.heroId);
+        const updatePromises = participantHeroIds.map(async (heroId) => {
+          try {
+            await db.collection('heroes').doc(heroId).update({
+              activeInstance: {
+                type: 'raid',
+                instanceId: instanceRef.id
+              },
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          } catch (error) {
+            console.error(`[Raid Matchmaking] Failed to update hero ${heroId} with active instance:`, error);
+          }
         });
         
-        if (startResponse.ok) {
-          console.log(`✅ Raid group formed for ${raidId}: ${requiredTanks} tanks, ${requiredHealers} healers, ${requiredDps} DPS`);
-        }
+        await Promise.all(updatePromises);
+        console.log(`[Raid Matchmaking] ✅ Updated all ${participantData.length} heroes with active raid instance`);
+        
+        console.log(`✅ Raid group formed for ${raidId}: ${requiredTanks} tanks, ${requiredHealers} healers, ${requiredDps} DPS`);
       } catch (err) {
-        console.error('Error starting raid from matchmaking:', err);
+        console.error('Error creating raid instance from matchmaking:', err);
       }
     }
   } catch (error) {

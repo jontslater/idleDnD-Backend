@@ -5,6 +5,93 @@ import { ROLE_CONFIG } from '../data/roleConfig.js';
 
 const router = express.Router();
 
+// Create test hero for testing (dev only)
+router.post('/test/create', async (req, res) => {
+  try {
+    const { userId, username, heroName, role, level } = req.body;
+    
+    if (!userId || !username || !heroName) {
+      return res.status(400).json({ error: 'userId, username, and heroName are required' });
+    }
+    
+    const testRole = role || 'berserker';
+    const testLevel = level || 20;
+    
+    // Check if hero already exists
+    const existingHero = await db.collection('heroes').doc(userId).get();
+    if (existingHero.exists) {
+      return res.status(400).json({ error: 'Hero already exists for this userId' });
+    }
+    
+    // Get role config
+    const roleConfig = ROLE_CONFIG[testRole] || ROLE_CONFIG.berserker;
+    
+    // Create test hero with equipment that meets raid requirements (500+ item score)
+    // Each piece gives ~100 item score, so 5 pieces = 500+ item score
+    const testHero = {
+      userId,
+      name: heroName,
+      username,
+      role: testRole,
+      level: testLevel,
+      xp: 0,
+      maxXp: 100 + (testLevel * 10),
+      gold: 10000,
+      tokens: 1000,
+      equipment: {
+        weapon: {
+          name: 'Test Weapon',
+          rarity: 'epic',
+          attack: 100,
+          defense: 0,
+          hp: 0,
+          itemScore: 200
+        },
+        armor: {
+          name: 'Test Armor',
+          rarity: 'epic',
+          attack: 0,
+          defense: 60,
+          hp: 400,
+          itemScore: 200
+        },
+        accessory: {
+          name: 'Test Accessory',
+          rarity: 'rare',
+          attack: 30,
+          defense: 20,
+          hp: 150,
+          itemScore: 100
+        }
+      },
+      stats: {
+        attack: roleConfig.baseAttack + (testLevel * 5) + 50,
+        defense: roleConfig.baseDefense + (testLevel * 3) + 30,
+        maxHp: roleConfig.baseHp + (testLevel * 20) + 200,
+        hp: roleConfig.baseHp + (testLevel * 20) + 200,
+        critChance: roleConfig.baseCritChance || 0.05,
+        hpRegen: roleConfig.baseHpRegen || 1
+      },
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    await db.collection('heroes').doc(userId).set(testHero);
+    
+    res.json({
+      success: true,
+      message: 'Test hero created successfully',
+      hero: {
+        id: userId,
+        ...testHero
+      }
+    });
+  } catch (error) {
+    console.error('Error creating test hero:', error);
+    res.status(500).json({ error: 'Failed to create test hero', details: error.message });
+  }
+});
+
 // Get all heroes
 router.get('/', async (req, res) => {
   try {
@@ -78,6 +165,148 @@ router.get('/:userId', async (req, res) => {
   }
 });
 
+// Unlock hero slot endpoint
+router.post('/:userId/unlock-slot', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { twitchUserId, tiktokUserId } = req.body;
+
+    // Get user ID (prefer Twitch, fallback to TikTok)
+    const actualUserId = twitchUserId || tiktokUserId || userId;
+    const isTwitch = !!twitchUserId || !!userId;
+
+    // Get current slots unlocked
+    const currentSlots = await getUserSlotsUnlocked(actualUserId, isTwitch);
+
+    // Check if already at max
+    if (currentSlots >= MAX_HEROES) {
+      return res.status(400).json({
+        error: `Already at maximum hero slots (${MAX_HEROES})`,
+        slotsUnlocked: currentSlots,
+        maxHeroes: MAX_HEROES
+      });
+    }
+
+    const nextSlot = currentSlots + 1;
+    const unlockCost = SLOT_UNLOCK_COSTS[nextSlot] || SLOT_UNLOCK_COSTS[20]; // Default to max cost
+
+    // Get all user's heroes to find tokens
+    let existingHeroes = [];
+    if (twitchUserId || userId) {
+      const twitchCheck = await db.collection('heroes')
+        .where('twitchUserId', '==', actualUserId)
+        .get();
+      existingHeroes = twitchCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+    
+    if (tiktokUserId && existingHeroes.length === 0) {
+      const tiktokCheck = await db.collection('heroes')
+        .where('tiktokUserId', '==', actualUserId)
+        .get();
+      existingHeroes = tiktokCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    // Sum tokens across all user's heroes
+    const totalTokens = existingHeroes.reduce((sum, hero) => sum + (hero.tokens || 0), 0);
+
+    if (totalTokens < unlockCost) {
+      return res.status(400).json({
+        error: `Insufficient tokens. Required: ${unlockCost}, Available: ${totalTokens}`,
+        required: unlockCost,
+        available: totalTokens,
+        nextSlot,
+        currentSlots
+      });
+    }
+
+    // Deduct tokens from the highest level hero (or first hero if same level)
+    const heroToDeduct = existingHeroes.reduce((highest, hero) => {
+      if (!highest) return hero;
+      return (hero.level || 0) > (highest.level || 0) ? hero : highest;
+    }, null);
+
+    if (heroToDeduct) {
+      const newTokens = Math.max(0, (heroToDeduct.tokens || 0) - unlockCost);
+      await db.collection('heroes').doc(heroToDeduct.id).update({
+        tokens: newTokens,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    // Update user's slotsUnlocked
+    const userRef = db.collection('users').doc(actualUserId);
+    await userRef.set({
+      slotsUnlocked: nextSlot,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    console.log(`[Slot Unlock] User ${actualUserId} unlocked slot ${nextSlot} for ${unlockCost} tokens`);
+
+    res.json({
+      success: true,
+      slotsUnlocked: nextSlot,
+      tokensSpent: unlockCost,
+      remainingTokens: totalTokens - unlockCost,
+      nextSlotCost: SLOT_UNLOCK_COSTS[nextSlot + 1] || null,
+      maxHeroes: MAX_HEROES
+    });
+  } catch (error) {
+    console.error('Error unlocking hero slot:', error);
+    res.status(500).json({ error: 'Failed to unlock hero slot', details: error.message });
+  }
+});
+
+// Get user's slot information
+router.get('/:userId/slots', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { twitchUserId, tiktokUserId } = req.query;
+
+    // Get user ID (prefer Twitch, fallback to TikTok)
+    const actualUserId = twitchUserId || tiktokUserId || userId;
+    const isTwitch = !!twitchUserId || !!userId;
+
+    // Get current slots unlocked
+    const slotsUnlocked = await getUserSlotsUnlocked(actualUserId, isTwitch);
+
+    // Get hero count
+    let existingHeroes = [];
+    if (twitchUserId || userId) {
+      const twitchCheck = await db.collection('heroes')
+        .where('twitchUserId', '==', actualUserId)
+        .get();
+      existingHeroes = twitchCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+    
+    if (tiktokUserId && existingHeroes.length === 0) {
+      const tiktokCheck = await db.collection('heroes')
+        .where('tiktokUserId', '==', actualUserId)
+        .get();
+      existingHeroes = tiktokCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    const heroCount = existingHeroes.length;
+    const nextSlot = slotsUnlocked + 1;
+    const nextSlotCost = nextSlot <= MAX_HEROES ? SLOT_UNLOCK_COSTS[nextSlot] : null;
+
+    // Sum tokens across all user's heroes
+    const totalTokens = existingHeroes.reduce((sum, hero) => sum + (hero.tokens || 0), 0);
+
+    res.json({
+      slotsUnlocked,
+      heroCount,
+      nextSlot,
+      nextSlotCost,
+      totalTokens,
+      maxHeroes: MAX_HEROES,
+      canUnlock: heroCount >= slotsUnlocked && nextSlot <= MAX_HEROES && totalTokens >= (nextSlotCost || 0)
+    });
+  } catch (error) {
+    console.error('Error getting slot information:', error);
+    res.status(500).json({ error: 'Failed to get slot information', details: error.message });
+  }
+});
+
 // Get hero by Twitch user ID (single active hero)
 // Uses the most recently updated hero for this Twitch ID (sorted in memory)
 router.get('/twitch/:twitchUserId', async (req, res) => {
@@ -132,18 +361,51 @@ router.get('/twitch/:twitchUserId/all', async (req, res) => {
   }
 });
 
-// Hero creation cost configuration
-const HERO_CREATION_COSTS = {
-  firstTen: { tokens: 0, price: 0 }, // First 10 heroes are free
-  eleventhPlus: { tokens: 500, price: 9.99 } // Heroes 11+: 500 tokens or $9.99
+// Hero slot unlock costs
+const SLOT_UNLOCK_COSTS = {
+  6: 500,   // Slot 6-8: 500 tokens each
+  7: 500,
+  8: 500,
+  9: 1000,  // Slot 9-12: 1,000 tokens each
+  10: 1000,
+  11: 1000,
+  12: 1000,
+  13: 2000, // Slot 13-17: 2,000 tokens each
+  14: 2000,
+  15: 2000,
+  16: 2000,
+  17: 2000,
+  18: 5000, // Slot 18-20: 5,000 tokens each
+  19: 5000,
+  20: 5000
 };
-const MAX_FREE_HEROES = 10;
-const MAX_HEROES = 20; // Allow up to 20 heroes total (10 free + 10 paid)
+
+const DEFAULT_SLOTS_UNLOCKED = 3; // Free tier: 3 heroes
+const MAX_HEROES = 20; // Maximum total heroes allowed
+
+// Helper function to get or create user document with slotsUnlocked
+async function getUserSlotsUnlocked(userId, isTwitch = true) {
+  const userRef = db.collection('users').doc(userId);
+  const userDoc = await userRef.get();
+  
+  if (!userDoc.exists) {
+    // Create user document with default slots
+    await userRef.set({
+      slotsUnlocked: DEFAULT_SLOTS_UNLOCKED,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return DEFAULT_SLOTS_UNLOCKED;
+  }
+  
+  const userData = userDoc.data();
+  return userData.slotsUnlocked || DEFAULT_SLOTS_UNLOCKED;
+}
 
 // Create new hero with class selection
 router.post('/create', async (req, res) => {
   try {
-    const { class: classKey, twitchUserId, tiktokUserId, battlefieldId, paymentMethod } = req.body;
+    const { class: classKey, twitchUserId, tiktokUserId, battlefieldId } = req.body;
 
     if (!classKey || !ROLE_CONFIG[classKey]) {
       return res.status(400).json({ error: 'Invalid class' });
@@ -152,6 +414,10 @@ router.post('/create', async (req, res) => {
     if (!twitchUserId && !tiktokUserId) {
       return res.status(400).json({ error: 'Twitch or TikTok user ID required' });
     }
+
+    // Get user ID (prefer Twitch, fallback to TikTok)
+    const userId = twitchUserId || tiktokUserId;
+    const isTwitch = !!twitchUserId;
 
     // Get all existing heroes for this user
     let existingHeroes = [];
@@ -172,8 +438,9 @@ router.post('/create', async (req, res) => {
       existingHeroes = tiktokCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    // Check hero limit
     const heroCount = existingHeroes.length;
+    
+    // Check absolute max limit
     if (heroCount >= MAX_HEROES) {
       return res.status(400).json({ 
         error: `Maximum hero limit reached (${MAX_HEROES} heroes)`,
@@ -182,57 +449,19 @@ router.post('/create', async (req, res) => {
       });
     }
 
-    // Calculate cost for this hero
-    let cost;
-    if (heroCount < MAX_FREE_HEROES) {
-      cost = HERO_CREATION_COSTS.firstTen; // First 10 heroes are free
-    } else {
-      cost = HERO_CREATION_COSTS.eleventhPlus; // Heroes 11+ cost tokens or payment
-    }
-
-    // If hero 11+, validate payment
-    if (heroCount >= MAX_FREE_HEROES) {
-      if (!paymentMethod || (paymentMethod !== 'tokens' && paymentMethod !== 'payment')) {
-        return res.status(400).json({ 
-          error: 'Payment method required for additional heroes',
-          cost,
-          heroCount
-        });
-      }
-
-      if (paymentMethod === 'tokens') {
-        // Sum tokens across all user's heroes
-        const totalTokens = existingHeroes.reduce((sum, hero) => sum + (hero.tokens || 0), 0);
-        
-        if (totalTokens < cost.tokens) {
-          return res.status(400).json({ 
-            error: `Insufficient tokens. Required: ${cost.tokens}, Available: ${totalTokens}`,
-            required: cost.tokens,
-            available: totalTokens,
-            heroCount
-          });
-        }
-
-        // Deduct tokens from the highest level hero (or first hero if same level)
-        const heroToDeduct = existingHeroes.reduce((highest, hero) => {
-          if (!highest) return hero;
-          return (hero.level || 0) > (highest.level || 0) ? hero : highest;
-        }, null);
-
-        if (heroToDeduct) {
-          const newTokens = Math.max(0, (heroToDeduct.tokens || 0) - cost.tokens);
-          await db.collection('heroes').doc(heroToDeduct.id).update({
-            tokens: newTokens,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        }
-      } else if (paymentMethod === 'payment') {
-        // TODO: Integrate payment processing (Stripe, PayPal, etc.)
-        // For now, we'll just validate that payment method was specified
-        // In production, you'd verify the payment transaction here
-        console.log(`[Hero Creation] Payment method selected: ${paymentMethod}, Cost: $${cost.price}`);
-        // You would verify payment here before proceeding
-      }
+    // Check unlocked slots limit
+    const slotsUnlocked = await getUserSlotsUnlocked(userId, isTwitch);
+    if (heroCount >= slotsUnlocked) {
+      const nextSlot = heroCount + 1;
+      const unlockCost = SLOT_UNLOCK_COSTS[nextSlot] || SLOT_UNLOCK_COSTS[20]; // Default to max cost
+      return res.status(400).json({ 
+        error: `Hero slot limit reached. Unlock slot ${nextSlot} to create more heroes.`,
+        heroCount,
+        slotsUnlocked,
+        nextSlot,
+        unlockCost,
+        maxHeroes: MAX_HEROES
+      });
     }
 
     const config = ROLE_CONFIG[classKey];
@@ -499,28 +728,81 @@ router.post('/:userId/purchase/gold', async (req, res) => {
       });
     }
 
-    // Deduct gold
+    // Get quantity (default to 1)
+    const quantity = req.body.quantity || 1;
+    const totalCost = item.cost * quantity;
+
+    if (currentGold < totalCost) {
+      return res.status(400).json({ 
+        error: `Not enough gold! Need ${totalCost}g, have ${currentGold}g` 
+      });
+    }
+
+    // Initialize inventory if needed
+    const currentInventory = hero.inventory || [];
+    
+    // Check inventory space (count unique item types, not quantities)
+    // Group consumables by itemKey
+    const consumableGroups = new Set();
+    const professionGroups = new Set();
+    let regularItemCount = 0;
+    
+    currentInventory.forEach(invItem => {
+      if (invItem.professionItem) {
+        const key = invItem.recipeKey || invItem.id;
+        professionGroups.add(key);
+      } else if (invItem.type === 'potion' || invItem.type === 'buff' || invItem.itemKey) {
+        const key = invItem.itemKey || invItem.name || invItem.id;
+        consumableGroups.add(key);
+      } else {
+        regularItemCount++;
+      }
+    });
+    
+    const currentSlotsUsed = professionGroups.size + consumableGroups.size + regularItemCount;
+    const maxSlots = hero.bankSize || 50;
+    
+    // Adding this item type will use 1 slot if it's new, 0 if we already have it
+    const isNewItemType = !consumableGroups.has(itemKey);
+    const willExceed = isNewItemType && currentSlotsUsed >= maxSlots;
+    
+    if (willExceed) {
+      return res.status(400).json({ 
+        error: `Inventory full! You have ${currentSlotsUsed}/${maxSlots} slots used. Sell items or expand storage.` 
+      });
+    }
+
+    // Create inventory item(s)
+    for (let i = 0; i < quantity; i++) {
+      const inventoryItem = {
+        id: `${itemKey}_${Date.now()}_${i}`,
+        name: item.name,
+        type: item.type,
+        itemKey: itemKey,
+        cost: item.cost,
+        purchasedAt: admin.firestore.Timestamp.now(),
+        ...(item.duration && { duration: item.duration })
+      };
+      currentInventory.push(inventoryItem);
+    }
+
+    // Deduct gold and add to inventory
     const updates = {
-      gold: currentGold - item.cost,
+      gold: currentGold - totalCost,
+      inventory: currentInventory,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    // Apply item effect
-    if (item.type === 'potion') {
-      updates['potions.health'] = admin.firestore.FieldValue.increment(1);
-    } else if (item.type === 'buff') {
-      // Add buff to activeBuffs (handled by Electron app in real-time)
-      // Website just deducts gold, Electron app applies the buff
-    }
-
     await heroRef.update(updates);
 
-    console.log(`💰 ${userId} purchased ${item.name} for ${item.cost}g`);
+    console.log(`💰 ${userId} purchased ${quantity}x ${item.name} for ${totalCost}g`);
 
     res.json({ 
       success: true, 
-      message: `Purchased ${item.name}! Gold remaining: ${currentGold - item.cost}g`,
-      newGold: currentGold - item.cost
+      message: `Purchased ${quantity}x ${item.name}! Gold remaining: ${currentGold - totalCost}g`,
+      newGold: currentGold - totalCost,
+      quantity: quantity,
+      itemsAdded: quantity
     });
   } catch (error) {
     console.error('Error purchasing gold item:', error);
@@ -531,8 +813,11 @@ router.post('/:userId/purchase/gold', async (req, res) => {
 // Purchase token shop gear
 router.post('/:userId/purchase/tokens', async (req, res) => {
   try {
-    const { rarity, slot } = req.body;
+    const { rarity, slot, quantity } = req.body;
     const { userId } = req.params;
+    
+    // Default quantity to 1 if not provided
+    const purchaseQuantity = quantity || 1;
 
     const TOKEN_SHOP_PRICES = {
       common: 50, // Balanced: 50t (was 25t) - 2x increase for monetization
@@ -551,7 +836,8 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
       return res.status(400).json({ error: 'Invalid slot' });
     }
 
-    const cost = TOKEN_SHOP_PRICES[rarity];
+    const costPerItem = TOKEN_SHOP_PRICES[rarity];
+    const totalCost = costPerItem * purchaseQuantity;
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
 
@@ -562,21 +848,57 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
     const hero = doc.data();
     const currentTokens = hero.tokens || 0;
 
-    if (currentTokens < cost) {
+    if (currentTokens < totalCost) {
       return res.status(400).json({ 
-        error: `Not enough tokens! Need ${cost}t, have ${currentTokens}t` 
+        error: `Not enough tokens! Need ${totalCost}t (${purchaseQuantity}x ${costPerItem}t), have ${currentTokens}t` 
+      });
+    }
+    
+    // Check inventory space
+    const currentInventory = hero.inventory || [];
+    const consumableGroups = new Set();
+    const professionGroups = new Set();
+    let regularItemCount = 0;
+    
+    currentInventory.forEach(item => {
+      if (item.professionItem) {
+        const key = item.recipeKey || item.id;
+        professionGroups.add(key);
+      } else if (item.type === 'potion' || item.type === 'buff' || item.itemKey) {
+        const key = item.itemKey || item.name || item.id;
+        consumableGroups.add(key);
+      } else {
+        regularItemCount++;
+      }
+    });
+    
+    const currentSlotsUsed = professionGroups.size + consumableGroups.size + regularItemCount;
+    const maxSlots = hero.bankSize || 50;
+    
+    // Each gear item takes 1 slot
+    if (currentSlotsUsed + purchaseQuantity > maxSlots) {
+      return res.status(400).json({ 
+        error: `Inventory full! You have ${currentSlotsUsed}/${maxSlots} slots used. Cannot add ${purchaseQuantity} more items. Sell items or expand storage.` 
       });
     }
 
     // Generate gear based on hero level (same logic as Electron app)
+    // Token shop mythic is weaker (3.5x) than raid/dungeon mythic (4.0x)
     const LOOT_RARITIES = {
       common: { statMultiplier: 1.0, color: '#9ca3af' },
+      uncommon: { statMultiplier: 1.2, color: '#10b981' },
       rare: { statMultiplier: 1.5, color: '#3b82f6' },
       epic: { statMultiplier: 2.0, color: '#a855f7' },
-      legendary: { statMultiplier: 3.0, color: '#eab308' }
+      legendary: { statMultiplier: 3.0, color: '#eab308' },
+      mythic: { statMultiplier: 3.5, color: '#ef4444' }, // Token shop mythic (weaker than raid/dungeon)
+      artifact: { statMultiplier: 4.0, color: '#ef4444' }
     };
 
     const rarityData = LOOT_RARITIES[rarity];
+    if (!rarityData) {
+      return res.status(400).json({ error: `Invalid rarity: ${rarity}. Valid rarities: ${Object.keys(LOOT_RARITIES).join(', ')}` });
+    }
+
     const heroLevel = hero.level || 1;
     const levelMultiplier = 1 + (heroLevel * 0.1);
 
@@ -589,6 +911,10 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
     };
 
     const template = templates[slot];
+    if (!template) {
+      return res.status(400).json({ error: `Invalid slot: ${slot}` });
+    }
+
     const item = {
       id: `${rarity}_${slot}_${Date.now()}`,
       name: `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${template.name}`,
@@ -605,23 +931,32 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
       hero.inventory = [];
     }
 
-    // Add to inventory
-    hero.inventory.push(item);
+    // Add items to inventory (multiple if quantity > 1)
+    const itemsToAdd = [];
+    for (let i = 0; i < purchaseQuantity; i++) {
+      const itemCopy = {
+        ...item,
+        id: `${rarity}_${slot}_${Date.now()}_${i}` // Unique ID for each item
+      };
+      itemsToAdd.push(itemCopy);
+      hero.inventory.push(itemCopy);
+    }
 
     // Deduct tokens
     await heroRef.update({
-      tokens: currentTokens - cost,
+      tokens: currentTokens - totalCost,
       inventory: hero.inventory,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    console.log(`🎫 ${userId} purchased ${rarity} ${slot} for ${cost}t`);
+    console.log(`🎫 ${userId} purchased ${purchaseQuantity}x ${rarity} ${slot} for ${totalCost}t`);
 
     res.json({ 
       success: true, 
-      message: `Purchased ${item.name}! Tokens remaining: ${currentTokens - cost}t`,
-      item,
-      newTokens: currentTokens - cost
+      message: `Purchased ${purchaseQuantity}x ${item.name}! Tokens remaining: ${currentTokens - totalCost}t`,
+      items: itemsToAdd,
+      quantity: purchaseQuantity,
+      newTokens: currentTokens - totalCost
     });
   } catch (error) {
     console.error('Error purchasing token gear:', error);
@@ -782,8 +1117,22 @@ router.post('/:userId/reforge-item', async (req, res) => {
       return res.status(400).json({ error: 'Item ID required' });
     }
 
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
+    // userId could be hero document ID or twitchUserId - try document ID first
+    let heroRef = db.collection('heroes').doc(userId);
+    let doc = await heroRef.get();
+
+    // If not found, try looking up by twitchUserId
+    if (!doc.exists) {
+      const heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', userId)
+        .limit(1)
+        .get();
+      
+      if (!heroesSnapshot.empty) {
+        heroRef = db.collection('heroes').doc(heroesSnapshot.docs[0].id);
+        doc = heroesSnapshot.docs[0];
+      }
+    }
 
     if (!doc.exists) {
       return res.status(404).json({ error: 'Hero not found' });
@@ -887,14 +1236,107 @@ router.post('/:userId/reforge-item', async (req, res) => {
   }
 });
 
+// Lock/unlock equipment item
+router.post('/:userId/equipment/:slot/lock', async (req, res) => {
+  try {
+    const { userId, slot } = req.params;
+    
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+    
+    const hero = doc.data();
+    const equipment = hero.equipment || {};
+    const item = equipment[slot];
+    
+    if (!item) {
+      return res.status(404).json({ error: `No item in ${slot} slot` });
+    }
+    
+    // Update item to be locked
+    const lockedItem = {
+      ...item,
+      locked: true
+    };
+    
+    await heroRef.update({
+      [`equipment.${slot}`]: lockedItem,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`🔒 ${userId} locked ${slot} item: ${item.name}`);
+    
+    res.json({
+      success: true,
+      message: `${item.name} locked`,
+      item: lockedItem
+    });
+  } catch (error) {
+    console.error('Error locking equipment:', error);
+    res.status(500).json({ error: 'Failed to lock equipment' });
+  }
+});
+
+router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
+  try {
+    const { userId, slot } = req.params;
+    
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+    
+    const hero = doc.data();
+    const equipment = hero.equipment || {};
+    const item = equipment[slot];
+    
+    if (!item) {
+      return res.status(404).json({ error: `No item in ${slot} slot` });
+    }
+    
+    // Update item to be unlocked
+    const unlockedItem = {
+      ...item,
+      locked: false
+    };
+    
+    await heroRef.update({
+      [`equipment.${slot}`]: unlockedItem,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`🔓 ${userId} unlocked ${slot} item: ${item.name}`);
+    
+    res.json({
+      success: true,
+      message: `${item.name} unlocked`,
+      item: unlockedItem
+    });
+  } catch (error) {
+    console.error('Error unlocking equipment:', error);
+    res.status(500).json({ error: 'Failed to unlock equipment' });
+  }
+});
+
 // Expand bank storage (add bank slots)
 router.post('/:userId/expand-storage', async (req, res) => {
   try {
     const { userId } = req.params;
-    const { slots = 10 } = req.body; // Default 10 slots, max 50 per purchase
+    const { slots = 15, currency = 'gold' } = req.body; // Default 15 slots, currency: 'gold' or 'tokens'
 
-    if (slots < 1 || slots > 50) {
-      return res.status(400).json({ error: 'Slots must be between 1 and 50' });
+    // Validate slots (15 slots per expansion)
+    if (slots !== 15) {
+      return res.status(400).json({ error: 'Must expand by exactly 15 slots per purchase' });
+    }
+
+    // Validate currency
+    if (currency !== 'gold' && currency !== 'tokens') {
+      return res.status(400).json({ error: 'Currency must be "gold" or "tokens"' });
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -906,15 +1348,36 @@ router.post('/:userId/expand-storage', async (req, res) => {
 
     const hero = doc.data();
     
-    // Calculate cost: 50 gold per slot (balanced, one-time purchase)
-    const costPerSlot = 50;
-    const totalCost = costPerSlot * slots;
-    const currentGold = hero.gold || 0;
-
-    if (currentGold < totalCost) {
-      return res.status(400).json({ 
-        error: `Not enough gold! Need ${totalCost}g, have ${currentGold}g` 
-      });
+    // Calculate costs based on currency
+    let totalCost;
+    let currentAmount;
+    let updateData = {};
+    
+    if (currency === 'gold') {
+      // Gold cost: 50g per slot = 750g for 15 slots
+      const costPerSlot = 50;
+      totalCost = costPerSlot * slots; // 750g for 15 slots
+      currentAmount = hero.gold || 0;
+      
+      if (currentAmount < totalCost) {
+        return res.status(400).json({ 
+          error: `Not enough gold! Need ${totalCost}g, have ${currentAmount}g` 
+        });
+      }
+      
+      updateData.gold = currentAmount - totalCost;
+    } else {
+      // Token cost: 50 tokens for 15 slots (more reasonable vs 750g)
+      totalCost = 50; // Fixed cost for 15 slots
+      currentAmount = hero.tokens || 0;
+      
+      if (currentAmount < totalCost) {
+        return res.status(400).json({ 
+          error: `Not enough tokens! Need ${totalCost}t, have ${currentAmount}t` 
+        });
+      }
+      
+      updateData.tokens = currentAmount - totalCost;
     }
 
     // Get current bank size (default 50 if not set)
@@ -926,19 +1389,22 @@ router.post('/:userId/expand-storage', async (req, res) => {
       return res.status(400).json({ error: 'Maximum bank size is 500 slots' });
     }
 
-    await heroRef.update({
-      gold: currentGold - totalCost,
-      bankSize: newBankSize,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+    updateData.bankSize = newBankSize;
+    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
-    console.log(`📦 ${userId} expanded bank by ${slots} slots (${currentBankSize} -> ${newBankSize}) for ${totalCost}g`);
+    await heroRef.update(updateData);
+
+    const currencySymbol = currency === 'gold' ? 'g' : 't';
+    console.log(`📦 ${userId} expanded bank by ${slots} slots (${currentBankSize} -> ${newBankSize}) for ${totalCost}${currencySymbol}`);
+
+    const remainingAmount = currency === 'gold' ? updateData.gold : updateData.tokens;
+    const currencyName = currency === 'gold' ? 'Gold' : 'Tokens';
 
     res.json({ 
       success: true, 
-      message: `Bank expanded to ${newBankSize} slots! Gold remaining: ${currentGold - totalCost}g`,
+      message: `Bank expanded to ${newBankSize} slots! ${currencyName} remaining: ${remainingAmount}${currencySymbol}`,
       newBankSize,
-      newGold: currentGold - totalCost
+      [`new${currency.charAt(0).toUpperCase() + currency.slice(1)}`]: remainingAmount
     });
   } catch (error) {
     console.error('Error expanding storage:', error);

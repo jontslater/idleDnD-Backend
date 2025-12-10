@@ -195,26 +195,18 @@ export function calculateGearScore(hero) {
 }
 
 /**
- * Generate 4-letter room code
+ * Generate random 4-letter room code (uppercase letters only)
  */
 export function generateQueueCode(type, difficulty) {
-  const prefixes = {
-    dungeon_normal: ['CAVE', 'MAZE', 'TOMB', 'RUIN', 'CRYPT', 'LAIR'],
-    dungeon_heroic: ['HERO', 'EPIC', 'HARD', 'PEAK', 'ELITE', 'APEX'],
-    dungeon_mythic: ['MYTH', 'GODS', 'FATE', 'DOOM', 'TITAN', 'CHAOS'],
-    raid_dragons_lair: ['DRAG', 'FIRE', 'WORM', 'CLAW', 'WING', 'FURY'],
-    raid_demon_citadel: ['DEMO', 'HELL', 'DOOM', 'VOID', 'DARK', 'EVIL'],
-    raid_frozen_wastes: ['SNOW', 'COLD', 'FRZN', 'CHILL', 'BLIZ', 'NORD']
-  };
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let code = '';
   
-  const key = type === 'dungeon' 
-    ? `dungeon_${difficulty}` 
-    : `raid_${difficulty}`;
+  // Generate 4 random uppercase letters
+  for (let i = 0; i < 4; i++) {
+    code += letters[Math.floor(Math.random() * letters.length)];
+  }
   
-  const options = prefixes[key] || ['ROOM'];
-  const base = options[Math.floor(Math.random() * options.length)];
-  
-  return base;
+  return code;
 }
 
 /**

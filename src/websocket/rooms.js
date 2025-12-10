@@ -48,12 +48,16 @@ export function handleConnection(ws, twitchId, clientType) {
   // Handle ping/pong for keepalive
   ws.on('pong', () => {
     ws.isAlive = true;
+    // Client responded to ping, connection is alive
   });
   
+  // Also handle JSON ping messages (for browser clients that don't use native ping/pong)
+  // This is a fallback - native WebSocket ping/pong should work automatically
+  
   // Handle disconnect
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
     removeFromRoom(ws, twitchId);
-    console.log(`❌ Client disconnected: ${clientType} for Twitch ID ${twitchId}`);
+    console.log(`❌ Client disconnected: ${clientType} for Twitch ID ${twitchId} (code: ${code}, reason: ${reason?.toString() || 'none'})`);
   });
   
   // Handle errors
@@ -79,6 +83,19 @@ function handleMessage(ws, message) {
       ws.send(JSON.stringify({ type: 'echo', data }));
       break;
       
+    case 'chat:typing':
+      // User is typing indicator (optional)
+      // Could broadcast to party members or world
+      break;
+      
+    case 'chat:join':
+      // User joining a chat channel (optional)
+      break;
+      
+    case 'chat:leave':
+      // User leaving a chat channel (optional)
+      break;
+      
     default:
       console.log(`📨 Received message type: ${type} from ${ws.twitchId}`);
       // Forward to appropriate handler
@@ -94,7 +111,9 @@ function removeFromRoom(ws, twitchId) {
     rooms.get(twitchId).delete(ws);
     if (rooms.get(twitchId).size === 0) {
       rooms.delete(twitchId);
-      console.log(`🗑️ Room ${twitchId} is now empty`);
+      // Note: This log is informational only - room becomes empty when all clients disconnect
+      // It does NOT cause disconnections. This is just for debugging.
+      console.log(`🗑️ Room ${twitchId} is now empty (all clients disconnected)`);
     }
   }
 }

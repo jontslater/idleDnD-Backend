@@ -33,6 +33,16 @@ const QUEST_TEMPLATES = {
         monthly: { newbie: 100, intermediate: 200, veteran: 400, elite: 700 }
       }
     },
+    complete_dungeons: {
+      name: ['Dungeon Explorer', 'Dungeon Master', 'Dungeon Conqueror', 'Dungeon Legend'],
+      description: (count) => `Complete ${count} dungeon${count > 1 ? 's' : ''}`,
+      type: 'completeDungeons',
+      scaling: {
+        daily: { newbie: 1, intermediate: 1, veteran: 2, elite: 3 },
+        weekly: { newbie: 3, intermediate: 5, veteran: 8, elite: 15 },
+        monthly: { newbie: 10, intermediate: 20, veteran: 35, elite: 60 }
+      }
+    },
     deal_damage: {
       name: ['Damage Dealer', 'Devastator', 'Annihilator', 'Obliterator'],
       description: (count) => `Deal ${formatNumber(count)} damage`,

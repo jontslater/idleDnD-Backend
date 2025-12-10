@@ -81,8 +81,12 @@ import leaderboardRoutes from './routes/leaderboards.js';
 import dungeonRoutes from './routes/dungeon.js';
 import enchantingRoutes from './routes/enchanting.js';
 import guildPerksRoutes from './routes/guildPerks.js';
+import partiesRoutes from './routes/parties.js';
 import chatRoutes from './routes/chat.js';
+import webChatRoutes from './routes/webChat.js';
 import lootTokenRoutes from './routes/lootTokens.js';
+import purchasesRoutes from './routes/purchases.js';
+import mailRoutes from './routes/mail.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -90,6 +94,8 @@ import { initializeQuestSystem } from './services/questService.js';
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/web-chat', webChatRoutes);
+app.use('/api/purchases', purchasesRoutes);
 app.use('/api/heroes', heroRoutes);
 app.use('/api/professions', professionsRoutes);
 app.use('/api/guilds', guildRoutes);
@@ -105,7 +111,9 @@ app.use('/api/leaderboards', leaderboardRoutes);
 app.use('/api/dungeon', dungeonRoutes);
 app.use('/api/enchanting', enchantingRoutes);
 app.use('/api/guild-perks', guildPerksRoutes);
+app.use('/api/parties', partiesRoutes);
 app.use('/api/loot-tokens', lootTokenRoutes);
+app.use('/api/mail', mailRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

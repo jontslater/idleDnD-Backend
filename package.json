@@ -12,7 +12,14 @@
     "serve": "firebase emulators:start",
     "test": "echo \"Error: no test specified\" && exit 1",
     "sync-heroes": "node scripts/sync-heroes.js",
-    "test-hero": "node scripts/sync-heroes.js --test"
+    "test-hero": "node scripts/sync-heroes.js --test",
+    "test-dungeon-queue": "node scripts/test-dungeon-queue.js",
+    "test-party-queue": "node scripts/test-party-queue.js",
+    "test-auction-house": "node scripts/test-auction-house.js",
+    "create-test-auctions": "node scripts/create-test-auctions.js",
+    "cleanup-test-auctions": "node scripts/cleanup-test-auctions.js",
+    "add-gems-sockets": "node scripts/add-gems-sockets.js",
+    "test-whisper": "node test-whisper.js"
   },
   "keywords": [
     "firebase",

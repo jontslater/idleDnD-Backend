@@ -85,3 +85,4 @@ Upgrade bonuses are applied when calculating hero stats, not stored as modified 
 3. Use new cost formula
 4. Update battlefield stat calculation to apply upgrade bonuses
 5. Test end-to-end
+

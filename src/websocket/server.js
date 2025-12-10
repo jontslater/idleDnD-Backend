@@ -42,6 +42,7 @@ export function initializeWebSocketServer(httpServer) {
 
 /**
  * Broadcast message to all clients in a room (by Twitch ID)
+ * Special case: if twitchId is 'world', broadcast to all connected clients
  */
 export function broadcastToRoom(twitchId, message) {
   if (!wss) return;
@@ -50,9 +51,13 @@ export function broadcastToRoom(twitchId, message) {
   let sent = 0;
   
   wss.clients.forEach((client) => {
-    if (client.readyState === 1 && client.twitchId === twitchId) { // 1 = OPEN
-      client.send(messageStr);
-      sent++;
+    if (client.readyState === 1) { // 1 = OPEN
+      // If twitchId is 'world', send to all clients
+      // Otherwise, send only to clients in that room
+      if (twitchId === 'world' || client.twitchId === twitchId) {
+        client.send(messageStr);
+        sent++;
+      }
     }
   });
   
