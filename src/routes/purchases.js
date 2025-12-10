@@ -1,0 +1,704 @@
+import express from 'express';
+import admin from 'firebase-admin';
+import { db } from '../index.js';
+
+const router = express.Router();
+
+// Pack tier configurations
+const PACK_TIERS = {
+  bronze: { price: 5, premiumCurrency: 25, name: 'Bronze Founder' },
+  silver: { price: 10, premiumCurrency: 75, name: 'Silver Founder' },
+  gold: { price: 15, premiumCurrency: 150, name: 'Gold Founder' },
+  platinum: { price: 25, premiumCurrency: 250, name: 'Platinum Founder' }
+};
+
+// Token pack configurations (standard gacha pricing)
+const TOKEN_PACKS = {
+  impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
+  starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
+  value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
+  premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
+};
+
+// Tier number mapping (for database storage)
+const TIER_LEVELS = {
+  bronze: 1,
+  silver: 2,
+  gold: 3,
+  platinum: 4
+};
+
+/**
+ * Initiate a founders pack purchase
+ * POST /api/purchases/founders-pack
+ */
+router.post('/founders-pack', async (req, res) => {
+  try {
+    const { userId, packTier } = req.body;
+
+    if (!userId || !packTier) {
+      return res.status(400).json({ error: 'userId and packTier are required' });
+    }
+
+    if (!PACK_TIERS[packTier]) {
+      return res.status(400).json({ error: `Invalid pack tier: ${packTier}. Valid tiers: bronze, silver, gold, platinum` });
+    }
+
+    const packConfig = PACK_TIERS[packTier];
+
+    console.log(`[Founders Pack] Purchase initiated: userId=${userId}, tier=${packTier}, price=$${packConfig.price}`);
+
+    // Check if user already has a founders pack
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .limit(1)
+      .get();
+
+    if (!heroesSnapshot.empty) {
+      const hero = heroesSnapshot.docs[0].data();
+      if (hero.founderPackTier) {
+        return res.status(400).json({ 
+          error: `You already own a ${PACK_TIERS[hero.founderPackTier]?.name || hero.founderPackTier} pack. Upgrades coming soon!` 
+        });
+      }
+    }
+
+    // Create purchase record
+    const purchaseId = `fp_${userId}_${Date.now()}`;
+    const purchaseData = {
+      userId,
+      packTier,
+      price: packConfig.price,
+      premiumCurrency: packConfig.premiumCurrency,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await db.collection('purchases').doc(purchaseId).set(purchaseData);
+
+    console.log(`[Founders Pack] Purchase record created: ${purchaseId}`);
+
+    // TODO: When Stripe is ready, create checkout session here
+    // const sessionId = await createStripeCheckoutSession(purchaseId, packConfig.price);
+    
+    // For now, return mock session ID
+    const mockSessionId = null;
+
+    res.json({
+      success: true,
+      purchaseId,
+      sessionId: mockSessionId,
+      message: `Founders pack purchase initiated. Payment processing will be available once Stripe is configured.`
+    });
+
+  } catch (error) {
+    console.error('[Founders Pack] Error initiating purchase:', error);
+    res.status(500).json({ error: 'Failed to initiate purchase' });
+  }
+});
+
+/**
+ * Complete a founders pack purchase (called after Stripe payment succeeds)
+ * POST /api/purchases/complete
+ */
+router.post('/complete', async (req, res) => {
+  try {
+    const { purchaseId } = req.body;
+
+    if (!purchaseId) {
+      return res.status(400).json({ error: 'purchaseId is required' });
+    }
+
+    console.log(`[Founders Pack] Completing purchase: ${purchaseId}`);
+
+    // Get purchase record
+    const purchaseRef = db.collection('purchases').doc(purchaseId);
+    const purchaseDoc = await purchaseRef.get();
+
+    if (!purchaseDoc.exists) {
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    const purchase = purchaseDoc.data();
+
+    if (purchase.status === 'completed') {
+      return res.status(400).json({ error: 'Purchase already completed' });
+    }
+
+    // Find user's heroes
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', purchase.userId)
+      .get();
+
+    if (heroesSnapshot.empty) {
+      return res.status(404).json({ error: 'No heroes found for user' });
+    }
+
+    const packConfig = PACK_TIERS[purchase.packTier];
+    const tierLevel = TIER_LEVELS[purchase.packTier];
+
+    // Update all user's heroes with founder pack benefits
+    const batch = db.batch();
+    const updates = [];
+
+    heroesSnapshot.docs.forEach(heroDoc => {
+      const heroRef = db.collection('heroes').doc(heroDoc.id);
+      const hero = heroDoc.data();
+
+      // Update hero with founder pack tier
+      const heroUpdate = {
+        founderPackTier: purchase.packTier,
+        founderPackTierLevel: tierLevel,
+        tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Auto-unlock founder title if not already unlocked
+      if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
+        heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
+        // Set as active title if no title is currently selected
+        if (!hero.activeTitle) {
+          heroUpdate.activeTitle = 'Founder';
+        }
+      }
+
+      batch.update(heroRef, heroUpdate);
+      updates.push({ heroId: heroDoc.id, heroName: hero.name || hero.username });
+    });
+
+    // Update purchase status
+    batch.update(purchaseRef, {
+      status: 'completed',
+      completedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    await batch.commit();
+
+    console.log(`[Founders Pack] ✅ Purchase completed: ${purchaseId}`);
+    console.log(`[Founders Pack] Updated ${updates.length} heroes with ${purchase.packTier} pack benefits`);
+
+    res.json({
+      success: true,
+      message: `${packConfig.name} pack purchased successfully!`,
+      purchase: {
+        ...purchase,
+        status: 'completed'
+      },
+      heroesUpdated: updates.length
+    });
+
+  } catch (error) {
+    console.error('[Founders Pack] Error completing purchase:', error);
+    res.status(500).json({ error: 'Failed to complete purchase' });
+  }
+});
+
+/**
+ * Get purchase status
+ * GET /api/purchases/status/:purchaseId
+ */
+router.get('/status/:purchaseId', async (req, res) => {
+  try {
+    const { purchaseId } = req.params;
+
+    const purchaseDoc = await db.collection('purchases').doc(purchaseId).get();
+
+    if (!purchaseDoc.exists) {
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    const purchase = purchaseDoc.data();
+
+    res.json({
+      success: true,
+      purchase: {
+        id: purchaseDoc.id,
+        ...purchase
+      }
+    });
+
+  } catch (error) {
+    console.error('[Founders Pack] Error getting purchase status:', error);
+    res.status(500).json({ error: 'Failed to get purchase status' });
+  }
+});
+
+/**
+ * Get all founders for Founders Hall (all tiers)
+ * GET /api/purchases/founders
+ */
+router.get('/founders', async (req, res) => {
+  try {
+    console.log('[Founders Hall] Fetching all founders...');
+
+    const founders = [];
+    const foundUserIds = new Set();
+
+    // PRIMARY: Check heroes directly for founderPackTier (most reliable)
+    // Get all heroes and filter for those with founderPackTier
+    const allHeroesSnapshot = await db.collection('heroes').get();
+    console.log(`[Founders Hall] Checking ${allHeroesSnapshot.docs.length} heroes for founderPackTier...`);
+
+    allHeroesSnapshot.docs.forEach(heroDoc => {
+      const hero = heroDoc.data();
+      const founderTier = hero.founderPackTier;
+      const founderTierLevel = hero.founderPackTierLevel;
+      
+      // Check if hero has a founder pack tier (case-insensitive)
+      // Also check founderPackTierLevel as fallback (1=bronze, 2=silver, 3=gold, 4=platinum)
+      let tierToUse = null;
+      
+      if (founderTier) {
+        const tierLower = founderTier.toLowerCase().trim();
+        if (['bronze', 'silver', 'gold', 'platinum'].includes(tierLower)) {
+          tierToUse = tierLower;
+        } else {
+          // Log unexpected tier values for debugging
+          console.log(`[Founders Hall] Hero ${heroDoc.id} has unexpected founderPackTier: "${founderTier}" (username: ${hero.twitchUsername || hero.username})`);
+        }
+      }
+      
+      // Fallback: Check founderPackTierLevel if tier string is missing
+      if (!tierToUse && founderTierLevel) {
+        const tierMap = { 1: 'bronze', 2: 'silver', 3: 'gold', 4: 'platinum' };
+        tierToUse = tierMap[founderTierLevel];
+        if (tierToUse) {
+          console.log(`[Founders Hall] Using founderPackTierLevel ${founderTierLevel} -> ${tierToUse} for hero ${heroDoc.id}`);
+        }
+      }
+      
+      if (!tierToUse) {
+        // Log heroes that might be founders but don't have the field set
+        const username = (hero.twitchUsername || hero.username || '').toLowerCase();
+        if (username === 'theneverendingwar' || username.includes('never')) {
+          console.log(`[Founders Hall] DEBUG: Hero ${heroDoc.id} (${hero.twitchUsername || hero.username}) has no founderPackTier. Fields:`, {
+            founderPackTier: hero.founderPackTier,
+            founderPackTierLevel: hero.founderPackTierLevel,
+            twitchUsername: hero.twitchUsername,
+            username: hero.username,
+            twitchUserId: hero.twitchUserId
+          });
+        }
+        return;
+      }
+
+      const userId = hero.twitchUserId || hero.id;
+      
+      if (!userId) {
+        console.log(`[Founders Hall] Skipping hero ${heroDoc.id} - no userId (twitchUsername: ${hero.twitchUsername}, username: ${hero.username})`);
+        return;
+      }
+
+      // Skip if we already added this user
+      if (foundUserIds.has(userId)) {
+        console.log(`[Founders Hall] Skipping duplicate user: ${userId}`);
+        return;
+      }
+
+        foundUserIds.add(userId);
+
+        const displayName = hero.twitchUsername || hero.username || hero.name || userId;
+        
+        // Log ALL fields to see what's available
+        const allFields = Object.keys(hero);
+        console.log(`[Founders Hall] Hero ${heroDoc.id} (${displayName}) - ALL fields:`, allFields);
+        console.log(`[Founders Hall] Hero ${heroDoc.id} - Role-related fields:`, {
+          role: hero.role,
+          class: hero.class,
+          characterClass: hero.characterClass,
+          characterRole: hero.characterRole,
+          heroClass: hero.heroClass,
+          type: hero.type
+        });
+        
+        const heroRole = hero.role || hero.class || hero.characterClass || hero.characterRole || hero.heroClass || 'berserker';
+        
+        console.log(`[Founders Hall] Found founder: ${displayName} (${tierToUse}) - userId: ${userId}, role: ${heroRole}`);
+
+        const founderData = {
+          userId,
+          username: displayName,
+          heroName: hero.name,
+          heroRole: heroRole, // Include role for sprite display
+          tier: tierToUse,
+          purchaseDate: hero.updatedAt?.toMillis() || hero.createdAt?.toMillis() || Date.now(),
+          purchaseId: `hero_${heroDoc.id}`
+        };
+        
+        console.log(`[Founders Hall] Pushing founder data:`, founderData);
+        founders.push(founderData);
+    });
+
+    // SECONDARY: Also check purchase records for additional info
+    const purchasesSnapshot = await db.collection('purchases')
+      .where('status', '==', 'completed')
+      .get();
+    
+    const founderPurchases = purchasesSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.packTier && ['bronze', 'silver', 'gold', 'platinum'].includes(data.packTier);
+    });
+
+    console.log(`[Founders Hall] Found ${founderPurchases.length} founder pack purchases`);
+
+    // Add any founders from purchases that we don't already have
+    for (const purchaseDoc of founderPurchases) {
+      const purchase = purchaseDoc.data();
+      const userId = purchase.userId;
+      
+      if (!userId || foundUserIds.has(userId)) continue;
+
+      foundUserIds.add(userId);
+
+      // Get user's hero for display name
+      const heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', userId)
+        .limit(1)
+        .get();
+
+      let displayName = userId;
+      let heroName = null;
+
+      if (!heroesSnapshot.empty) {
+        const hero = heroesSnapshot.docs[0].data();
+        displayName = hero.twitchUsername || hero.username || hero.name || userId;
+        heroName = hero.name;
+      }
+
+      // Get hero role if available
+      let heroRole = 'berserker'; // Default
+      if (!heroesSnapshot.empty) {
+        const hero = heroesSnapshot.docs[0].data();
+        heroRole = hero.role || 'berserker';
+      }
+
+      founders.push({
+        userId,
+        username: displayName,
+        heroName,
+        heroRole,
+        tier: purchase.packTier,
+        purchaseDate: purchase.completedAt?.toMillis() || purchase.createdAt?.toMillis() || Date.now(),
+        purchaseId: purchaseDoc.id
+      });
+    }
+
+    // Sort by tier (Platinum first) then by purchase date (most recent first)
+    founders.sort((a, b) => {
+      const aTier = TIER_LEVELS[a.tier] || 0;
+      const bTier = TIER_LEVELS[b.tier] || 0;
+      if (bTier !== aTier) return bTier - aTier; // Higher tier first
+      return b.purchaseDate - a.purchaseDate; // Most recent first
+    });
+
+    console.log(`[Founders Hall] Found ${founders.length} founders (all tiers)`);
+    
+    // Debug: Check for specific user - check ALL heroes for any match
+    const debugUser = 'theneverendingwar';
+    const debugHeroes = allHeroesSnapshot.docs.filter(doc => {
+      const hero = doc.data();
+      const twitchUsername = (hero.twitchUsername || '').toLowerCase();
+      const username = (hero.username || '').toLowerCase();
+      const name = (hero.name || '').toLowerCase();
+      const searchTerm = debugUser.toLowerCase();
+      return twitchUsername.includes(searchTerm) || 
+             username.includes(searchTerm) || 
+             name.includes(searchTerm) ||
+             twitchUsername === searchTerm ||
+             username === searchTerm;
+    });
+    
+    if (debugHeroes.length > 0) {
+      console.log(`[Founders Hall] DEBUG: Found ${debugHeroes.length} heroes matching "${debugUser}":`);
+      debugHeroes.forEach((heroDoc, idx) => {
+        const hero = heroDoc.data();
+        const allFields = Object.keys(hero);
+        const founderFields = allFields.filter(f => f.toLowerCase().includes('founder'));
+        
+        console.log(`[Founders Hall] DEBUG Hero ${idx + 1} (${heroDoc.id}):`, {
+          twitchUsername: hero.twitchUsername,
+          username: hero.username,
+          name: hero.name,
+          twitchUserId: hero.twitchUserId,
+          id: hero.id,
+          founderPackTier: hero.founderPackTier,
+          founderPackTierLevel: hero.founderPackTierLevel,
+          hasFounderTier: !!hero.founderPackTier,
+          hasFounderTierLevel: !!hero.founderPackTierLevel,
+          tierInList: hero.founderPackTier && ['bronze', 'silver', 'gold', 'platinum'].includes((hero.founderPackTier || '').toLowerCase().trim()),
+          allFounderFields: founderFields.map(f => ({ [f]: hero[f] })),
+          wasAdded: foundUserIds.has(hero.twitchUserId || hero.id)
+        });
+      });
+    } else {
+      console.log(`[Founders Hall] DEBUG: No heroes found matching "${debugUser}"`);
+      console.log(`[Founders Hall] DEBUG: Sample usernames from first 10 heroes:`, 
+        allHeroesSnapshot.docs.slice(0, 10).map(doc => ({
+          twitchUsername: doc.data().twitchUsername,
+          username: doc.data().username,
+          name: doc.data().name
+        }))
+      );
+    }
+
+    res.json({
+      success: true,
+      founders,
+      debug: {
+        totalHeroesChecked: allHeroesSnapshot.docs.length,
+        foundersFound: founders.length,
+        debugUserFound: debugHeroes.length > 0,
+        debugUserData: debugHeroes.length > 0 ? debugHeroes.map(doc => {
+          const hero = doc.data();
+          return {
+            id: doc.id,
+            twitchUsername: hero.twitchUsername,
+            username: hero.username,
+            name: hero.name,
+            twitchUserId: hero.twitchUserId,
+            founderPackTier: hero.founderPackTier,
+            founderPackTierLevel: hero.founderPackTierLevel,
+            hasFounderTier: !!hero.founderPackTier,
+            hasFounderTierLevel: !!hero.founderPackTierLevel,
+            tierValue: hero.founderPackTier || `Level: ${hero.founderPackTierLevel || 'none'}`,
+            allFields: Object.keys(hero).filter(k => k.toLowerCase().includes('founder'))
+          };
+        }) : null
+      }
+    });
+
+  } catch (error) {
+    console.error('[Founders Hall] Error fetching founders:', error);
+    res.status(500).json({ error: 'Failed to fetch founders' });
+  }
+});
+
+/**
+ * Set founder status for a user (admin/manual grant)
+ * POST /api/purchases/set-founder
+ */
+router.post('/set-founder', async (req, res) => {
+  try {
+    const { userId, tier } = req.body;
+
+    if (!userId || !tier) {
+      return res.status(400).json({ error: 'userId and tier are required' });
+    }
+
+    if (!['bronze', 'silver', 'gold', 'platinum'].includes(tier.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid tier. Must be: bronze, silver, gold, or platinum' });
+    }
+
+    const tierLower = tier.toLowerCase();
+    const tierLevel = TIER_LEVELS[tierLower];
+
+    console.log(`[Founders Pack] Setting founder status: userId=${userId}, tier=${tierLower}`);
+
+    // Find user's heroes
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .get();
+
+    if (heroesSnapshot.empty) {
+      return res.status(404).json({ error: 'No heroes found for user' });
+    }
+
+    // Update all user's heroes with founder pack benefits
+    const batch = db.batch();
+    const updates = [];
+
+    heroesSnapshot.docs.forEach(heroDoc => {
+      const heroRef = db.collection('heroes').doc(heroDoc.id);
+      const hero = heroDoc.data();
+
+      const heroUpdate = {
+        founderPackTier: tierLower,
+        founderPackTierLevel: tierLevel,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Auto-unlock founder title if not already unlocked
+      if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
+        heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
+        // Set as active title if no title is currently selected
+        if (!hero.activeTitle) {
+          heroUpdate.activeTitle = 'Founder';
+        }
+      }
+
+      batch.update(heroRef, heroUpdate);
+      updates.push({ heroId: heroDoc.id, heroName: hero.name || hero.username });
+    });
+
+    await batch.commit();
+
+    console.log(`[Founders Pack] ✅ Set ${tierLower} founder status for ${updates.length} heroes`);
+
+    res.json({
+      success: true,
+      message: `Set ${PACK_TIERS[tierLower].name} status successfully!`,
+      tier: tierLower,
+      heroesUpdated: updates.length,
+      heroes: updates
+    });
+
+  } catch (error) {
+    console.error('[Founders Pack] Error setting founder status:', error);
+    res.status(500).json({ error: 'Failed to set founder status' });
+  }
+});
+
+/**
+ * Initiate a token pack purchase
+ * POST /api/purchases/token-pack
+ */
+router.post('/token-pack', async (req, res) => {
+  try {
+    const { userId, packType, heroId } = req.body;
+
+    if (!userId || !packType || !heroId) {
+      return res.status(400).json({ error: 'userId, packType, and heroId are required' });
+    }
+
+    if (!TOKEN_PACKS[packType]) {
+      return res.status(400).json({ 
+        error: `Invalid pack type: ${packType}. Valid types: impulse, starter, value, premium` 
+      });
+    }
+
+    const packConfig = TOKEN_PACKS[packType];
+
+    console.log(`[Token Pack] Purchase initiated: userId=${userId}, packType=${packType}, heroId=${heroId}, price=$${packConfig.price}`);
+
+    // Verify hero exists and belongs to user
+    const heroDoc = await db.collection('heroes').doc(heroId).get();
+    if (!heroDoc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = heroDoc.data();
+    if (hero.twitchUserId !== userId) {
+      return res.status(403).json({ error: 'Hero does not belong to user' });
+    }
+
+    // Create purchase record
+    const purchaseId = `tp_${userId}_${Date.now()}`;
+    const purchaseData = {
+      userId,
+      heroId,
+      packType,
+      price: packConfig.price,
+      tokens: packConfig.tokens,
+      gold: packConfig.gold,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await db.collection('purchases').doc(purchaseId).set(purchaseData);
+
+    console.log(`[Token Pack] Purchase record created: ${purchaseId}`);
+
+    // TODO: When Stripe is ready, create checkout session here
+    // const sessionId = await createStripeCheckoutSession(purchaseId, packConfig.price);
+    
+    // For now, return mock session ID
+    const mockSessionId = null;
+
+    res.json({
+      success: true,
+      purchaseId,
+      sessionId: mockSessionId,
+      message: `Token pack purchase initiated. Payment processing will be available once Stripe is configured.`
+    });
+
+  } catch (error) {
+    console.error('[Token Pack] Error initiating purchase:', error);
+    res.status(500).json({ error: 'Failed to initiate purchase' });
+  }
+});
+
+/**
+ * Complete a token pack purchase (called after Stripe payment succeeds)
+ * POST /api/purchases/complete-token-pack
+ */
+router.post('/complete-token-pack', async (req, res) => {
+  try {
+    const { purchaseId } = req.body;
+
+    if (!purchaseId) {
+      return res.status(400).json({ error: 'purchaseId is required' });
+    }
+
+    console.log(`[Token Pack] Completing purchase: ${purchaseId}`);
+
+    // Get purchase record
+    const purchaseRef = db.collection('purchases').doc(purchaseId);
+    const purchaseDoc = await purchaseRef.get();
+
+    if (!purchaseDoc.exists) {
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    const purchase = purchaseDoc.data();
+
+    if (purchase.status === 'completed') {
+      return res.status(400).json({ error: 'Purchase already completed' });
+    }
+
+    if (purchase.packType === undefined) {
+      return res.status(400).json({ error: 'Invalid purchase type (not a token pack)' });
+    }
+
+    const packConfig = TOKEN_PACKS[purchase.packType];
+
+    // Get hero document
+    const heroRef = db.collection('heroes').doc(purchase.heroId);
+    const heroDoc = await heroRef.get();
+
+    if (!heroDoc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = heroDoc.data();
+
+    // Update hero with tokens and gold
+    const heroUpdate = {
+      tokens: (hero.tokens || 0) + packConfig.tokens,
+      gold: (hero.gold || 0) + packConfig.gold,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Update purchase status
+    await db.batch()
+      .update(heroRef, heroUpdate)
+      .update(purchaseRef, {
+        status: 'completed',
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+      .commit();
+
+    console.log(`[Token Pack] ✅ Purchase completed: ${purchaseId}`);
+    console.log(`[Token Pack] Granted ${packConfig.tokens} tokens and ${packConfig.gold} gold to hero ${purchase.heroId}`);
+
+    res.json({
+      success: true,
+      message: `${packConfig.name} purchased successfully!`,
+      purchase: {
+        ...purchase,
+        status: 'completed'
+      },
+      tokensGranted: packConfig.tokens,
+      goldGranted: packConfig.gold
+    });
+
+  } catch (error) {
+    console.error('[Token Pack] Error completing purchase:', error);
+    res.status(500).json({ error: 'Failed to complete purchase' });
+  }
+});
+
+export default router;
