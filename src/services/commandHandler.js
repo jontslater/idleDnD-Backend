@@ -1542,6 +1542,35 @@ async function handleRejoinByIndexCommand(indexStr, username, userId, battlefiel
   
   const latestHero = { id: latestHeroDoc.id, ...latestHeroDoc.data() };
   
+  // CRITICAL: Remove ALL other heroes of this user from ALL battlefields
+  // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
+  try {
+    const allUserHeroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .get();
+    
+    const otherHeroes = allUserHeroesSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(h => h.id !== selectedHero.id && h.currentBattlefieldId); // Other heroes that are on battlefields
+    
+    if (otherHeroes.length > 0) {
+      console.log(`[Rejoin] User ${username} has ${otherHeroes.length} other heroes on battlefields. Removing them...`);
+      
+      for (const otherHero of otherHeroes) {
+        const otherHeroRef = db.collection('heroes').doc(otherHero.id);
+        await otherHeroRef.update({
+          currentBattlefieldId: admin.firestore.FieldValue.delete(),
+          currentBattlefieldType: admin.firestore.FieldValue.delete(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`✅ [Rejoin] Removed hero ${otherHero.id} (${otherHero.name}) from battlefield ${otherHero.currentBattlefieldId}`);
+      }
+    }
+  } catch (cleanupError) {
+    console.error('❌ [Rejoin] Error cleaning up other heroes:', cleanupError);
+    // Continue even if cleanup fails - don't block the rejoin
+  }
+  
   // Check if hero is already in this battlefield
   // Allow joining if currentBattlefieldId is null/undefined (they left but Firebase might not have updated)
   // Also allow if they're trying to rejoin the same battlefield (they might have just left)
@@ -1570,6 +1599,7 @@ async function handleRejoinByIndexCommand(indexStr, username, userId, battlefiel
   }
 
   // Update hero's battlefield (they're either joining for first time or moving from another battlefield)
+  // Setting new currentBattlefieldId automatically removes hero from old battlefield
   try {
     await heroDocRef.update({
       currentBattlefieldId: battlefieldId,
@@ -1577,6 +1607,7 @@ async function handleRejoinByIndexCommand(indexStr, username, userId, battlefiel
       lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    console.log(`✅ [Rejoin] Hero ${selectedHero.id} assigned to battlefield ${battlefieldId}`);
   } catch (updateError) {
     // If update fails (document deleted), return error
     if (updateError.code === 5) { // NOT_FOUND
@@ -1624,6 +1655,35 @@ async function handleRejoinCommand(hero, args, username, userId, battlefieldId) 
   
   const latestHero = { id: latestHeroDoc.id, ...latestHeroDoc.data() };
   
+  // CRITICAL: Remove ALL other heroes of this user from ALL battlefields
+  // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
+  try {
+    const allUserHeroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .get();
+    
+    const otherHeroes = allUserHeroesSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(h => h.id !== hero.id && h.currentBattlefieldId); // Other heroes that are on battlefields
+    
+    if (otherHeroes.length > 0) {
+      console.log(`[Rejoin] User ${username} has ${otherHeroes.length} other heroes on battlefields. Removing them...`);
+      
+      for (const otherHero of otherHeroes) {
+        const otherHeroRef = db.collection('heroes').doc(otherHero.id);
+        await otherHeroRef.update({
+          currentBattlefieldId: admin.firestore.FieldValue.delete(),
+          currentBattlefieldType: admin.firestore.FieldValue.delete(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`✅ [Rejoin] Removed hero ${otherHero.id} (${otherHero.name}) from battlefield ${otherHero.currentBattlefieldId}`);
+      }
+    }
+  } catch (cleanupError) {
+    console.error('❌ [Rejoin] Error cleaning up other heroes:', cleanupError);
+    // Continue even if cleanup fails - don't block the rejoin
+  }
+  
   // If hero is already in battlefield, just confirm and update lastActiveAt
   // Allow joining if currentBattlefieldId is null/undefined (they left but Firebase might not have updated)
   if (latestHero.currentBattlefieldId === battlefieldId && latestHero.currentBattlefieldId != null) {
@@ -1650,6 +1710,7 @@ async function handleRejoinCommand(hero, args, username, userId, battlefieldId) 
   }
   
   // If hero exists but not in this battlefield, rejoin with that hero
+  // Setting new currentBattlefieldId automatically removes hero from old battlefield
   try {
     await heroDocRef.update({
       currentBattlefieldId: battlefieldId,
@@ -1657,6 +1718,7 @@ async function handleRejoinCommand(hero, args, username, userId, battlefieldId) 
       lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    console.log(`✅ [Rejoin] Hero ${hero.id} assigned to battlefield ${battlefieldId}`);
 
     const roleName = ROLE_CONFIG[latestHero.role]?.displayName || latestHero.role;
     return {

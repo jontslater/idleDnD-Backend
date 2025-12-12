@@ -225,26 +225,50 @@ router.post('/join', async (req, res) => {
       const heroRef = db.collection('heroes').doc(hero.id);
       console.log(`[Join] Updating Firebase for hero ${hero.id} - setting currentBattlefieldId to: ${battlefieldId}`);
       
-      await heroRef.update({
+      // CRITICAL: Ensure hero is only active on ONE battlefield at a time
+      // Setting new currentBattlefieldId automatically overwrites the old value in Firestore,
+      // which removes the hero from the old battlefield (queries filter by currentBattlefieldId)
+      const updateData = {
         currentBattlefieldId: battlefieldId,
         currentBattlefieldType: 'streamer',
         lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      
+      // If hero was on a different battlefield, log the move for debugging
+      if (isMovingBattlefield && oldBattlefieldId && oldBattlefieldId !== 'world') {
+        console.log(`[Join] Hero ${hero.id} moving from ${oldBattlefieldId} to ${battlefieldId} - old battlefield cleared automatically`);
+      }
+      
+      await heroRef.update(updateData);
+      
+      // Verify the update succeeded - hero should ONLY be on the new battlefield
+      // (Setting new currentBattlefieldId automatically removes hero from old battlefield)
+      const verificationDoc = await heroRef.get();
+      const verifiedData = verificationDoc.data();
+      if (verifiedData.currentBattlefieldId !== battlefieldId) {
+        console.error(`❌ [Join] CRITICAL: Hero ${hero.id} battlefield update failed! Expected ${battlefieldId}, got ${verifiedData.currentBattlefieldId}`);
+        throw new Error('Failed to update hero battlefield - verification failed');
+      }
+      
+      // Additional verification: Ensure hero is not on old battlefield
+      // (Setting new currentBattlefieldId automatically removes hero from old battlefield in Firestore)
+      if (isMovingBattlefield && oldBattlefieldId && oldBattlefieldId !== 'world') {
+        // Verify hero is no longer on old battlefield by checking the document directly
+        // (The verificationDoc we already fetched should show the new battlefieldId)
+        if (verifiedData.currentBattlefieldId === oldBattlefieldId) {
+          console.error(`❌ [Join] CRITICAL: Hero ${hero.id} still on old battlefield ${oldBattlefieldId} after update!`);
+          // This shouldn't happen, but log it if it does
+        } else {
+          console.log(`✅ [Join] Verified: Hero ${hero.id} removed from old battlefield ${oldBattlefieldId}`);
+        }
+      }
+      
+      console.log(`✅ [Join] Verified: Hero ${hero.id} is now only on battlefield ${battlefieldId}`);
 
-      // Get updated hero and verify the write
+      // Get updated hero data for response
       const updatedHero = await heroRef.get();
       const heroData = { ...updatedHero.data(), id: updatedHero.id };
-      
-      // CRITICAL: Verify the write succeeded
-      if (heroData.currentBattlefieldId === battlefieldId) {
-        console.log(`✅ [Join] Verified Firebase write - Hero ${hero.id} successfully assigned to battlefield: ${battlefieldId}`);
-      } else {
-        console.error(`❌ [Join] CRITICAL: Firebase write verification FAILED!`);
-        console.error(`   Expected: ${battlefieldId}`);
-        console.error(`   Got: ${heroData.currentBattlefieldId}`);
-        console.error(`   Hero ${hero.id} may not persist through reload!`);
-      }
       
       // Always broadcast to new battlefield that hero joined (for real-time browser source updates)
       // This ensures the browser source updates immediately, even when rejoining the same battlefield
