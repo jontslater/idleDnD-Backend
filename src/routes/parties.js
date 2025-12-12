@@ -883,7 +883,7 @@ router.post('/:partyId/queue', async (req, res) => {
       return res.status(404).json({ error: 'Party not found' });
     }
 
-    const party = partyDoc.data();
+    let party = partyDoc.data();
     
     // Validate party size against requirements
     if (queueType === 'raid' && raidId) {
@@ -906,16 +906,21 @@ router.post('/:partyId/queue', async (req, res) => {
       }
     }
     
-    // Validate dungeon party size if fillParty is false
-    if (queueType === 'dungeon' && fillParty === false && dungeonId) {
+    // Validate dungeon party size and check if we should start immediately (if party is full)
+    if (queueType === 'dungeon' && dungeonId) {
       const { getDungeonById } = await import('../data/dungeons.js');
       const dungeonData = getDungeonById(dungeonId);
       
       if (dungeonData) {
-        if (party.memberData.length < dungeonData.minPlayers) {
+        if (party.memberData.length > dungeonData.maxPlayers) {
           return res.status(400).json({ 
-            error: `Party too small for ${dungeonData.name}. Need at least ${dungeonData.minPlayers} players to start immediately, but party has ${party.memberData.length}. Enable "Fill Party" to wait for matchmaking, or invite more members.`
+            error: `Party too large for ${dungeonData.name}. Maximum ${dungeonData.maxPlayers} players, but party has ${party.memberData.length}.`
           });
+        }
+        
+        // If party is full (equals maxPlayers), we'll start immediately below regardless of fillParty
+        if (party.memberData.length === dungeonData.maxPlayers) {
+          console.log(`[Parties] 🎯 Party is full (${party.memberData.length}/${dungeonData.maxPlayers}), will start immediately`);
         }
       }
     }
@@ -926,13 +931,28 @@ router.post('/:partyId/queue', async (req, res) => {
     }
     
     // If party is in_instance, reset to forming before queueing
+    // IMPORTANT: Refresh party data after reset to ensure we have latest state
     if (party.status === PARTY_STATUS.IN_INSTANCE) {
       await partyRef.update({
         status: PARTY_STATUS.FORMING,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
-      party.status = PARTY_STATUS.FORMING; // Update local party object
-      console.log(`[Parties] Reset party ${partyId} from in_instance to forming before queueing`);
+      // Refresh party data from Firestore to ensure we have latest state
+      // IMPORTANT: Preserve memberData from original party object since it might not be in Firestore
+      const originalMemberData = party.memberData;
+      const refreshedPartyDoc = await partyRef.get();
+      if (refreshedPartyDoc.exists) {
+        const refreshedData = refreshedPartyDoc.data();
+        party = { 
+          id: refreshedPartyDoc.id, 
+          ...refreshedData,
+          // Ensure memberData is preserved (it might not be stored in Firestore)
+          memberData: refreshedData.memberData || originalMemberData || []
+        };
+      } else {
+        party.status = PARTY_STATUS.FORMING; // Fallback: update local party object
+      }
+      console.log(`[Parties] Reset party ${partyId} from in_instance to forming before queueing. memberData length: ${party.memberData?.length || 0}`);
     }
 
     // Validate party size
@@ -1127,15 +1147,26 @@ router.post('/:partyId/queue', async (req, res) => {
     
     console.log(`[Parties] 📝 Proceeding to queue members (fillParty=${fillParty}, queueType=${queueType})...`);
     
-    if (queueType === 'dungeon' && fillParty === false) {
+    // Start dungeon immediately if:
+    // 1. fillParty is false (user wants to start immediately), OR
+    // 2. Party size equals maxPlayers (full party, should start immediately regardless of fillParty)
+    if (queueType === 'dungeon') {
       const { getDungeonById } = await import('../data/dungeons.js');
-      const { createDungeonInstanceForGroup } = await import('./dungeon-matchmaking.js');
+      const { createDungeonInstanceForGroup } = await import('./dungeon.js');
       
       const targetDungeonId = dungeonId || 'goblin_cave';
       const dungeonData = getDungeonById(targetDungeonId);
       
-      if (dungeonData && party.memberData.length >= dungeonData.minPlayers && party.memberData.length <= dungeonData.maxPlayers) {
-        // Party meets requirements - start immediately!
+      // Check if we should start immediately: either fillParty is false OR party is full
+      const shouldStartImmediately = fillParty === false || (dungeonData && party.memberData.length === dungeonData.maxPlayers);
+      
+      // Start immediately if conditions are met and party size is within max
+      if (shouldStartImmediately && dungeonData && party.memberData.length > 0 && party.memberData.length <= dungeonData.maxPlayers) {
+        const reason = party.memberData.length === dungeonData.maxPlayers 
+          ? `party is full (${party.memberData.length}/${dungeonData.maxPlayers} players)`
+          : `fillParty=false, no composition/size validation`;
+        console.log(`[Parties] ✅ Starting dungeon immediately with ${party.memberData.length} member(s) (${reason})`);
+        // Start immediately regardless of party composition or min size
         try {
           // Prepare queue entries format for createDungeonInstanceForGroup
           const queueMembers = [];
@@ -1166,11 +1197,17 @@ router.post('/:partyId/queue', async (req, res) => {
           }
           
           if (queueMembers.length === party.memberData.length) {
-            // All members valid - create dungeon instance immediately
-            await createDungeonInstanceForGroup({
+            // All members valid - use party format with members array
+            // This allows variable party sizes (not restricted to exactly 5)
+            const group = {
               members: queueMembers,
-              partyId
-            }, dungeonData);
+              partyId: partyId,
+              dungeonId: targetDungeonId,
+              dungeonType: dungeonType || 'normal'
+            };
+            
+            // Create dungeon instance immediately with party format
+            await createDungeonInstanceForGroup(group, dungeonData);
             
             // Update party status
             await partyRef.update({
@@ -1357,7 +1394,7 @@ router.post('/:partyId/queue', async (req, res) => {
     if (queueResults.length > 0) {
       if (queueType === 'dungeon') {
         try {
-          const { tryMatchmaking } = await import('./dungeon-matchmaking.js');
+          const { tryMatchmaking } = await import('./dungeon.js');
           await tryMatchmaking();
           console.log(`[Parties] ✅ Triggered dungeon matchmaking after party queue`);
         } catch (error) {

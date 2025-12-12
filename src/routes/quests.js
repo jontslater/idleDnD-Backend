@@ -625,6 +625,15 @@ router.post('/:userId/claim/:questId', async (req, res) => {
     
     await heroRef.update(updateData);
     
+    // Check achievements after quest completion (may unlock new titles)
+    const { checkAchievements } = await import('../services/achievementService.js');
+    try {
+      await checkAchievements(userId, 'questsCompleted', 1);
+    } catch (error) {
+      console.error('Error checking achievements after quest completion:', error);
+      // Don't fail the request if achievement check fails
+    }
+    
     res.json({
       success: true,
       rewards: quest.rewards,

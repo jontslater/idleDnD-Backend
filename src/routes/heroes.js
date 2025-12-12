@@ -468,6 +468,19 @@ router.post('/create', async (req, res) => {
     // Heroes use the Twitch username as their name (passed from frontend)
     // If not provided, use a default based on user ID
     const heroName = req.body.twitchUsername || req.body.name || `User${twitchUserId || tiktokUserId || 'Hero'}`;
+    
+    // Check if user has founder pack from existing heroes (apply to all heroes)
+    let founderPackTier = null;
+    let founderPackTierLevel = null;
+    if (existingHeroes.length > 0) {
+      const firstHero = existingHeroes[0];
+      if (firstHero.founderPackTier) {
+        founderPackTier = firstHero.founderPackTier;
+        founderPackTierLevel = firstHero.founderPackTierLevel;
+        console.log(`[Create Hero] Inheriting founder pack tier: ${founderPackTier} from existing hero`);
+      }
+    }
+    
     const heroData = {
       name: heroName,
       ...(twitchUserId && { twitchUserId }),
@@ -507,6 +520,9 @@ router.post('/create', async (req, res) => {
       skillPoints: 0,
       skillPointsEarned: 0,
       joinedAt: Date.now(),
+      // Inherit founder pack tier from existing heroes (applies to all user's heroes)
+      ...(founderPackTier && { founderPackTier }),
+      ...(founderPackTierLevel !== null && { founderPackTierLevel }),
       // Set battlefield ID if provided (for streamer battlefields)
       // Format: "twitch:channelId" or "twitch:username"
       ...(battlefieldId && { 
@@ -1512,6 +1528,51 @@ router.post('/:userId/port', async (req, res) => {
   } catch (error) {
     console.error('Error porting hero:', error);
     res.status(500).json({ error: 'Failed to port hero' });
+  }
+});
+
+/**
+ * Claim idle token rewards
+ * POST /api/heroes/:heroId/claim-idle-rewards
+ * heroId is the hero document ID (from hero.id in frontend)
+ * This essentially triggers the !claim command for the hero
+ */
+router.post('/:heroId/claim-idle-rewards', async (req, res) => {
+  try {
+    const { heroId } = req.params;
+
+    // Get hero by document ID (this is the hero.id from frontend)
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found. The hero ID provided does not exist.' });
+    }
+
+    // CRITICAL: Ensure we use doc.id as the ID, not any id field in the data
+    // Spread data first, then override with the actual document ID
+    const heroData = doc.data();
+    const hero = { ...heroData, id: doc.id };
+    
+    // Verify the ID is correct
+    if (hero.id !== doc.id) {
+      console.error(`[Claim Rewards] ID mismatch! doc.id=${doc.id}, hero.id=${hero.id}`);
+    }
+    
+    console.log(`[Claim Rewards] Claiming for hero document ${doc.id} (hero.id=${hero.id}, name=${hero.name || hero.username || 'Unknown'})`);
+    
+    // Import and use the claim command handler (same as !claim chat command)
+    const { handleClaimCommand } = await import('../services/commandHandler.js');
+    const result = await handleClaimCommand(hero, hero.name || hero.username || 'Player');
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    console.error('Error claiming idle rewards:', error);
+    res.status(500).json({ error: 'Failed to claim idle rewards', details: error.message });
   }
 });
 

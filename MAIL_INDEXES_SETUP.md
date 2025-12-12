@@ -96,3 +96,7 @@ After creating indexes:
 - Once built, indexes persist and don't need to be recreated
 
 
+
+
+
+

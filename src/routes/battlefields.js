@@ -114,17 +114,22 @@ router.post('/register', async (req, res) => {
       lastAccessed: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // If this is a streamer battlefield (twitch:username), try to initialize chat listener
+    // If this is a streamer battlefield (twitch:username or twitch:numericId), try to initialize chat listener
     if (battlefieldId.startsWith('twitch:')) {
-      const streamerUsername = battlefieldId.replace('twitch:', '').toLowerCase().trim();
-      console.log(`🔍 Browser source registered for ${streamerUsername} - checking chat listener...`);
+      const identifier = battlefieldId.replace('twitch:', '').trim();
+      console.log(`🔍 Browser source registered for ${identifier} - checking chat listener...`);
       
-      // Check if it looks like a user ID (numeric or long alphanumeric)
-      const isUserId = streamerUsername.length > 25 || /^[a-z0-9]{20,}$/i.test(streamerUsername);
+      // Check if it's a numeric Twitch ID (like "1087777297")
+      const isNumericId = /^\d+$/.test(identifier);
+      // Check if it looks like a long alphanumeric user ID (legacy detection)
+      const isUserId = identifier.length > 25 || /^[a-z0-9]{20,}$/i.test(identifier);
       
-      if (isUserId) {
+      // Determine if we have a username (for legacy format)
+      const streamerUsername = (!isNumericId && !isUserId) ? identifier.toLowerCase() : null;
+      
+      if (isNumericId || isUserId) {
         // Try to find hero by user ID to get the Twitch username
-        console.log(`🔍 Battlefield ID appears to be a user ID (${streamerUsername}). Looking up Twitch username...`);
+        console.log(`🔍 Battlefield ID appears to be a user ID (${identifier}). Looking up Twitch username...`);
         
         // Strategy: Find all heroes in this battlefield, the one with a token is likely the streamer
         let heroWithToken = null;
@@ -207,23 +212,23 @@ router.post('/register', async (req, res) => {
           console.log(`   Debug: userId from request: ${userId}, battlefieldId: ${battlefieldId}`);
         }
       } else {
-        // Try to find the streamer's hero and initialize chat listener
+        // It's a username (legacy format) - try to find the streamer's hero and initialize chat listener
         try {
-        const heroesSnapshot = await db.collection('heroes')
-          .where('twitchUsername', '==', streamerUsername)
-          .limit(1)
-          .get();
-        
-        if (!heroesSnapshot.empty) {
-          const hero = heroesSnapshot.docs[0].data();
-          if (hero.twitchAccessToken) {
-            const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
-            await initializeStreamerChatListener(streamerUsername, hero.twitchAccessToken, hero.twitchRefreshToken);
-            console.log(`✅ Chat listener initialized for ${streamerUsername} via browser source registration`);
+          const heroesSnapshot = await db.collection('heroes')
+            .where('twitchUsername', '==', streamerUsername)
+            .limit(1)
+            .get();
+          
+          if (!heroesSnapshot.empty) {
+            const hero = heroesSnapshot.docs[0].data();
+            if (hero.twitchAccessToken) {
+              const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
+              await initializeStreamerChatListener(streamerUsername, hero.twitchAccessToken, hero.twitchRefreshToken);
+              console.log(`✅ Chat listener initialized for ${streamerUsername} via browser source registration`);
+            } else {
+              console.log(`ℹ️  Hero found for ${streamerUsername} but no token stored - streamer needs to log in via OAuth`);
+            }
           } else {
-            console.log(`ℹ️  Hero found for ${streamerUsername} but no token stored - streamer needs to log in via OAuth`);
-          }
-        } else {
           // Try to find any hero in this battlefield (might be the streamer themselves)
           const battlefieldHeroes = await db.collection('heroes')
             .where('currentBattlefieldId', '==', battlefieldId)

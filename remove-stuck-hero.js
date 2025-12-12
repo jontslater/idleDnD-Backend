@@ -219,15 +219,24 @@ async function removeStuckHero(username, level, className) {
           // Convert battlefield ID to Twitch ID for WebSocket room
           let streamerTwitchId = null;
           if (oldBattlefieldId.startsWith('twitch:')) {
-            const streamerUsername = oldBattlefieldId.replace('twitch:', '').toLowerCase();
-            const streamerHeroSnapshot = await db.collection('heroes')
-              .where('twitchUsername', '==', streamerUsername)
-              .limit(1)
-              .get();
+            const identifier = oldBattlefieldId.replace('twitch:', '').trim();
             
-            if (!streamerHeroSnapshot.empty) {
-              const streamerHero = streamerHeroSnapshot.docs[0].data();
-              streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+            // Check if it's a numeric Twitch ID (like "1087777297")
+            if (/^\d+$/.test(identifier)) {
+              // It's already a numeric ID, use it directly
+              streamerTwitchId = identifier;
+            } else {
+              // It's a username, look up streamer's Twitch ID from their hero document
+              const streamerUsername = identifier.toLowerCase();
+              const streamerHeroSnapshot = await db.collection('heroes')
+                .where('twitchUsername', '==', streamerUsername)
+                .limit(1)
+                .get();
+              
+              if (!streamerHeroSnapshot.empty) {
+                const streamerHero = streamerHeroSnapshot.docs[0].data();
+                streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+              }
             }
           } else {
             streamerTwitchId = oldBattlefieldId;

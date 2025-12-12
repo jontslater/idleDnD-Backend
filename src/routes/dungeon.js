@@ -1,31 +1,20 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { tryMatchmaking as tryFlexibleMatchmaking } from './dungeon-matchmaking.js';
 
 const router = express.Router();
 
-// Role normalization: Map hero roles to tank/healer/dps categories
-function normalizeRole(heroRole) {
-  if (!heroRole) return 'dps';
-  
-  const roleLower = heroRole.toLowerCase();
-  
-  // Tank roles
-  const tankRoles = ['guardian', 'paladin', 'warden', 'bloodknight', 'vanguard', 'brewmaster'];
-  if (tankRoles.includes(roleLower) || roleLower === 'tank') {
-    return 'tank';
+// Get all dungeons
+router.get('/', async (req, res) => {
+  try {
+    const { getAllDungeons } = await import('../data/dungeons.js');
+    const allDungeons = getAllDungeons();
+    res.json(allDungeons);
+  } catch (error) {
+    console.error('Error getting all dungeons:', error);
+    res.status(500).json({ error: 'Failed to get dungeons' });
   }
-  
-  // Healer roles
-  const healerRoles = ['cleric', 'atoner', 'druid', 'lightbringer', 'shaman', 'mistweaver', 'chronomancer', 'bard'];
-  if (healerRoles.includes(roleLower) || roleLower === 'healer') {
-    return 'healer';
-  }
-  
-  // Everything else is DPS
-  return 'dps';
-}
+});
 
 // Get queue status (must be before /queue route)
 router.get('/queue/status', async (req, res) => {
@@ -77,96 +66,16 @@ router.get('/queue/status', async (req, res) => {
 // Join queue
 router.post('/queue', async (req, res) => {
   try {
-    const { userId, heroId, role, itemScore, dungeonType = 'normal', dungeonId } = req.body;
+    const { userId, heroId, role, itemScore, dungeonType = 'normal' } = req.body;
     
     if (!userId || !heroId || !role) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    // Check if this is a solo dungeon - if so, start immediately
-    // Since we're limiting to Goblin Cave for launch, check if it's the only available dungeon
-    const { getAllDungeons, getDungeonById } = await import('../data/dungeons.js');
-    const allDungeons = getAllDungeons();
-    
-    // LAUNCH: Only Goblin Cave is available, check if it's solo
-    const launchDungeonId = 'goblin_cave';
-    const launchDungeon = getDungeonById(launchDungeonId);
-    
-    // If the only available dungeon is solo (no minPlayers or minPlayers === 1), start it immediately
-    if (launchDungeon && launchDungeon.type === 'solo' && (!launchDungeon.minPlayers || launchDungeon.minPlayers === 1)) {
-      // Solo dungeon - start immediately without queueing
-      console.log(`[Solo Dungeon] Starting ${launchDungeon.name} immediately for ${userId}`);
-      
-      // Create instance directly using the start endpoint logic
-      const heroDoc = await db.collection('heroes').doc(heroId).get();
-      if (!heroDoc.exists) {
-        return res.status(404).json({ error: 'Hero not found' });
-      }
-      
-      const hero = heroDoc.data();
-      const twitchUserId = hero.twitchUserId;
-      if (!twitchUserId) {
-        return res.status(400).json({ 
-          error: `Hero ${heroId} is missing twitchUserId field` 
-        });
-      }
-      
-      const participantData = [{
-        userId: heroId,
-        heroId: heroId,
-        twitchUserId: twitchUserId,
-        username: hero.name || heroId,
-        heroName: hero.name,
-        heroRole: hero.role,
-        heroLevel: hero.level || 1,
-        currentHp: hero.hp || hero.maxHp,
-        maxHp: hero.maxHp,
-        isAlive: true,
-        deaths: 0
-      }];
-      
-      const participantIds = [twitchUserId];
-      
-      // Create dungeon instance
-      const dungeonInstance = {
-        dungeonId: launchDungeon.id,
-        difficulty: launchDungeon.difficulty || 'normal',
-        status: 'active',
-        organizerId: userId,
-        participants: participantData,
-        participantIds: participantIds,
-        currentRoom: 0,
-        maxRooms: launchDungeon.rooms.length,
-        rooms: launchDungeon.rooms,
-        combatLog: [],
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-      
-      const instanceRef = await db.collection('dungeonInstances').add(dungeonInstance);
-      
-      // Update hero to have activeInstance pointing to this dungeon
-      await db.collection('heroes').doc(heroId).update({
-        activeInstance: {
-          type: 'dungeon',
-          instanceId: instanceRef.id
-        },
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-      
-      console.log(`[Solo Dungeon] ✅ Created dungeon instance ${instanceRef.id} for ${launchDungeon.name}`);
-      
-      return res.json({ 
-        success: true, 
-        soloDungeon: true,
-        instanceId: instanceRef.id,
-        message: `Started ${launchDungeon.name}`
-      });
+    const validRoles = ['tank', 'healer', 'dps'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
     }
-    
-    // Group dungeon - add to queue for matchmaking
-    // Normalize role to tank/healer/dps
-    const normalizedRole = normalizeRole(role);
     
     // Check if already in queue
     const existingQueue = await db.collection('dungeonQueue')
@@ -182,11 +91,10 @@ router.post('/queue', async (req, res) => {
     const queueEntry = {
       userId,
       heroId,
-      role: normalizedRole, // Use normalized role for matchmaking
-      originalRole: role, // Keep original for display
+      role,
       itemScore: itemScore || 0,
       dungeonType,
-      queuedAt: admin.firestore.FieldValue.serverTimestamp(),
+      queuedAt: admin.firestore.Timestamp.now(),
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000)) // 30 min
     };
     
@@ -243,10 +151,212 @@ router.post('/group/accept', async (req, res) => {
   }
 });
 
-// Matchmaking logic - now uses flexible 2-5 player matching
+// Matchmaking logic
+// STRICT REQUIREMENT: Only forms groups with EXACTLY 1 tank, 1 healer, 3 DPS
 async function tryMatchmaking() {
-  // Use the new flexible matchmaking
-  return await tryFlexibleMatchmaking();
+  try {
+    const queueSnapshot = await db.collection('dungeonQueue').get();
+    const queue = queueSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Group: EXACTLY 1 tank, 1 healer, 3 DPS (no partial groups allowed)
+    const tanks = queue.filter(q => q.role === 'tank');
+    const healers = queue.filter(q => q.role === 'healer');
+    const dps = queue.filter(q => q.role === 'dps');
+    
+    console.log(`[Matchmaking] Queue status: ${tanks.length} tank(s), ${healers.length} healer(s), ${dps.length} DPS`);
+    
+    // Try to form groups - STRICT: Must have exactly 1 tank, 1 healer, and 3 DPS
+    // Will NOT form groups with different makeup (e.g., 2 tanks, 2 healers, etc.)
+    let groupsFormed = 0;
+    while (tanks.length >= 1 && healers.length >= 1 && dps.length >= 3) {
+      const group = {
+        tank: tanks.shift(),
+        healer: healers.shift(),
+        dps: [dps.shift(), dps.shift(), dps.shift()]
+      };
+      
+      // Remove from queue FIRST (before creating instance) - use Promise.all for better performance
+      const idsToRemove = [
+        group.tank.id,
+        group.healer.id,
+        ...group.dps.map(d => d.id)
+      ];
+      
+      const deletePromises = idsToRemove.map(id => db.collection('dungeonQueue').doc(id).delete());
+      await Promise.all(deletePromises);
+      
+      groupsFormed++;
+      
+      // Log group formation
+      console.log(`[Matchmaking] ✅ Group ${groupsFormed} formed: 1 Tank (${group.tank.userId}), 1 Healer (${group.healer.userId}), 3 DPS (${group.dps.map(d => d.userId).join(', ')})`);
+      
+      // Create dungeon instance for the group (this will also update heroes with activeInstance)
+      try {
+        await createDungeonInstanceForGroup(group);
+      } catch (error) {
+        console.error(`[Matchmaking] ❌ Failed to create dungeon instance for group ${groupsFormed}:`, error);
+        // Continue - don't block other group formations
+      }
+    }
+    
+    if (groupsFormed === 0 && queue.length > 0) {
+      console.log(`[Matchmaking] ⏳ Waiting for complete group makeup: Need ${1 - tanks.length} tank(s), ${1 - healers.length} healer(s), ${Math.max(0, 3 - dps.length)} DPS`);
+    }
+    
+    return groupsFormed;
+  } catch (error) {
+    console.error('[Matchmaking] Error in matchmaking:', error);
+    return 0;
+  }
+}
+
+// Helper function to create dungeon instance from a matched group
+// Group can be: { tank, healer, dps: [...] } OR { members: [...], partyId, dungeonId, dungeonType } for parties
+async function createDungeonInstanceForGroup(group, dungeonDataOverride = null) {
+  try {
+    let selectedDungeon = dungeonDataOverride;
+    let participantHeroIds = [];
+    let dungeonType = 'normal';
+    
+    // Handle party format: { members: [...], partyId, dungeonId, dungeonType }
+    if (group.members && Array.isArray(group.members)) {
+      participantHeroIds = group.members.map(m => m.heroId);
+      dungeonType = group.dungeonType || group.members[0]?.dungeonType || 'normal';
+      
+      // Use provided dungeonDataOverride or find by dungeonId
+      if (!selectedDungeon && group.dungeonId) {
+        const { getDungeonById } = await import('../data/dungeons.js');
+        selectedDungeon = getDungeonById(group.dungeonId);
+      }
+      
+      // Fallback to finding a suitable dungeon
+      if (!selectedDungeon) {
+        const { getAllDungeons } = await import('../data/dungeons.js');
+        const allDungeons = getAllDungeons();
+        selectedDungeon = allDungeons.find(d => 
+          d.type === 'group' && 
+          d.difficulty === dungeonType &&
+          d.minPlayers <= participantHeroIds.length &&
+          d.maxPlayers >= participantHeroIds.length
+        ) || allDungeons.find(d => d.type === 'group');
+      }
+    } else {
+      // Handle matchmaking format: { tank, healer, dps: [...] }
+      dungeonType = group.tank.dungeonType || group.healer.dungeonType || group.dps[0]?.dungeonType || 'normal';
+      
+      // Import dungeon data
+      const { getAllDungeons } = await import('../data/dungeons.js');
+      const allDungeons = getAllDungeons();
+      
+      // Find an appropriate group dungeon (type: 'group') that matches difficulty
+      // Default to 'ancient_catacombs' for normal, or find one matching difficulty
+      selectedDungeon = allDungeons.find(d => 
+        d.type === 'group' && 
+        d.difficulty === dungeonType &&
+        d.minPlayers <= 5 &&
+        d.maxPlayers >= 5
+      );
+      
+      // Fallback to ancient_catacombs if no match
+      if (!selectedDungeon) {
+        const { getDungeonById } = await import('../data/dungeons.js');
+        selectedDungeon = getDungeonById('ancient_catacombs') || allDungeons.find(d => d.type === 'group');
+      }
+      
+      // Collect all participant hero IDs from the group
+      participantHeroIds = [
+        group.tank.heroId,
+        group.healer.heroId,
+        ...group.dps.map(d => d.heroId)
+      ];
+    }
+    
+    if (!selectedDungeon) {
+      throw new Error('No suitable dungeon found for group');
+    }
+    
+    // Load participant hero data
+    const participantData = [];
+    for (const heroDocId of participantHeroIds) {
+      const heroDoc = await db.collection('heroes').doc(heroDocId).get();
+      if (!heroDoc.exists) {
+        console.warn(`[Matchmaking] Hero not found: ${heroDocId}, skipping...`);
+        continue;
+      }
+      const hero = heroDoc.data();
+      const twitchUserId = hero.twitchUserId || heroDocId; // Fallback to heroId if no twitchUserId
+      
+      participantData.push({
+        userId: heroDocId,
+        heroId: heroDocId,
+        twitchUserId: twitchUserId,
+        username: hero.name || heroDocId,
+        heroName: hero.name,
+        heroRole: hero.role,
+        heroLevel: hero.level || 1,
+        currentHp: hero.hp || hero.maxHp || 100,
+        maxHp: hero.maxHp || 100,
+        isAlive: true,
+        deaths: 0
+      });
+    }
+    
+    // For matchmaking groups, expect exactly 5. For parties, allow variable sizes
+    if (!group.members && participantData.length !== 5) {
+      throw new Error(`Expected 5 participants but got ${participantData.length}`);
+    }
+    
+    // Extract participant IDs for querying
+    const participantIds = participantData.map(p => p.twitchUserId).filter(Boolean);
+    
+    // Use first participant as organizer (tank for matchmaking, first member for parties)
+    const organizerId = group.members ? group.members[0]?.userId : group.tank.userId;
+    
+    // Create dungeon instance
+    const dungeonInstance = {
+      dungeonId: selectedDungeon.id,
+      difficulty: selectedDungeon.difficulty || 'normal',
+      status: 'active',
+      organizerId,
+      participants: participantData,
+      participantIds: participantIds,
+      currentRoom: 0,
+      maxRooms: selectedDungeon.rooms.length,
+      rooms: selectedDungeon.rooms,
+      combatLog: [],
+      partyId: group.partyId || null, // Store partyId if this is a party dungeon
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now()
+    };
+    
+    const instanceRef = await db.collection('dungeonInstances').add(dungeonInstance);
+    
+    console.log(`[Matchmaking] 🏰 Created dungeon instance ${instanceRef.id} for group: ${selectedDungeon.name} (${dungeonType} difficulty)`);
+    
+    // Update all heroes to have activeInstance pointing to this dungeon
+    // This will trigger the frontend to switch to dungeon mode
+    const updatePromises = participantHeroIds.map(async (heroId) => {
+      try {
+        await db.collection('heroes').doc(heroId).update({
+          activeInstance: {
+            type: 'dungeon',
+            instanceId: instanceRef.id
+          },
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (error) {
+        console.error(`[Matchmaking] Failed to update hero ${heroId} with active instance:`, error);
+      }
+    });
+    
+    await Promise.all(updatePromises);
+    console.log(`[Matchmaking] ✅ Updated all ${participantData.length} heroes with active dungeon instance`);
+    
+    return instanceRef.id;
+  } catch (error) {
+    console.error('[Matchmaking] Error creating dungeon instance:', error);
+    throw error;
+  }
 }
 
 function estimateWaitTime(roleCounts, userRole) {
@@ -501,42 +611,6 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // Reset party status back to 'forming' for all parties that were in this instance
-    try {
-      const partyIds = new Set();
-      
-      // Check parties collection for any party with members in this instance
-      for (const participantId of updatedParticipantIds) {
-        const partySnapshot = await db.collection('parties')
-          .where('members', 'array-contains', participantId)
-          .where('status', '==', 'in_instance')
-          .get();
-        
-        partySnapshot.docs.forEach(doc => {
-          partyIds.add(doc.id);
-        });
-      }
-      
-      // Reset all parties back to 'forming'
-      const resetPromises = Array.from(partyIds).map(async (partyId) => {
-        try {
-          const partyRef = db.collection('parties').doc(partyId);
-          await partyRef.update({
-            status: 'forming',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-          console.log(`[Dungeon] ✅ Reset party ${partyId} status to 'forming' after dungeon completion`);
-        } catch (error) {
-          console.error(`[Dungeon] Failed to reset party ${partyId}:`, error);
-        }
-      });
-      
-      await Promise.all(resetPromises);
-    } catch (error) {
-      console.error('[Dungeon] Error resetting party statuses:', error);
-      // Don't fail the request if party reset fails
-    }
-    
     // Distribute rewards to participants
     const rewardPromises = participantsData.map(async (participant) => {
       if (!participant.isAlive && participant.deaths > 2) {
@@ -560,6 +634,76 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     });
     
     await Promise.all(rewardPromises);
+    
+    // Cleanup: Clear dungeon queue entries and reset party status
+    try {
+      // Clear activeInstance and currentBattlefieldId from all participants' heroes
+      // This prevents dungeon participants from appearing in idle adventure after leaving
+      const cleanupHeroPromises = participantsData.map(async (participant) => {
+        try {
+          const heroDoc = await db.collection('heroes').doc(participant.userId).get();
+          if (heroDoc.exists) {
+            await heroDoc.ref.update({
+              activeInstance: admin.firestore.FieldValue.delete(),
+              currentBattlefieldId: admin.firestore.FieldValue.delete(),
+              currentBattlefieldType: admin.firestore.FieldValue.delete(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[Dungeon Complete] Cleared activeInstance and currentBattlefieldId for hero ${participant.userId}`);
+          }
+        } catch (error) {
+          console.error(`[Dungeon Complete] Failed to clear activeInstance/currentBattlefieldId for hero ${participant.userId}:`, error);
+        }
+      });
+      
+      // Clear dungeon queue entries for all participants
+      const userIds = participantsData.map(p => p.twitchUserId || p.userId).filter(Boolean);
+      const queueCleanupPromises = userIds.map(async (userId) => {
+        try {
+          const queueSnapshot = await db.collection('dungeonQueue')
+            .where('userId', '==', userId)
+            .get();
+          
+          const deletePromises = queueSnapshot.docs.map(doc => doc.ref.delete());
+          await Promise.all(deletePromises);
+          
+          if (queueSnapshot.docs.length > 0) {
+            console.log(`[Dungeon Complete] Cleared ${queueSnapshot.docs.length} queue entries for user ${userId}`);
+          }
+        } catch (error) {
+          console.error(`[Dungeon Complete] Failed to clear queue entries for user ${userId}:`, error);
+        }
+      });
+      
+      // Reset party status if this is a party dungeon (partyId is now stored in instance)
+      const partyId = instance.partyId;
+      
+      if (partyId) {
+        try {
+          const partyRef = db.collection('parties').doc(partyId);
+          const partyDoc = await partyRef.get();
+          
+          if (partyDoc.exists) {
+            const partyData = partyDoc.data();
+            // Only reset if party is still in instance (might have been cancelled already)
+            if (partyData.status === 'in_instance') {
+              await partyRef.update({
+                status: 'forming',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+              console.log(`[Dungeon Complete] Reset party ${partyId} status from in_instance to forming`);
+            }
+          }
+        } catch (error) {
+          console.error(`[Dungeon Complete] Failed to reset party ${partyId} status:`, error);
+        }
+      }
+      
+      await Promise.all([...cleanupHeroPromises, ...queueCleanupPromises]);
+    } catch (cleanupError) {
+      console.error('[Dungeon Complete] Error during cleanup:', cleanupError);
+      // Don't fail the request if cleanup fails
+    }
     
     res.json({
       success: true,
@@ -624,30 +768,15 @@ router.get('/available/:userId', async (req, res) => {
     }
     
     // Import dungeon data
-    const { getAllDungeons, getDungeonById } = await import('../data/dungeons.js');
+    const { getAllDungeons } = await import('../data/dungeons.js');
     const allDungeons = getAllDungeons();
     
-    // LAUNCH: Only return Goblin Cave for now (we'll add more after launch)
-    const launchDungeonId = 'goblin_cave';
-    const launchDungeon = getDungeonById(launchDungeonId);
-    
-    // Filter by level and item score requirements
-    let availableDungeons = [];
-    if (launchDungeon) {
-      const meetsLevel = !launchDungeon.minLevel || heroLevel >= launchDungeon.minLevel;
-      const meetsItemScore = !launchDungeon.minItemScore || itemScore >= launchDungeon.minItemScore;
-      
-      if (meetsLevel && meetsItemScore) {
-        availableDungeons = [launchDungeon];
-      }
-    }
-    
-    // TODO: After launch, uncomment this to show all available dungeons:
-    // const availableDungeons = allDungeons.filter(dungeon => {
-    //   if (dungeon.minLevel && heroLevel < dungeon.minLevel) return false;
-    //   if (dungeon.minItemScore && itemScore < dungeon.minItemScore) return false;
-    //   return true;
-    // });
+    // Filter dungeons by level and item score requirements
+    const availableDungeons = allDungeons.filter(dungeon => {
+      if (dungeon.minLevel && heroLevel < dungeon.minLevel) return false;
+      if (dungeon.minItemScore && itemScore < dungeon.minItemScore) return false;
+      return true;
+    });
     
     res.json({
       heroLevel,
@@ -660,34 +789,5 @@ router.get('/available/:userId', async (req, res) => {
   }
 });
 
-// Get all dungeons (for display - shows all with availability flag)
-router.get('/', async (req, res) => {
-  try {
-    const { getAllDungeons } = await import('../data/dungeons.js');
-    const allDungeons = getAllDungeons();
-    
-    // LAUNCH: Only Goblin Cave is available for launch
-    const launchDungeonId = 'goblin_cave';
-    
-    const dungeons = allDungeons.map(dungeon => ({
-      id: dungeon.id,
-      name: dungeon.name,
-      type: dungeon.type,
-      difficulty: dungeon.difficulty,
-      minLevel: dungeon.minLevel,
-      minItemScore: dungeon.minItemScore,
-      description: dungeon.description,
-      estimatedDuration: dungeon.estimatedDuration,
-      rewards: dungeon.rewards,
-      rooms: dungeon.rooms?.length || 0,
-      available: dungeon.id === launchDungeonId // Only Goblin Cave is available
-    }));
-    
-    res.json(dungeons);
-  } catch (error) {
-    console.error('Error fetching dungeons:', error);
-    res.status(500).json({ error: 'Failed to fetch dungeons' });
-  }
-});
-
+export { tryMatchmaking, createDungeonInstanceForGroup };
 export default router;

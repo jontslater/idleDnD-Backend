@@ -283,14 +283,23 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
               // Convert battlefield ID to Twitch ID for WebSocket
               let streamerTwitchId = null;
               if (battlefieldId.startsWith('twitch:')) {
-                const streamerUsername = battlefieldId.replace('twitch:', '').toLowerCase();
-                const streamerHeroSnapshot = await db.collection('heroes')
-                  .where('twitchUsername', '==', streamerUsername)
-                  .limit(1)
-                  .get();
-                if (!streamerHeroSnapshot.empty) {
-                  const streamerHero = streamerHeroSnapshot.docs[0].data();
-                  streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+                const identifier = battlefieldId.replace('twitch:', '').trim();
+                
+                // Check if it's a numeric Twitch ID (like "1087777297")
+                if (/^\d+$/.test(identifier)) {
+                  // It's already a numeric ID, use it directly
+                  streamerTwitchId = identifier;
+                } else {
+                  // It's a username, look up streamer's Twitch ID from their hero document
+                  const streamerUsername = identifier.toLowerCase();
+                  const streamerHeroSnapshot = await db.collection('heroes')
+                    .where('twitchUsername', '==', streamerUsername)
+                    .limit(1)
+                    .get();
+                  if (!streamerHeroSnapshot.empty) {
+                    const streamerHero = streamerHeroSnapshot.docs[0].data();
+                    streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+                  }
                 }
               } else {
                 streamerTwitchId = battlefieldId;
@@ -1082,7 +1091,7 @@ async function handleRestCommand(hero, username, battlefieldId) {
 /**
  * Handle !claim command
  */
-async function handleClaimCommand(hero, username) {
+export async function handleClaimCommand(hero, username) {
   const now = Date.now();
   const lastClaim = hero.lastTokenClaim || hero.joinedAt || now;
   const timeSinceClaim = now - lastClaim;
@@ -1145,7 +1154,13 @@ async function handleClaimCommand(hero, username) {
   return {
     success: true,
     message,
-    data: { tokensClaimed: actualTokens, totalTokens: newTokens, hoursSinceClaim: hours, tokensPerHour }
+    data: { 
+      tokensClaimed: actualTokens, 
+      totalTokens: newTokens, 
+      hoursSinceClaim: hours, 
+      tokensPerHour,
+      lastTokenClaim: now // Include timestamp of when claim was made
+    }
   };
 }
 
@@ -1222,19 +1237,27 @@ async function handleLeaveCommand(hero, username, battlefieldId) {
           const { broadcastToRoom } = await import('../websocket/server.js');
           const heroName = hero.name || hero.characterName || username;
           
-          // Convert battlefield ID (twitch:username) to Twitch ID (numeric) for WebSocket room
+          // Convert battlefield ID (twitch:username or twitch:numericId) to Twitch ID (numeric) for WebSocket room
           let streamerTwitchId = null;
           if (oldBattlefieldId.startsWith('twitch:')) {
-            const streamerUsername = oldBattlefieldId.replace('twitch:', '').toLowerCase();
-            // Look up streamer's Twitch ID from their hero document
-            const streamerHeroSnapshot = await db.collection('heroes')
-              .where('twitchUsername', '==', streamerUsername)
-              .limit(1)
-              .get();
+            const identifier = oldBattlefieldId.replace('twitch:', '').trim();
             
-            if (!streamerHeroSnapshot.empty) {
-              const streamerHero = streamerHeroSnapshot.docs[0].data();
-              streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+            // Check if it's a numeric Twitch ID (like "1087777297")
+            if (/^\d+$/.test(identifier)) {
+              // It's already a numeric ID, use it directly
+              streamerTwitchId = identifier;
+            } else {
+              // It's a username, look up streamer's Twitch ID from their hero document
+              const streamerUsername = identifier.toLowerCase();
+              const streamerHeroSnapshot = await db.collection('heroes')
+                .where('twitchUsername', '==', streamerUsername)
+                .limit(1)
+                .get();
+              
+              if (!streamerHeroSnapshot.empty) {
+                const streamerHero = streamerHeroSnapshot.docs[0].data();
+                streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+              }
             }
           } else {
             // If it's already a numeric ID, use it directly

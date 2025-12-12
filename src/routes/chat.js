@@ -253,12 +253,33 @@ router.post('/join', async (req, res) => {
         const heroName = heroData.name || heroData.characterName || viewerUsername;
         
         // Extract Twitch ID from new battlefield ID
-        // New format: twitch:12345678 (should always be numeric now since we set it above)
+        // Format: twitch:12345678 (numeric ID) or twitch:username (legacy)
         let newStreamerTwitchId = null;
         
         if (battlefieldId.startsWith('twitch:')) {
-          newStreamerTwitchId = battlefieldId.replace('twitch:', '');
-          console.log(`[Join] New battlefield Twitch ID: ${newStreamerTwitchId}`);
+          const identifier = battlefieldId.replace('twitch:', '').trim();
+          
+          // Check if it's a numeric Twitch ID (like "1087777297")
+          if (/^\d+$/.test(identifier)) {
+            // It's already a numeric ID, use it directly
+            newStreamerTwitchId = identifier;
+            console.log(`[Join] New battlefield Twitch ID (numeric): ${newStreamerTwitchId}`);
+          } else {
+            // It's a username (legacy format), look up streamer's Twitch ID from their hero document
+            const streamerUsername = identifier.toLowerCase();
+            const streamerHeroSnapshot = await db.collection('heroes')
+              .where('twitchUsername', '==', streamerUsername)
+              .limit(1)
+              .get();
+            
+            if (!streamerHeroSnapshot.empty) {
+              const streamerHero = streamerHeroSnapshot.docs[0].data();
+              newStreamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+              console.log(`[Join] New battlefield Twitch ID (from username lookup): ${newStreamerTwitchId}`);
+            } else {
+              console.warn(`[Join] Could not find Twitch ID for username: ${streamerUsername}`);
+            }
+          }
         }
         
         if (newStreamerTwitchId) {

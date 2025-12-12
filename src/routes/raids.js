@@ -1322,22 +1322,34 @@ export async function tryRaidMatchmaking(raidId, raidData) {
             const waveEnemies = [];
             
             for (let wave = 0; wave < totalWaves - 1; wave++) {
-              // Generate enemies for this wave
-              const enemyPool = [
-                { name: 'Goblin', weight: 3 },
-                { name: 'Orc', weight: 2 },
-                { name: 'Skeleton', weight: 2 },
-                { name: 'Imp', weight: 2 },
-                { name: 'Witch', weight: 1 },
-                { name: 'Skeleton Mage', weight: 1 }
-              ];
+              // Generate enemies for this wave - raid-specific pools
+              let enemyPool;
               
-              // Heroic and Mythic add more dangerous enemies
-              if (raidData.difficulty === 'heroic' || raidData.difficulty === 'mythic') {
-                enemyPool.push(
-                  { name: 'Demon Lord', weight: 1 },
-                  { name: 'Adult Dragon', weight: 0.5 }
-                );
+              // Corrupted Temple: Mimics, Skeleton Mages, Cultists
+              if (raidData.id === 'corrupted_temple') {
+                enemyPool = [
+                  { name: 'Mimic', weight: 3 },
+                  { name: 'Skeleton Mage', weight: 3 },
+                  { name: 'Cultist', weight: 2 }
+                ];
+              } else {
+                // Default enemy pool for other raids
+                enemyPool = [
+                  { name: 'Goblin', weight: 3 },
+                  { name: 'Orc', weight: 2 },
+                  { name: 'Skeleton', weight: 2 },
+                  { name: 'Imp', weight: 2 },
+                  { name: 'Witch', weight: 1 },
+                  { name: 'Skeleton Mage', weight: 1 }
+                ];
+                
+                // Heroic and Mythic add more dangerous enemies
+                if (raidData.difficulty === 'heroic' || raidData.difficulty === 'mythic') {
+                  enemyPool.push(
+                    { name: 'Demon Lord', weight: 1 },
+                    { name: 'Adult Dragon', weight: 0.5 }
+                  );
+                }
               }
               
               // Calculate enemy count (scales with wave)
