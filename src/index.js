@@ -87,6 +87,7 @@ import webChatRoutes from './routes/webChat.js';
 import lootTokenRoutes from './routes/lootTokens.js';
 import purchasesRoutes from './routes/purchases.js';
 import mailRoutes from './routes/mail.js';
+import reportsRoutes from './routes/reports.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -114,6 +115,7 @@ app.use('/api/guild-perks', guildPerksRoutes);
 app.use('/api/parties', partiesRoutes);
 app.use('/api/loot-tokens', lootTokenRoutes);
 app.use('/api/mail', mailRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

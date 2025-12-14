@@ -548,6 +548,72 @@ router.post('/create', async (req, res) => {
   }
 });
 
+// Rename hero endpoint
+router.patch('/:heroId/rename', async (req, res) => {
+  try {
+    const { heroId } = req.params;
+    const { newName } = req.body;
+
+    if (!newName || typeof newName !== 'string') {
+      return res.status(400).json({ error: 'newName is required and must be a string' });
+    }
+
+    const trimmedName = newName.trim();
+    
+    // Validate name length
+    if (trimmedName.length === 0) {
+      return res.status(400).json({ error: 'Hero name cannot be empty' });
+    }
+    
+    if (trimmedName.length > 50) {
+      return res.status(400).json({ error: 'Hero name cannot exceed 50 characters' });
+    }
+
+    // Content filtering - check for banned words
+    const { shouldFilterMessage, DEFAULT_FILTER_SETTINGS } = await import('../utils/contentFilter.js');
+    
+    // Use blocked words filter to check the name
+    const filterResult = shouldFilterMessage(trimmedName, DEFAULT_FILTER_SETTINGS);
+    if (filterResult.filtered) {
+      return res.status(400).json({ 
+        error: 'Hero name contains inappropriate content',
+        reason: filterResult.reason 
+      });
+    }
+
+    // Get the hero
+    const heroRef = db.collection('heroes').doc(heroId);
+    const heroDoc = await heroRef.get();
+
+    if (!heroDoc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = heroDoc.data();
+    
+    // Verify the hero belongs to the requesting user (optional security check)
+    // You can add user authentication here if needed
+
+    // Update the hero name
+    await heroRef.update({
+      name: trimmedName,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`[Hero Rename] Hero ${heroId} renamed to: ${trimmedName}`);
+
+    res.json({
+      success: true,
+      message: 'Hero renamed successfully',
+      heroId,
+      newName: trimmedName
+    });
+  } catch (error) {
+    console.error('Error renaming hero:', error);
+    res.status(500).json({ error: 'Failed to rename hero' });
+  }
+});
+
 // Get hero creation cost info
 router.get('/create/cost-info', async (req, res) => {
   try {
