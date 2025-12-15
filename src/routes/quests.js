@@ -359,16 +359,17 @@ router.post('/update-batch-all', async (req, res) => {
     }
     
     // Load all quest types once (shared across all users)
-    const questDocs = await Promise.all([
-      db.collection('quests').doc('daily').get(),
-      db.collection('quests').doc('weekly').get(),
-      db.collection('quests').doc('monthly').get()
+    // Use getActiveQuests to ensure quests exist (generates them if missing)
+    const [dailyQuests, weeklyQuests, monthlyQuests] = await Promise.all([
+      getActiveQuests('daily'),
+      getActiveQuests('weekly'),
+      getActiveQuests('monthly')
     ]);
     
     const questDataByType = {
-      daily: questDocs[0].exists ? questDocs[0].data() : null,
-      weekly: questDocs[1].exists ? questDocs[1].data() : null,
-      monthly: questDocs[2].exists ? questDocs[2].data() : null
+      daily: dailyQuests,
+      weekly: weeklyQuests,
+      monthly: monthlyQuests
     };
     
     // Process all users in parallel
