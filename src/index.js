@@ -55,6 +55,142 @@ app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
   credentials: true
 }));
+
+// Stripe webhook needs raw body - handle it before bodyParser
+app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Import Stripe and purchases route handler here to avoid circular dependency
+  const Stripe = (await import('stripe')).default;
+  const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+  
+  if (!stripe) {
+    return res.status(500).json({ error: 'Stripe not configured' });
+  }
+
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured');
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[Stripe Webhook] Signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the checkout.session.completed event
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const purchaseId = session.metadata?.purchaseId;
+
+    if (!purchaseId) {
+      console.error('[Stripe Webhook] No purchaseId in session metadata');
+      return res.status(400).json({ error: 'No purchaseId in session metadata' });
+    }
+
+    console.log(`[Stripe Webhook] Payment completed for purchase: ${purchaseId}`);
+
+    try {
+      // Get purchase record
+      const purchaseRef = db.collection('purchases').doc(purchaseId);
+      const purchaseDoc = await purchaseRef.get();
+
+      if (!purchaseDoc.exists) {
+        console.error(`[Stripe Webhook] Purchase ${purchaseId} not found`);
+        return res.status(404).json({ error: 'Purchase not found' });
+      }
+
+      const purchase = purchaseDoc.data();
+
+      if (purchase.status === 'completed') {
+        console.log(`[Stripe Webhook] Purchase ${purchaseId} already completed`);
+        return res.json({ received: true, message: 'Purchase already completed' });
+      }
+
+      // Import PACK_TIERS, TOKEN_PACKS, and TIER_LEVELS from purchases route
+      // For now, we'll use a simpler approach - call the complete endpoint
+      // Update purchase status
+      await purchaseRef.update({
+        status: 'completed',
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        stripeSessionId: session.id,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Complete the purchase based on type (call existing complete endpoints via internal logic)
+      if (purchase.packTier) {
+        // Complete founders pack
+        const PACK_TIERS = {
+          bronze: { price: 5, premiumCurrency: 25, name: 'Bronze Founder' },
+          silver: { price: 10, premiumCurrency: 75, name: 'Silver Founder' },
+          gold: { price: 15, premiumCurrency: 150, name: 'Gold Founder' },
+          platinum: { price: 25, premiumCurrency: 250, name: 'Platinum Founder' }
+        };
+        const TIER_LEVELS = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
+        
+        const heroesSnapshot = await db.collection('heroes')
+          .where('twitchUserId', '==', purchase.userId)
+          .get();
+
+        if (!heroesSnapshot.empty) {
+          const packConfig = PACK_TIERS[purchase.packTier];
+          const tierLevel = TIER_LEVELS[purchase.packTier];
+          const batch = db.batch();
+
+          heroesSnapshot.docs.forEach(heroDoc => {
+            const heroRef = db.collection('heroes').doc(heroDoc.id);
+            const hero = heroDoc.data();
+            batch.update(heroRef, {
+              founderPackTier: purchase.packTier,
+              founderPackLevel: tierLevel,
+              tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          });
+
+          await batch.commit();
+          console.log(`[Stripe Webhook] Founders pack ${purchase.packTier} completed for user ${purchase.userId}`);
+        }
+      } else if (purchase.packType && purchase.heroId) {
+        // Complete token pack
+        const TOKEN_PACKS = {
+          impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
+          starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
+          value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
+          premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
+        };
+        
+        const packConfig = TOKEN_PACKS[purchase.packType];
+        const heroRef = db.collection('heroes').doc(purchase.heroId);
+        const heroDoc = await heroRef.get();
+
+        if (heroDoc.exists) {
+          const hero = heroDoc.data();
+          await heroRef.update({
+            tokens: (hero.tokens || 0) + packConfig.tokens,
+            gold: (hero.gold || 0) + packConfig.gold,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          console.log(`[Stripe Webhook] Token pack ${purchase.packType} completed for hero ${purchase.heroId}`);
+        }
+      }
+
+      res.json({ received: true, message: 'Purchase completed successfully' });
+    } catch (error) {
+      console.error('[Stripe Webhook] Error completing purchase:', error);
+      res.status(500).json({ error: 'Failed to complete purchase', details: error.message });
+    }
+  } else {
+    res.json({ received: true });
+  }
+});
+
+// Then apply JSON body parser for all other routes
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 

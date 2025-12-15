@@ -76,3 +76,4 @@ All achievement titles are correctly defined in `src/data/achievements.js`. The 
   - The achievement hasn't been unlocked yet (need 1,000 kills)
   - The title wasn't added when the achievement was unlocked (check hero's titles array in database)
   - There's a display/filtering issue in the frontend
+

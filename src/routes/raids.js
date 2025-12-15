@@ -182,16 +182,26 @@ router.get('/upcoming', async (req, res) => {
   }
 });
 
-// Get raid by ID
+// Get raid definition by ID (returns static data, checks Firestore first for scheduled raids)
 router.get('/:raidId', async (req, res) => {
   try {
-    const doc = await db.collection('raids').doc(req.params.raidId).get();
+    const { raidId } = req.params;
     
-    if (!doc.exists) {
+    // First check Firestore for scheduled/instance raids
+    const doc = await db.collection('raids').doc(raidId).get();
+    if (doc.exists) {
+      return res.json({ id: doc.id, ...doc.data() });
+    }
+    
+    // If not in Firestore, try static data
+    const { getRaidById } = await import('../data/raids.js');
+    const raid = getRaidById(raidId);
+    
+    if (!raid) {
       return res.status(404).json({ error: 'Raid not found' });
     }
     
-    res.json({ id: doc.id, ...doc.data() });
+    res.json(raid);
   } catch (error) {
     console.error('Error fetching raid:', error);
     res.status(500).json({ error: 'Failed to fetch raid' });

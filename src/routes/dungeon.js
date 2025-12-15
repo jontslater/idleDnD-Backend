@@ -720,6 +720,24 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
   }
 });
 
+// Get dungeon definition by ID (returns static data)
+router.get('/:dungeonId', async (req, res) => {
+  try {
+    const { dungeonId } = req.params;
+    const { getDungeonById } = await import('../data/dungeons.js');
+    const dungeon = getDungeonById(dungeonId);
+    
+    if (!dungeon) {
+      return res.status(404).json({ error: 'Dungeon not found' });
+    }
+    
+    res.json(dungeon);
+  } catch (error) {
+    console.error('Error fetching dungeon definition:', error);
+    res.status(500).json({ error: 'Failed to fetch dungeon definition' });
+  }
+});
+
 // Get available dungeons for a user
 router.get('/available/:userId', async (req, res) => {
   try {

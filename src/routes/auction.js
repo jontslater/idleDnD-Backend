@@ -443,7 +443,22 @@ router.post('/:listingId/buyout', async (req, res) => {
     const quantity = listing.quantity || 1;
     const itemsToAdd = [];
     for (let i = 0; i < quantity; i++) {
-      itemsToAdd.push(listing.item);
+      let itemToAdd = { ...listing.item };
+      
+      // Ensure consumables have proper properties for auto-use detection
+      // This ensures items purchased from auction house work the same as shop purchases
+      if (itemToAdd.type === 'potion' || itemToAdd.name?.toLowerCase().includes('health potion')) {
+        // Ensure health potions have itemKey for auto-use detection
+        if (!itemToAdd.itemKey && itemToAdd.name?.toLowerCase().includes('health potion')) {
+          itemToAdd.itemKey = 'healthpotion';
+        }
+        // Ensure type is set
+        if (!itemToAdd.type && itemToAdd.itemKey === 'healthpotion') {
+          itemToAdd.type = 'potion';
+        }
+      }
+      
+      itemsToAdd.push(itemToAdd);
     }
     
     const buyerUpdates = {

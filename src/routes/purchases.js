@@ -1,8 +1,12 @@
 import express from 'express';
 import admin from 'firebase-admin';
+import Stripe from 'stripe';
 import { db } from '../index.js';
 
 const router = express.Router();
+
+// Initialize Stripe
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 // Pack tier configurations
 const PACK_TIERS = {
@@ -79,17 +83,10 @@ router.post('/founders-pack', async (req, res) => {
 
     console.log(`[Founders Pack] Purchase record created: ${purchaseId}`);
 
-    // TODO: When Stripe is ready, create checkout session here
-    // const sessionId = await createStripeCheckoutSession(purchaseId, packConfig.price);
-    
-    // For now, return mock session ID
-    const mockSessionId = null;
-
     res.json({
       success: true,
       purchaseId,
-      sessionId: mockSessionId,
-      message: `Founders pack purchase initiated. Payment processing will be available once Stripe is configured.`
+      message: `Purchase initiated. Ready for checkout.`
     });
 
   } catch (error) {
@@ -601,17 +598,10 @@ router.post('/token-pack', async (req, res) => {
 
     console.log(`[Token Pack] Purchase record created: ${purchaseId}`);
 
-    // TODO: When Stripe is ready, create checkout session here
-    // const sessionId = await createStripeCheckoutSession(purchaseId, packConfig.price);
-    
-    // For now, return mock session ID
-    const mockSessionId = null;
-
     res.json({
       success: true,
       purchaseId,
-      sessionId: mockSessionId,
-      message: `Token pack purchase initiated. Payment processing will be available once Stripe is configured.`
+      message: `Purchase initiated. Ready for checkout.`
     });
 
   } catch (error) {
@@ -699,6 +689,105 @@ router.post('/complete-token-pack', async (req, res) => {
     console.error('[Token Pack] Error completing purchase:', error);
     res.status(500).json({ error: 'Failed to complete purchase' });
   }
+});
+
+/**
+ * Create Stripe checkout session endpoint
+ * POST /api/purchases/create-checkout-session
+ */
+router.post('/create-checkout-session', async (req, res) => {
+  try {
+    const { purchaseId, price } = req.body;
+
+    if (!purchaseId || !price) {
+      return res.status(400).json({ error: 'purchaseId and price are required' });
+    }
+
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    // Get purchase record to determine type and metadata
+    const purchaseRef = db.collection('purchases').doc(purchaseId);
+    const purchaseDoc = await purchaseRef.get();
+
+    if (!purchaseDoc.exists) {
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    const purchase = purchaseDoc.data();
+    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
+    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
+    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
+    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
+
+    let productName = 'Purchase';
+    let productDescription = 'Game purchase';
+
+    if (purchase.packTier) {
+      const packConfig = PACK_TIERS[purchase.packTier];
+      productName = `${packConfig.name} Pack`;
+      productDescription = `Founder's Pack - ${packConfig.premiumCurrency} Tokens`;
+    } else if (purchase.packType) {
+      const packConfig = TOKEN_PACKS[purchase.packType];
+      productName = packConfig.name;
+      productDescription = `${packConfig.tokens} Tokens + ${packConfig.gold} Gold`;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: productName,
+              description: productDescription,
+            },
+            unit_amount: Math.round(price * 100), // Convert to cents
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        purchaseId: purchaseId,
+        purchaseType: purchase.packTier ? 'founders-pack' : purchase.packType ? 'token-pack' : 'unknown',
+        userId: purchase.userId || '',
+      },
+    });
+
+    res.json({ sessionId: session.id, url: session.url });
+  } catch (error) {
+    console.error('[Stripe] Error creating checkout session:', error);
+    res.status(500).json({ error: 'Failed to create checkout session', details: error.message });
+  }
+});
+
+/**
+ * Success redirect handler
+ * GET /api/purchases/success
+ */
+router.get('/success', async (req, res) => {
+  const { purchaseId } = req.query;
+  
+  // Redirect to frontend success page
+  const frontendUrl = process.env.FRONTEND_URL || process.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+  res.redirect(`${frontendUrl}/purchases/success?purchaseId=${purchaseId}`);
+});
+
+/**
+ * Cancel redirect handler
+ * GET /api/purchases/cancel
+ */
+router.get('/cancel', async (req, res) => {
+  const { purchaseId } = req.query;
+  
+  // Redirect to frontend cancel page
+  const frontendUrl = process.env.FRONTEND_URL || process.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+  res.redirect(`${frontendUrl}/purchases/cancel?purchaseId=${purchaseId}`);
 });
 
 export default router;
