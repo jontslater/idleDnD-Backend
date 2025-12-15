@@ -145,16 +145,29 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
           heroesSnapshot.docs.forEach(heroDoc => {
             const heroRef = db.collection('heroes').doc(heroDoc.id);
             const hero = heroDoc.data();
-            batch.update(heroRef, {
+            
+            // Build hero update with founder pack benefits
+            const heroUpdate = {
               founderPackTier: purchase.packTier,
-              founderPackLevel: tierLevel,
+              founderPackTierLevel: tierLevel, // Fixed: use founderPackTierLevel (not founderPackLevel)
               tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            };
+
+            // Auto-unlock founder title if not already unlocked
+            if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
+              heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
+              // Set as active title if no title is currently selected
+              if (!hero.activeTitle) {
+                heroUpdate.activeTitle = 'Founder';
+              }
+            }
+
+            batch.update(heroRef, heroUpdate);
           });
 
           await batch.commit();
-          console.log(`[Stripe Webhook] Founders pack ${purchase.packTier} completed for user ${purchase.userId}`);
+          console.log(`[Stripe Webhook] Founders pack ${purchase.packTier} completed for user ${purchase.userId} - updated ${heroesSnapshot.docs.length} heroes`);
         }
       } else if (purchase.packType && purchase.heroId) {
         // Complete token pack
