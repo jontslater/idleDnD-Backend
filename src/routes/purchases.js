@@ -790,4 +790,135 @@ router.get('/cancel', async (req, res) => {
   res.redirect(`${frontendUrl}/purchases/cancel?purchaseId=${purchaseId}`);
 });
 
+/**
+ * Get user's purchase history
+ * GET /api/purchases/history/:userId
+ */
+router.get('/history/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    console.log(`[Purchase History] Fetching purchases for userId: ${userId}`);
+
+    // Get all purchases for this user (both founders packs and token packs)
+    const purchasesSnapshot = await db.collection('purchases')
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const purchases = purchasesSnapshot.docs.map(doc => {
+      const purchase = doc.data();
+      return {
+        id: doc.id,
+        ...purchase,
+        createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+        completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+        updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+      };
+    });
+
+    // Also try querying by twitchUserId if userId is numeric
+    let additionalPurchases = [];
+    if (!isNaN(userId)) {
+      const twitchPurchasesSnapshot = await db.collection('purchases')
+        .where('userId', '==', Number(userId))
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      additionalPurchases = twitchPurchasesSnapshot.docs
+        .filter(doc => !purchases.find(p => p.id === doc.id)) // Avoid duplicates
+        .map(doc => {
+          const purchase = doc.data();
+          return {
+            id: doc.id,
+            ...purchase,
+            createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+            completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+            updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+          };
+        });
+    }
+
+    const allPurchases = [...purchases, ...additionalPurchases];
+
+    // Sort by creation date (most recent first)
+    allPurchases.sort((a, b) => {
+      const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : (typeof a.createdAt === 'number' ? a.createdAt : 0);
+      const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : (typeof b.createdAt === 'number' ? b.createdAt : 0);
+      return bTime - aTime;
+    });
+
+    console.log(`[Purchase History] Found ${allPurchases.length} purchases for userId: ${userId}`);
+
+    res.json({ purchases: allPurchases });
+  } catch (error) {
+    console.error('[Purchase History] Error fetching purchases:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase history' });
+  }
+});
+
+/**
+ * Get purchase details with hero information
+ * GET /api/purchases/:purchaseId/details
+ */
+router.get('/:purchaseId/details', async (req, res) => {
+  try {
+    const { purchaseId } = req.params;
+
+    const purchaseDoc = await db.collection('purchases').doc(purchaseId).get();
+
+    if (!purchaseDoc.exists) {
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    const purchase = purchaseDoc.data();
+    const purchaseData = {
+      id: purchaseDoc.id,
+      ...purchase,
+      createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+      completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+    };
+
+    // If it's a token pack purchase, get hero info
+    if (purchase.packType && purchase.heroId) {
+      const heroDoc = await db.collection('heroes').doc(purchase.heroId).get();
+      if (heroDoc.exists) {
+        const hero = heroDoc.data();
+        purchaseData.hero = {
+          id: heroDoc.id,
+          name: hero.name || hero.username,
+          level: hero.level,
+          role: hero.role,
+        };
+      }
+    }
+
+    // If it's a founders pack, get all user's heroes
+    if (purchase.packTier) {
+      const heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', purchase.userId)
+        .get();
+      
+      purchaseData.heroes = heroesSnapshot.docs.map(doc => {
+        const hero = doc.data();
+        return {
+          id: doc.id,
+          name: hero.name || hero.username,
+          level: hero.level,
+          role: hero.role,
+        };
+      });
+    }
+
+    res.json({ purchase: purchaseData });
+  } catch (error) {
+    console.error('[Purchase Details] Error fetching purchase details:', error);
+    res.status(500).json({ error: 'Failed to fetch purchase details' });
+  }
+});
+
 export default router;
