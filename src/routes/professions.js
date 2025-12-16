@@ -381,24 +381,34 @@ router.post('/:userId/craft', async (req, res) => {
       }
     } else {
       // Regular crafted item
-      craftedItem = {
-        id: itemId,
-        name: recipeKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        slot: 'consumable', // Mark as profession item
-        rarity: 'common',
-        attack: 0,
-        defense: 0,
-        hp: 0,
-        color: profession.type === 'herbalism' ? '#10b981' : profession.type === 'mining' ? '#f97316' : '#a855f7',
-        // Profession-specific metadata
-        professionItem: true,
-        professionType: profession.type,
-        recipeKey,
-        tier: req.body.tier || 1,
-        quantity,
-        applicableSlots, // Store slot restrictions
-        craftedAt: Date.now()
-      };
+      // Create items based on quantity
+      const itemsToAdd = [];
+      for (let i = 0; i < quantity; i++) {
+        const itemIdForThis = i === 0 ? itemId : `${recipeKey}_${Date.now()}_${i}`;
+        const craftedItem = {
+          id: itemIdForThis,
+          name: recipeKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          slot: 'consumable', // Mark as profession item
+          rarity: 'common',
+          attack: 0,
+          defense: 0,
+          hp: 0,
+          color: profession.type === 'herbalism' ? '#10b981' : profession.type === 'mining' ? '#f97316' : '#a855f7',
+          // Profession-specific metadata
+          professionItem: true,
+          professionType: profession.type,
+          recipeKey,
+          tier: req.body.tier || 1,
+          quantity: 1, // Each item has quantity 1, we create multiple items
+          applicableSlots, // Store slot restrictions
+          craftedAt: Date.now()
+        };
+        itemsToAdd.push(craftedItem);
+      }
+      
+      // Add all items to inventory
+      hero.inventory.push(...itemsToAdd);
+      craftedItem = null; // Don't add single item below
     }
 
     // Add to hero's main inventory (simple array) - only if craftedItem exists
@@ -891,7 +901,16 @@ router.post('/:userId/apply', async (req, res) => {
     }];
 
     // Remove item from inventory (consume it)
-    hero.inventory.splice(itemIndex, 1);
+    // Handle stacked items (quantity > 1)
+    if (foundItem.quantity && foundItem.quantity > 1) {
+      // Decrement quantity instead of removing
+      foundItem.quantity -= 1;
+      // Update the item in inventory
+      hero.inventory[itemIndex] = foundItem;
+    } else {
+      // Remove entire item if quantity is 1 or doesn't exist
+      hero.inventory.splice(itemIndex, 1);
+    }
 
     // Update equipment and inventory
     hero.equipment[equipmentSlot] = equipment;
