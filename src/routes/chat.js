@@ -91,14 +91,15 @@ router.post('/join', async (req, res) => {
 
     // Handle existing hero
     if (hero) {
-      // CRITICAL: Remove ALL other heroes of this user from ALL battlefields
+      // CRITICAL: Remove ALL other heroes of this user from ALL battlefields (including the same battlefield)
       // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
-      // When joining with hero B, remove hero A/C/D from their battlefields
+      // When joining with hero B, remove hero A/C/D from their battlefields (even if on the same battlefield)
       try {
         const allUserHeroesSnapshot = await db.collection('heroes')
           .where('twitchUserId', '==', viewerId)
           .get();
         
+        // Remove ALL other heroes that are on ANY battlefield (including the same one we're joining)
         const otherHeroes = allUserHeroesSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(h => h.id !== hero.id && h.currentBattlefieldId); // Other heroes that are on battlefields
@@ -106,9 +107,16 @@ router.post('/join', async (req, res) => {
         if (otherHeroes.length > 0) {
           console.log(`[Join] User ${viewerUsername} has ${otherHeroes.length} other heroes on battlefields. Removing them...`);
           
+          // Also check for heroes on the SAME battlefield we're joining (shouldn't happen, but ensure cleanup)
+          const heroesOnSameBattlefield = otherHeroes.filter(h => h.currentBattlefieldId === battlefieldId);
+          if (heroesOnSameBattlefield.length > 0) {
+            console.log(`⚠️ [Join] Found ${heroesOnSameBattlefield.length} hero(es) already on the same battlefield ${battlefieldId}. Removing them first.`);
+          }
+          
           // Broadcast removal for each hero on a battlefield
           const { broadcastToRoom } = await import('../websocket/server.js');
           
+          // Process removals sequentially to ensure they complete before adding new hero
           for (const otherHero of otherHeroes) {
             const otherBattlefieldId = otherHero.currentBattlefieldId;
             
@@ -151,10 +159,20 @@ router.post('/join', async (req, res) => {
             
             console.log(`✅ [Join] Removed hero ${otherHero.id} (${otherHero.name}) from battlefield ${otherBattlefieldId}`);
           }
+          
+          // Small delay to ensure Firebase updates propagate
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (cleanupError) {
         console.error('❌ [Join] Error cleaning up other heroes:', cleanupError);
         // Continue even if cleanup fails - don't block the join
+      }
+      
+      // Re-fetch hero data to ensure we have the latest state after cleanup
+      const heroRef = db.collection('heroes').doc(hero.id);
+      const refreshedHeroDoc = await heroRef.get();
+      if (refreshedHeroDoc.exists) {
+        hero = { id: refreshedHeroDoc.id, ...refreshedHeroDoc.data() };
       }
       
       // Check if THIS hero is moving from a different battlefield
@@ -222,7 +240,7 @@ router.post('/join', async (req, res) => {
       }
       
       // Update existing hero's battlefield assignment and lastActiveAt
-      const heroRef = db.collection('heroes').doc(hero.id);
+      // (heroRef was already created above when we refreshed the hero data)
       console.log(`[Join] Updating Firebase for hero ${hero.id} - setting currentBattlefieldId to: ${battlefieldId}`);
       
       // CRITICAL: Ensure hero is only active on ONE battlefield at a time
