@@ -6,6 +6,7 @@
 import express from 'express';
 import { db } from '../index.js';
 import admin from 'firebase-admin';
+import { joinChannelAsBot, leaveChannelAsBot } from '../websocket/twitch-events.js';
 
 const router = express.Router();
 
@@ -93,6 +94,11 @@ router.put('/:twitchId', async (req, res) => {
       customMessage: customMessage || null
     };
 
+    // Get previous settings to check if enabled state changed
+    const previousSettingsDoc = await db.collection('streamerSettings').doc(twitchId).get();
+    const previousEnabled = previousSettingsDoc.exists && previousSettingsDoc.data().chatUpdates?.enabled;
+    const enabledChanged = previousEnabled !== chatUpdates.enabled;
+
     // Save to streamerSettings collection
     await db.collection('streamerSettings').doc(twitchId).set({
       twitchId,
@@ -101,6 +107,35 @@ router.put('/:twitchId', async (req, res) => {
     }, { merge: true });
 
     console.log(`[Stream Settings] ✅ Updated settings for ${twitchId}`);
+
+    // If enabled state changed, join/leave channel accordingly
+    if (enabledChanged) {
+      try {
+        const username = await getStreamerUsername(twitchId);
+        if (username) {
+          if (chatUpdates.enabled) {
+            // Join channel when enabled
+            const joined = await joinChannelAsBot(username);
+            if (joined) {
+              console.log(`[Stream Settings] ✅ TNEWBOT joined ${username}'s channel`);
+            } else {
+              console.warn(`[Stream Settings] ⚠️ Failed to join ${username}'s channel (bot may not be configured)`);
+            }
+          } else {
+            // Leave channel when disabled
+            const left = await leaveChannelAsBot(username);
+            if (left) {
+              console.log(`[Stream Settings] ✅ TNEWBOT left ${username}'s channel`);
+            }
+          }
+        } else {
+          console.warn(`[Stream Settings] ⚠️ Could not find username for Twitch ID ${twitchId}`);
+        }
+      } catch (error) {
+        console.error(`[Stream Settings] ❌ Error joining/leaving channel:`, error);
+        // Don't fail the request if channel join/leave fails
+      }
+    }
 
     res.json({
       success: true,
@@ -112,6 +147,38 @@ router.put('/:twitchId', async (req, res) => {
     res.status(500).json({ error: 'Failed to update stream settings' });
   }
 });
+
+/**
+ * Get streamer's Twitch username from their Twitch ID
+ * @param {string} twitchId - Streamer's Twitch user ID
+ * @returns {Promise<string|null>}
+ */
+async function getStreamerUsername(twitchId) {
+  try {
+    // Try to find hero with this twitchId to get username
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', twitchId)
+      .limit(1)
+      .get();
+
+    if (!heroesSnapshot.empty) {
+      const hero = heroesSnapshot.docs[0].data();
+      return hero.twitchUsername || hero.name || null;
+    }
+
+    // Fallback: try user document
+    const userDoc = await db.collection('users').doc(twitchId).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return userData.twitchUsername || userData.username || null;
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[Stream Settings] ❌ Error getting username for ${twitchId}:`, error);
+    return null;
+  }
+}
 
 /**
  * Get default chat update settings

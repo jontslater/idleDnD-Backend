@@ -14,6 +14,7 @@ const tmi = require('tmi.js');
 
 let twitchClient = null; // Legacy bot client (fallback)
 const streamerClients = new Map(); // streamerUsername -> tmi.Client
+const botJoinedChannels = new Set(); // Track channels TNEWBOT has joined
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
 /**
@@ -31,7 +32,7 @@ export function handleTwitchEvents() {
   // Get TNEWBOT credentials from environment (OPTIONAL - only for fallback and periodic updates)
   const TNEWBOT_USERNAME = process.env.TNEWBOT_USERNAME || process.env.TWITCH_USERNAME || process.env.TWITCH_BOT_USERNAME;
   const TNEWBOT_OAUTH_TOKEN = process.env.TNEWBOT_OAUTH_TOKEN || process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_ACCESS_TOKEN;
-  const CHANNELS = process.env.TWITCH_CHANNELS ? process.env.TWITCH_CHANNELS.split(',').map(c => c.trim().toLowerCase()) : [];
+  const INITIAL_CHANNELS = process.env.TWITCH_CHANNELS ? process.env.TWITCH_CHANNELS.split(',').map(c => c.trim().toLowerCase()) : [];
   
   // Bot account is optional - only use if provided
   if (!TNEWBOT_USERNAME || !TNEWBOT_OAUTH_TOKEN) {
@@ -39,12 +40,7 @@ export function handleTwitchEvents() {
     return;
   }
   
-  if (CHANNELS.length === 0) {
-    console.log('   ℹ️  No channels configured for TNEWBOT account. Streamers will connect automatically when they log in.');
-    return;
-  }
-  
-  // Create Twitch client for TNEWBOT
+  // Create Twitch client for TNEWBOT (can start with empty channels - will join dynamically)
   const client = new tmi.Client({
     options: { debug: process.env.NODE_ENV === 'development' },
     connection: {
@@ -55,8 +51,11 @@ export function handleTwitchEvents() {
       username: TNEWBOT_USERNAME,
       password: TNEWBOT_OAUTH_TOKEN
     },
-    channels: CHANNELS
+    channels: INITIAL_CHANNELS.length > 0 ? INITIAL_CHANNELS : [] // Start with initial channels, but can join more dynamically
   });
+  
+  // Track initial channels
+  INITIAL_CHANNELS.forEach(channel => botJoinedChannels.add(channel));
   
   // Connect to Twitch
   client.connect().catch(err => {
@@ -246,7 +245,11 @@ export function handleTwitchEvents() {
   // Handle connection events
   client.on('connected', (addr, port) => {
     console.log(`✅ Bot account connected to Twitch IRC at ${addr}:${port}`);
-    console.log(`📺 Listening to channels: ${CHANNELS.join(', ')}`);
+    if (INITIAL_CHANNELS.length > 0) {
+      console.log(`📺 Initially listening to channels: ${INITIAL_CHANNELS.join(', ')}`);
+    } else {
+      console.log(`📺 Bot ready - will join channels dynamically as streamers enable chat updates`);
+    }
     console.log('   (Note: Streamers who log in will use their own tokens automatically)');
   });
   
@@ -618,8 +621,77 @@ export function getStreamerClient(streamerUsername) {
 }
 
 /**
+ * Join a channel with TNEWBOT (if not already joined)
+ * @param {string} channel - Channel name (with or without #)
+ * @returns {Promise<boolean>} True if joined successfully, false otherwise
+ */
+export async function joinChannelAsBot(channel) {
+  // Normalize channel name (remove # if present, lowercase)
+  const channelName = channel.startsWith('#') ? channel.slice(1).toLowerCase() : channel.toLowerCase();
+  const normalizedChannel = `#${channelName}`;
+  
+  // Check if already joined
+  if (botJoinedChannels.has(channelName)) {
+    console.log(`[TNEWBOT] ℹ️ Already in channel ${normalizedChannel}`);
+    return true;
+  }
+  
+  // Check if bot client is available and connected
+  if (!twitchClient || twitchClient.readyState() !== 'OPEN') {
+    console.warn(`[TNEWBOT] ⚠️ Bot client not connected, cannot join ${normalizedChannel}`);
+    return false;
+  }
+  
+  try {
+    await twitchClient.join(normalizedChannel);
+    botJoinedChannels.add(channelName);
+    console.log(`[TNEWBOT] ✅ Joined channel ${normalizedChannel}`);
+    return true;
+  } catch (error) {
+    console.error(`[TNEWBOT] ❌ Failed to join channel ${normalizedChannel}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Leave a channel with TNEWBOT
+ * @param {string} channel - Channel name (with or without #)
+ * @returns {Promise<boolean>} True if left successfully, false otherwise
+ */
+export async function leaveChannelAsBot(channel) {
+  // Normalize channel name (remove # if present, lowercase)
+  const channelName = channel.startsWith('#') ? channel.slice(1).toLowerCase() : channel.toLowerCase();
+  const normalizedChannel = `#${channelName}`;
+  
+  // Check if not joined
+  if (!botJoinedChannels.has(channelName)) {
+    console.log(`[TNEWBOT] ℹ️ Not in channel ${normalizedChannel}`);
+    return true;
+  }
+  
+  // Check if bot client is available and connected
+  if (!twitchClient || twitchClient.readyState() !== 'OPEN') {
+    console.warn(`[TNEWBOT] ⚠️ Bot client not connected, cannot leave ${normalizedChannel}`);
+    botJoinedChannels.delete(channelName); // Remove from tracking anyway
+    return false;
+  }
+  
+  try {
+    await twitchClient.part(normalizedChannel);
+    botJoinedChannels.delete(channelName);
+    console.log(`[TNEWBOT] ✅ Left channel ${normalizedChannel}`);
+    return true;
+  } catch (error) {
+    console.error(`[TNEWBOT] ❌ Failed to leave channel ${normalizedChannel}:`, error);
+    botJoinedChannels.delete(channelName); // Remove from tracking even if part failed
+    return false;
+  }
+}
+
+/**
  * Send a chat message as TNEWBOT to a specific channel
  * This is used for periodic updates and other bot messages
+ * Automatically joins the channel if not already joined
  * @param {string} channel - Channel name (with or without #)
  * @param {string} message - Message to send
  * @returns {Promise<void>}
@@ -627,6 +699,13 @@ export function getStreamerClient(streamerUsername) {
 export async function sendChatMessageAsBot(channel, message) {
   // Normalize channel name (add # if missing, lowercase)
   const normalizedChannel = channel.startsWith('#') ? channel.toLowerCase() : `#${channel.toLowerCase()}`;
+  const channelName = normalizedChannel.replace('#', '');
+  
+  // Ensure bot is in the channel before sending
+  const joined = await joinChannelAsBot(channelName);
+  if (!joined) {
+    console.warn(`[TNEWBOT] ⚠️ Could not join ${normalizedChannel}, attempting to send anyway...`);
+  }
   
   // Try to use TNEWBOT client (fallback bot)
   if (twitchClient && twitchClient.readyState() === 'OPEN') {
@@ -636,12 +715,25 @@ export async function sendChatMessageAsBot(channel, message) {
       return;
     } catch (error) {
       console.error(`[TNEWBOT] ❌ Failed to send message via bot client:`, error);
+      // If error is about not being in channel, try joining again
+      if (error.message && error.message.includes('not in channel')) {
+        console.log(`[TNEWBOT] 🔄 Retrying join and send for ${normalizedChannel}...`);
+        const retryJoin = await joinChannelAsBot(channelName);
+        if (retryJoin) {
+          try {
+            await twitchClient.say(normalizedChannel, message);
+            console.log(`[TNEWBOT] ✅ Sent message to ${normalizedChannel} after retry: ${message}`);
+            return;
+          } catch (retryError) {
+            console.error(`[TNEWBOT] ❌ Failed to send message after retry:`, retryError);
+          }
+        }
+      }
     }
   }
   
   // If TNEWBOT client not available, try to use streamer's client as fallback
   // (This shouldn't happen in normal operation, but provides a fallback)
-  const channelName = normalizedChannel.replace('#', '');
   const streamerClient = streamerClients.get(channelName);
   if (streamerClient && streamerClient.readyState() === 'OPEN') {
     try {
