@@ -16,6 +16,7 @@ export const ROLE_CONFIG = {
   shaman: { baseHp: 100, baseAttack: 6, baseDefense: 7, displayName: 'Spirit Healer', category: 'healer' },
   mistweaver: { baseHp: 98, baseAttack: 7, baseDefense: 6, displayName: 'Mistweaver', category: 'healer' },
   chronomancer: { baseHp: 92, baseAttack: 5, baseDefense: 5, displayName: 'Chronomender', category: 'healer' },
+  bard: { baseHp: 107, baseAttack: 7, baseDefense: 8, displayName: 'Bard', category: 'healer' },
 
   // DPS
   berserker: { baseHp: 130, baseAttack: 16, baseDefense: 5, displayName: 'Berserker', category: 'dps' },
