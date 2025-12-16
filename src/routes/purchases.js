@@ -703,8 +703,22 @@ router.post('/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'purchaseId and price are required' });
     }
 
+    // In development/localhost, allow mock checkout for testing
+    const isDevelopment = process.env.NODE_ENV !== 'production' || 
+                          process.env.BACKEND_URL?.includes('localhost') ||
+                          !process.env.STRIPE_SECRET_KEY;
+
     if (!stripe) {
-      return res.status(500).json({ error: 'Stripe not configured' });
+      if (isDevelopment) {
+        // Return a mock checkout URL for development testing
+        console.log('[Stripe] Development mode: Returning mock checkout session');
+        return res.json({
+          sessionId: `mock_session_${purchaseId}`,
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/purchases/success?purchaseId=${purchaseId}&mock=true`,
+          message: 'Mock checkout session (Stripe not configured in development)'
+        });
+      }
+      return res.status(500).json({ error: 'Stripe not configured. Please configure STRIPE_SECRET_KEY environment variable.' });
     }
 
     // Get purchase record to determine type and metadata
@@ -805,47 +819,88 @@ router.get('/history/:userId', async (req, res) => {
     console.log(`[Purchase History] Fetching purchases for userId: ${userId}`);
 
     // Get all purchases for this user (both founders packs and token packs)
-    const purchasesSnapshot = await db.collection('purchases')
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
+    // Try with orderBy first, fallback to in-memory sort if index doesn't exist
+    let purchases = [];
+    try {
+      const purchasesSnapshot = await db.collection('purchases')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
 
-    const purchases = purchasesSnapshot.docs.map(doc => {
-      const purchase = doc.data();
-      return {
-        id: doc.id,
-        ...purchase,
-        createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
-        completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
-        updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
-      };
-    });
+      purchases = purchasesSnapshot.docs.map(doc => {
+        const purchase = doc.data();
+        return {
+          id: doc.id,
+          ...purchase,
+          createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+          completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+          updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+        };
+      });
+    } catch (error) {
+      // If orderBy fails (no index), fetch without orderBy and sort in memory
+      console.warn('[Purchase History] orderBy failed, fetching all and sorting in memory:', error.message);
+      const purchasesSnapshot = await db.collection('purchases')
+        .where('userId', '==', userId)
+        .get();
+
+      purchases = purchasesSnapshot.docs.map(doc => {
+        const purchase = doc.data();
+        return {
+          id: doc.id,
+          ...purchase,
+          createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+          completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+          updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+        };
+      });
+    }
 
     // Also try querying by twitchUserId if userId is numeric
     let additionalPurchases = [];
     if (!isNaN(userId)) {
-      const twitchPurchasesSnapshot = await db.collection('purchases')
-        .where('userId', '==', Number(userId))
-        .orderBy('createdAt', 'desc')
-        .get();
-      
-      additionalPurchases = twitchPurchasesSnapshot.docs
-        .filter(doc => !purchases.find(p => p.id === doc.id)) // Avoid duplicates
-        .map(doc => {
-          const purchase = doc.data();
-          return {
-            id: doc.id,
-            ...purchase,
-            createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
-            completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
-            updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
-          };
-        });
+      try {
+        const twitchPurchasesSnapshot = await db.collection('purchases')
+          .where('userId', '==', Number(userId))
+          .orderBy('createdAt', 'desc')
+          .get();
+        
+        additionalPurchases = twitchPurchasesSnapshot.docs
+          .filter(doc => !purchases.find(p => p.id === doc.id)) // Avoid duplicates
+          .map(doc => {
+            const purchase = doc.data();
+            return {
+              id: doc.id,
+              ...purchase,
+              createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+              completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+              updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+            };
+          });
+      } catch (error) {
+        // Fallback to no orderBy
+        const twitchPurchasesSnapshot = await db.collection('purchases')
+          .where('userId', '==', Number(userId))
+          .get();
+        
+        additionalPurchases = twitchPurchasesSnapshot.docs
+          .filter(doc => !purchases.find(p => p.id === doc.id))
+          .map(doc => {
+            const purchase = doc.data();
+            return {
+              id: doc.id,
+              ...purchase,
+              createdAt: purchase.createdAt?.toMillis?.() || purchase.createdAt?.toDate?.() || purchase.createdAt,
+              completedAt: purchase.completedAt?.toMillis?.() || purchase.completedAt?.toDate?.() || purchase.completedAt,
+              updatedAt: purchase.updatedAt?.toMillis?.() || purchase.updatedAt?.toDate?.() || purchase.updatedAt,
+            };
+          });
+      }
     }
 
     const allPurchases = [...purchases, ...additionalPurchases];
 
-    // Sort by creation date (most recent first)
+    // Sort by creation date (most recent first) - always sort in memory as final step
     allPurchases.sort((a, b) => {
       const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : (typeof a.createdAt === 'number' ? a.createdAt : 0);
       const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : (typeof b.createdAt === 'number' ? b.createdAt : 0);

@@ -28,23 +28,23 @@ export function handleTwitchEvents() {
   console.log('📡 Initializing Twitch event handlers...');
   console.log('   Streamers will connect automatically when they log in via OAuth.');
   
-  // Get Twitch credentials from environment (OPTIONAL - only for fallback)
-  const TWITCH_USERNAME = process.env.TWITCH_USERNAME || process.env.TWITCH_BOT_USERNAME;
-  const TWITCH_OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_ACCESS_TOKEN;
+  // Get TNEWBOT credentials from environment (OPTIONAL - only for fallback and periodic updates)
+  const TNEWBOT_USERNAME = process.env.TNEWBOT_USERNAME || process.env.TWITCH_USERNAME || process.env.TWITCH_BOT_USERNAME;
+  const TNEWBOT_OAUTH_TOKEN = process.env.TNEWBOT_OAUTH_TOKEN || process.env.TWITCH_OAUTH_TOKEN || process.env.TWITCH_ACCESS_TOKEN;
   const CHANNELS = process.env.TWITCH_CHANNELS ? process.env.TWITCH_CHANNELS.split(',').map(c => c.trim().toLowerCase()) : [];
   
   // Bot account is optional - only use if provided
-  if (!TWITCH_USERNAME || !TWITCH_OAUTH_TOKEN) {
-    console.log('   ℹ️  Bot account not configured (optional). Streamers will connect automatically when they log in.');
+  if (!TNEWBOT_USERNAME || !TNEWBOT_OAUTH_TOKEN) {
+    console.log('   ℹ️  TNEWBOT account not configured (optional). Streamers will connect automatically when they log in.');
     return;
   }
   
   if (CHANNELS.length === 0) {
-    console.log('   ℹ️  No channels configured for bot account. Streamers will connect automatically when they log in.');
+    console.log('   ℹ️  No channels configured for TNEWBOT account. Streamers will connect automatically when they log in.');
     return;
   }
   
-  // Create Twitch client
+  // Create Twitch client for TNEWBOT
   const client = new tmi.Client({
     options: { debug: process.env.NODE_ENV === 'development' },
     connection: {
@@ -52,8 +52,8 @@ export function handleTwitchEvents() {
       secure: true
     },
     identity: {
-      username: TWITCH_USERNAME,
-      password: TWITCH_OAUTH_TOKEN
+      username: TNEWBOT_USERNAME,
+      password: TNEWBOT_OAUTH_TOKEN
     },
     channels: CHANNELS
   });
@@ -615,4 +615,44 @@ export function getStreamerClient(streamerUsername) {
     return client;
   }
   return null;
+}
+
+/**
+ * Send a chat message as TNEWBOT to a specific channel
+ * This is used for periodic updates and other bot messages
+ * @param {string} channel - Channel name (with or without #)
+ * @param {string} message - Message to send
+ * @returns {Promise<void>}
+ */
+export async function sendChatMessageAsBot(channel, message) {
+  // Normalize channel name (add # if missing, lowercase)
+  const normalizedChannel = channel.startsWith('#') ? channel.toLowerCase() : `#${channel.toLowerCase()}`;
+  
+  // Try to use TNEWBOT client (fallback bot)
+  if (twitchClient && twitchClient.readyState() === 'OPEN') {
+    try {
+      await twitchClient.say(normalizedChannel, message);
+      console.log(`[TNEWBOT] ✅ Sent message to ${normalizedChannel}: ${message}`);
+      return;
+    } catch (error) {
+      console.error(`[TNEWBOT] ❌ Failed to send message via bot client:`, error);
+    }
+  }
+  
+  // If TNEWBOT client not available, try to use streamer's client as fallback
+  // (This shouldn't happen in normal operation, but provides a fallback)
+  const channelName = normalizedChannel.replace('#', '');
+  const streamerClient = streamerClients.get(channelName);
+  if (streamerClient && streamerClient.readyState() === 'OPEN') {
+    try {
+      await streamerClient.say(normalizedChannel, message);
+      console.log(`[TNEWBOT] ✅ Sent message via streamer client to ${normalizedChannel}: ${message}`);
+      return;
+    } catch (error) {
+      console.error(`[TNEWBOT] ❌ Failed to send message via streamer client:`, error);
+    }
+  }
+  
+  console.error(`[TNEWBOT] ❌ No available client to send message to ${normalizedChannel}`);
+  throw new Error(`No available Twitch client to send message to ${normalizedChannel}`);
 }

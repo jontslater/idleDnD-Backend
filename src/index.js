@@ -204,8 +204,9 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
 });
 
 // Then apply JSON body parser for all other routes
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Increased limit to 512KB to handle large batch quest updates
+app.use(bodyParser.json({ limit: '512kb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '512kb' }));
 
 // Request logging
 app.use((req, res, next) => {
@@ -236,6 +237,7 @@ import webChatRoutes from './routes/webChat.js';
 import lootTokenRoutes from './routes/lootTokens.js';
 import purchasesRoutes from './routes/purchases.js';
 import mailRoutes from './routes/mail.js';
+import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
 
 // Import services
@@ -265,6 +267,7 @@ app.use('/api/parties', partiesRoutes);
 app.use('/api/loot-tokens', lootTokenRoutes);
 app.use('/api/mail', mailRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/stream/settings', streamSettingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -543,6 +546,17 @@ Press Ctrl+C to stop
   if (wss) {
     setupKeepalive(wss);
     initializeTwitchEventHandlers();
+  }
+
+  // Initialize periodic chat updates service (runs every 5 minutes)
+  try {
+    const { initializePeriodicChatUpdates } = await import('./services/periodicChatUpdates.js');
+    const updateInterval = process.env.CHAT_UPDATE_INTERVAL_MINUTES 
+      ? parseInt(process.env.CHAT_UPDATE_INTERVAL_MINUTES, 10) 
+      : 5;
+    initializePeriodicChatUpdates(updateInterval);
+  } catch (error) {
+    console.error('❌ Failed to initialize periodic chat updates:', error);
   }
 });
 
