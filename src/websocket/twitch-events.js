@@ -6,6 +6,7 @@
 
 import { broadcastToRoom } from './server.js';
 import fetch from 'node-fetch';
+import { db } from '../index.js';
 
 // tmi.js is CommonJS, so we need to use createRequire
 import { createRequire } from 'module';
@@ -16,6 +17,147 @@ let twitchClient = null; // Legacy bot client (fallback)
 const streamerClients = new Map(); // streamerUsername -> tmi.Client
 const botJoinedChannels = new Set(); // Track channels TNEWBOT has joined
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+
+// Active chatter tracking: channelName -> Map<userId, lastChatTimestamp>
+// Tracks users who chatted in the last hour for viewer bonuses
+const activeChatters = new Map(); // channelName -> Map<userId, timestamp>
+const channelToStreamerId = new Map(); // channelName -> streamerTwitchId (for broadcasting)
+const CHATTER_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Track chat activity for a user in a channel
+ * Updates active chatters and broadcasts updates
+ */
+async function trackChatActivity(channelName, userId, username, streamerTwitchId) {
+  // Initialize channel tracking if needed
+  if (!activeChatters.has(channelName)) {
+    activeChatters.set(channelName, new Map());
+  }
+  
+  const chatters = activeChatters.get(channelName);
+  const now = Date.now();
+  
+  // Update or add user's last chat time
+  chatters.set(userId, now);
+  
+  // Clean up old chatters (older than 1 hour)
+  const oneHourAgo = now - CHATTER_TIMEOUT_MS;
+  for (const [chatterUserId, lastChat] of chatters.entries()) {
+    if (lastChat < oneHourAgo) {
+      chatters.delete(chatterUserId);
+    }
+  }
+  
+  // Get current count
+  const count = chatters.size;
+  
+  // Broadcast chatter count update
+  if (streamerTwitchId) {
+    broadcastToRoom(String(streamerTwitchId), {
+      type: 'chatter_count_update',
+      count: count,
+      timestamp: now
+    });
+    console.log(`📡 [Chatter Tracking] ${channelName}: ${count} active chatters (updated from ${username})`);
+  }
+  
+  // Also broadcast chat_activity event for rested XP bonuses
+  // Look up heroId from userId (async, but don't block)
+  if (streamerTwitchId) {
+    // Try to find hero for this user (non-blocking)
+    db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .limit(1)
+      .get()
+      .then(snapshot => {
+        let heroId = null;
+        if (!snapshot.empty) {
+          heroId = snapshot.docs[0].id;
+        }
+        
+        broadcastToRoom(String(streamerTwitchId), {
+          type: 'chat_activity',
+          username: username,
+          userId: userId,
+          heroId: heroId, // Include heroId if found
+          timestamp: now
+        });
+      })
+      .catch(err => {
+        // If lookup fails, still send event without heroId
+        console.warn(`[Chatter Tracking] Failed to lookup heroId for userId ${userId}:`, err);
+        broadcastToRoom(String(streamerTwitchId), {
+          type: 'chat_activity',
+          username: username,
+          userId: userId,
+          timestamp: now
+        });
+      });
+  }
+  
+  return count;
+}
+
+/**
+ * Get active chatter count for a channel
+ */
+function getActiveChatterCount(channelName) {
+  const chatters = activeChatters.get(channelName);
+  if (!chatters) return 0;
+  
+  // Clean up old chatters before counting
+  const now = Date.now();
+  const oneHourAgo = now - CHATTER_TIMEOUT_MS;
+  for (const [userId, lastChat] of chatters.entries()) {
+    if (lastChat < oneHourAgo) {
+      chatters.delete(userId);
+    }
+  }
+  
+  return chatters.size;
+}
+
+/**
+ * Broadcast chatter counts for all active channels
+ * Called periodically to ensure browser sources stay updated
+ */
+function broadcastAllChatterCounts() {
+  activeChatters.forEach((chatters, channelName) => {
+    // Clean up old chatters
+    const now = Date.now();
+    const oneHourAgo = now - CHATTER_TIMEOUT_MS;
+    for (const [userId, lastChat] of chatters.entries()) {
+      if (lastChat < oneHourAgo) {
+        chatters.delete(userId);
+      }
+    }
+    
+    const count = chatters.size;
+    
+    // Get streamer Twitch ID for this channel
+    const streamerTwitchId = channelToStreamerId.get(channelName);
+    if (streamerTwitchId) {
+      // Broadcast even if count is 0 to keep browser sources updated
+      broadcastToRoom(String(streamerTwitchId), {
+        type: 'chatter_count_update',
+        count: count,
+        timestamp: now
+      });
+    }
+  });
+}
+
+// Start periodic broadcast of chatter counts (every 30 seconds)
+let chatterBroadcastInterval = null;
+function startChatterBroadcast() {
+  if (chatterBroadcastInterval) return; // Already started
+  
+  chatterBroadcastInterval = setInterval(() => {
+    broadcastAllChatterCounts();
+  }, 30000); // Every 30 seconds
+  
+  console.log('📡 Started periodic chatter count broadcasts (every 30s)');
+}
 
 /**
  * Initialize Twitch event handlers
@@ -62,6 +204,9 @@ export function handleTwitchEvents() {
     console.error('❌ Failed to connect to Twitch:', err);
   });
   
+  // Start periodic chatter count broadcasts
+  startChatterBroadcast();
+  
   // Listen for chat messages
   client.on('message', async (channel, tags, message, self) => {
     // Ignore messages from the bot itself
@@ -70,6 +215,14 @@ export function handleTwitchEvents() {
     const username = tags.username;
     const userId = tags['user-id'];
     const channelName = channel.replace('#', '').toLowerCase();
+    const streamerTwitchId = tags['room-id'] || tags['user-id']; // Room ID is the streamer's Twitch ID
+    
+    // Track chat activity for viewer bonuses (track ALL messages, not just commands)
+    if (streamerTwitchId) {
+      // Map channel to streamer ID for periodic broadcasts
+      channelToStreamerId.set(channelName, streamerTwitchId);
+      trackChatActivity(channelName, userId, username, streamerTwitchId);
+    }
     
     // Log all messages for debugging
     if (message.trim().startsWith('!')) {
@@ -417,6 +570,14 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
     const username = tags.username;
     const userId = tags['user-id'];
     const channelName = channel.replace('#', '').toLowerCase();
+    const streamerTwitchId = tags['room-id'] || tags['user-id']; // Room ID is the streamer's Twitch ID
+    
+    // Track chat activity for viewer bonuses (track ALL messages, not just commands)
+    if (streamerTwitchId) {
+      // Map channel to streamer ID for periodic broadcasts
+      channelToStreamerId.set(channelName, streamerTwitchId);
+      trackChatActivity(channelName, userId, username, streamerTwitchId);
+    }
     
     // Log all messages for debugging
     if (message.trim().startsWith('!')) {
