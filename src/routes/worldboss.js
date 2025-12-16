@@ -278,12 +278,23 @@ router.post('/:bossId/complete', async (req, res) => {
         const tokenReward = Math.floor(boss.rewards.tokens * rankMultiplier);
         const xpReward = Math.floor(boss.rewards.xpBonus * rankMultiplier);
         
-        await heroRef.update({
+        // Handle level-ups (multiple level-ups if XP is high enough)
+        const newXp = (hero.xp || 0) + xpReward;
+        const { processLevelUps } = await import('../utils/levelUpHelper.js');
+        const levelUpResult = processLevelUps(hero, newXp);
+        
+        const updateData = {
           gold: (hero.gold || 0) + goldReward,
           tokens: (hero.tokens || 0) + tokenReward,
-          xp: (hero.xp || 0) + xpReward,
+          xp: levelUpResult.updates.xp,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        
+        if (levelUpResult.leveledUp) {
+          Object.assign(updateData, levelUpResult.updates);
+        }
+        
+        await heroRef.update(updateData);
         
         // Top 3 get legendary loot
         if (index < 3) {

@@ -139,6 +139,21 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
     if (!heroesSnapshot.empty) {
       const heroDoc = heroesSnapshot.docs[0];
       hero = { id: heroDoc.id, ...heroDoc.data() };
+      
+      // Initialize equipment slots if missing (similar to quest progress)
+      const { initializeEquipmentSlots } = await import('./gearService.js');
+      const initializedEquipment = initializeEquipmentSlots(hero);
+      if (initializedEquipment) {
+        const currentSlots = Object.keys(hero.equipment || {});
+        const expectedSlots = Object.keys(initializedEquipment);
+        const needsUpdate = expectedSlots.some(slot => !(slot in (hero.equipment || {})));
+        
+        if (needsUpdate) {
+          await heroDoc.ref.update({ equipment: initializedEquipment });
+          hero.equipment = initializedEquipment;
+          console.log(`✅ [Command] Initialized equipment slots for hero ${hero.id}`);
+        }
+      }
     }
 
     // Command aliases (convert shortcuts to full commands)

@@ -919,13 +919,25 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
         const heroRef = heroDoc.ref;
         const hero = heroDoc.data();
         
-        // Add gold and tokens
-        await heroRef.update({
+        // Add gold, tokens, and XP
+        const newXp = (hero.xp || 0) + raidData.rewards.experience;
+        
+        // Handle level-ups (multiple level-ups if XP is high enough)
+        const { processLevelUps } = await import('../utils/levelUpHelper.js');
+        const levelUpResult = processLevelUps(hero, newXp);
+        
+        const updateData = {
           gold: (hero.gold || 0) + raidData.rewards.gold,
           tokens: (hero.tokens || 0) + raidData.rewards.tokens,
-          xp: (hero.xp || 0) + raidData.rewards.experience,
+          xp: levelUpResult.updates.xp,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        
+        if (levelUpResult.leveledUp) {
+          Object.assign(updateData, levelUpResult.updates);
+        }
+        
+        await heroRef.update(updateData);
         
         // Add loot to inventory
         const participantLoot = lootDrops.filter(drop => drop.assignedTo === participant.userId);

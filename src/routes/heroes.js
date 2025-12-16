@@ -152,6 +152,25 @@ router.get('/:userId', async (req, res) => {
     }
     
     const heroData = doc.data();
+    
+    // Initialize equipment slots if missing (similar to quest progress initialization)
+    const { initializeEquipmentSlots } = await import('../services/gearService.js');
+    const initializedEquipment = initializeEquipmentSlots(heroData);
+    
+    if (initializedEquipment) {
+      // Check if equipment needs updating (missing slots)
+      const currentSlots = Object.keys(heroData.equipment || {});
+      const expectedSlots = Object.keys(initializedEquipment);
+      const needsUpdate = expectedSlots.some(slot => !(slot in (heroData.equipment || {})));
+      
+      if (needsUpdate) {
+        // Update hero with initialized equipment slots
+        await doc.ref.update({ equipment: initializedEquipment });
+        heroData.equipment = initializedEquipment;
+        console.log(`✅ Initialized equipment slots for hero ${req.params.userId}`);
+      }
+    }
+    
     console.log(`📥 Fetching hero ${req.params.userId}`);
     console.log(`📦 Inventory in response: ${heroData.inventory?.length || 0} items`);
     if (heroData.inventory && heroData.inventory.length > 0) {
@@ -498,12 +517,18 @@ router.post('/create', async (req, res) => {
       totalIdleTokens: 0,
       lastTokenClaim: Date.now(),
       lastCommandTime: Date.now(),
-      equipment: {
-        weapon: null,
-        armor: null,
-        accessory: null,
-        shield: null
-      },
+      equipment: (() => {
+        const category = config.category || 'dps';
+        const defaultSlots = category === 'tank' 
+          ? ['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots']
+          : ['weapon', 'armor', 'accessory', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots'];
+        
+        const equipment = {};
+        defaultSlots.forEach(slot => {
+          equipment[slot] = null;
+        });
+        return equipment;
+      })(),
       stats: {
         totalDamage: 0,
         totalHealing: 0,

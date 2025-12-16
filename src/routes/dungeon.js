@@ -624,12 +624,24 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
         const hero = heroDoc.data();
         
         // Add gold, tokens, and XP
-        await heroRef.update({
+        const newXp = (hero.xp || 0) + rewards.experience;
+        
+        // Handle level-ups (multiple level-ups if XP is high enough)
+        const { processLevelUps } = await import('../utils/levelUpHelper.js');
+        const levelUpResult = processLevelUps(hero, newXp);
+        
+        const updateData = {
           gold: (hero.gold || 0) + rewards.gold,
           tokens: (hero.tokens || 0) + rewards.tokens,
-          xp: (hero.xp || 0) + rewards.experience,
+          xp: levelUpResult.updates.xp,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        
+        if (levelUpResult.leveledUp) {
+          Object.assign(updateData, levelUpResult.updates);
+        }
+        
+        await heroRef.update(updateData);
       }
     });
     

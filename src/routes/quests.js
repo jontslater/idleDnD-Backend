@@ -607,21 +607,13 @@ router.post('/:userId/claim/:questId', async (req, res) => {
       updateData.inventory = currentInventory;
     }
     
-    // Check for level up
-    let leveledUp = false;
-    const maxXp = 100 * Math.pow(hero.level, 1.5);
-    if (updateData.xp >= maxXp) {
-      updateData.level = (hero.level || 1) + 1;
-      updateData.xp = updateData.xp - maxXp;
-      leveledUp = true;
-      
-      // Update stats on level up
-      const roleConfig = getRoleConfig(hero.role);
-      if (roleConfig) {
-        updateData.maxHp = (hero.maxHp || 100) + roleConfig.hpPerLevel;
-        updateData.attack = (hero.attack || 10) + roleConfig.attackPerLevel;
-        updateData.defense = (hero.defense || 5) + roleConfig.defensePerLevel;
-      }
+    // Check for level up (handles multiple level-ups)
+    const { processLevelUps } = await import('../utils/levelUpHelper.js');
+    const levelUpResult = processLevelUps(hero, updateData.xp);
+    
+    if (levelUpResult.leveledUp) {
+      // Merge level-up updates into updateData
+      Object.assign(updateData, levelUpResult.updates);
     }
     
     await heroRef.update(updateData);
@@ -641,7 +633,7 @@ router.post('/:userId/claim/:questId', async (req, res) => {
       newGold: updateData.gold,
       newXp: updateData.xp,
       newTokens: updateData.tokens,
-      levelUp: leveledUp ? updateData.level : null
+      levelUp: levelUpResult?.leveledUp ? levelUpResult.newLevel : null
     });
   } catch (error) {
     console.error('Error claiming quest reward:', error);
@@ -736,21 +728,13 @@ router.post('/:userId/claim-bonus/:type', async (req, res) => {
       updateData.inventory = currentInventory;
     }
     
-    // Check for level up
-    let leveledUp = false;
-    const maxXp = 100 * Math.pow(hero.level, 1.5);
-    if (updateData.xp >= maxXp) {
-      updateData.level = (hero.level || 1) + 1;
-      updateData.xp = updateData.xp - maxXp;
-      leveledUp = true;
-      
-      // Update stats on level up
-      const roleConfig = getRoleConfig(hero.role);
-      if (roleConfig) {
-        updateData.maxHp = (hero.maxHp || 100) + roleConfig.hpPerLevel;
-        updateData.attack = (hero.attack || 10) + roleConfig.attackPerLevel;
-        updateData.defense = (hero.defense || 5) + roleConfig.defensePerLevel;
-      }
+    // Check for level up (handles multiple level-ups)
+    const { processLevelUps } = await import('../utils/levelUpHelper.js');
+    const levelUpResult = processLevelUps(hero, updateData.xp);
+    
+    if (levelUpResult.leveledUp) {
+      // Merge level-up updates into updateData
+      Object.assign(updateData, levelUpResult.updates);
     }
     
     await heroRef.update(updateData);
@@ -761,7 +745,7 @@ router.post('/:userId/claim-bonus/:type', async (req, res) => {
       newGold: updateData.gold,
       newXp: updateData.xp,
       newTokens: updateData.tokens,
-      levelUp: leveledUp ? updateData.level : null
+      levelUp: levelUpResult?.leveledUp ? levelUpResult.newLevel : null
     });
   } catch (error) {
     console.error('Error claiming completion bonus:', error);
@@ -868,13 +852,13 @@ router.post('/auto-claim-all', async (req, res) => {
       updates.inventory = currentInventory;
     }
     
-    // Check for level up
-    let leveledUp = false;
-    const maxXp = 100 * Math.pow(hero.level, 1.5);
-    if (updates.xp >= maxXp) {
-      updates.level = (hero.level || 1) + 1;
-      updates.xp = updates.xp - maxXp;
-      leveledUp = true;
+    // Check for level up (handles multiple level-ups)
+    const { processLevelUps } = await import('../utils/levelUpHelper.js');
+    const levelUpResult = processLevelUps(hero, updates.xp);
+    
+    if (levelUpResult.leveledUp) {
+      // Merge level-up updates into updates
+      Object.assign(updates, levelUpResult.updates);
     }
     
     updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -891,7 +875,7 @@ router.post('/auto-claim-all', async (req, res) => {
         items: totalItems,
         materials: totalMaterials
       },
-      levelUp: leveledUp ? updates.level : null
+      levelUp: levelUpResult?.leveledUp ? levelUpResult.newLevel : null
     });
   } catch (error) {
     console.error('Error auto-claiming quests:', error);
@@ -1004,13 +988,13 @@ router.post('/claim-all/:userId', async (req, res) => {
       updates.inventory = currentInventory;
     }
     
-    // Check for level up
-    let leveledUp = false;
-    const maxXp = 100 * Math.pow(hero.level, 1.5);
-    if (updates.xp >= maxXp) {
-      updates.level = (hero.level || 1) + 1;
-      updates.xp = updates.xp - maxXp;
-      leveledUp = true;
+    // Check for level up (handles multiple level-ups)
+    const { processLevelUps } = await import('../utils/levelUpHelper.js');
+    const levelUpResult = processLevelUps(hero, updates.xp);
+    
+    if (levelUpResult.leveledUp) {
+      // Merge level-up updates into updates
+      Object.assign(updates, levelUpResult.updates);
     }
     
     updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -1027,7 +1011,7 @@ router.post('/claim-all/:userId', async (req, res) => {
         items: totalItems,
         materials: totalMaterials
       },
-      levelUp: leveledUp ? updates.level : null
+      levelUp: levelUpResult?.leveledUp ? levelUpResult.newLevel : null
     });
   } catch (error) {
     console.error('Error claiming all quests:', error);

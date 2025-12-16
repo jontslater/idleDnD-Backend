@@ -236,6 +236,32 @@ function generateGearItem(role, slot, rarity, heroLevel = 1) {
   return item;
 }
 
+/**
+ * Initialize equipment slots for a hero
+ * Ensures all required slots exist (set to null if missing)
+ * Similar to quest progress initialization
+ * @param {Object} hero - Hero object
+ * @returns {Object|null} Initialized equipment object or null if hero invalid
+ */
+export function initializeEquipmentSlots(hero) {
+  if (!hero || !hero.role) {
+    return null;
+  }
+  
+  const category = ROLE_CONFIG[hero.role]?.category || 'dps';
+  const defaultSlots = category === 'tank' ? TANK_EQUIPMENT_SLOTS : EQUIPMENT_SLOTS;
+  
+  const existingEquipment = hero.equipment || {};
+  const initializedEquipment = {};
+  
+  // Initialize all slots, preserving existing items
+  defaultSlots.forEach(slot => {
+    initializedEquipment[slot] = existingEquipment[slot] !== undefined ? existingEquipment[slot] : null;
+  });
+  
+  return initializedEquipment;
+}
+
 export {
   generateGearItem,
   ROLE_CONFIG,
