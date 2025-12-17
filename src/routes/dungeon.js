@@ -1,6 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { calculateTotalItemScore } from '../utils/itemScore.js';
 
 const router = express.Router();
 
@@ -820,20 +821,8 @@ router.get('/available/:userId', async (req, res) => {
     
     const heroLevel = hero.level || 1;
     
-    // Calculate item score
-    let itemScore = 0;
-    if (hero.equipment) {
-      Object.values(hero.equipment).forEach(item => {
-        if (item) {
-          const baseScore = (item.attack || 0) + (item.defense || 0) + ((item.hp || 0) / 2);
-          const rarityBonus = item.rarity === 'legendary' ? 1.5 : 
-                              item.rarity === 'epic' ? 1.3 : 
-                              item.rarity === 'rare' ? 1.1 : 1.0;
-          const procBonus = (item.procEffects?.length || 0) * 50;
-          itemScore += Math.floor((baseScore * rarityBonus) + procBonus);
-        }
-      });
-    }
+    // Calculate item score (role-aware - healers prioritize healing power)
+    const itemScore = calculateTotalItemScore(hero.equipment, hero.role);
     
     // Import dungeon data
     const { getAllDungeons } = await import('../data/dungeons.js');

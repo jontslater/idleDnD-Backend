@@ -171,4 +171,3 @@ export function getHeroByTwitchIdCache() {
 }
 
 export { HeroCache, HeroByTwitchIdCache };
-
