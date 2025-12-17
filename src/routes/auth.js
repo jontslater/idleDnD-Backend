@@ -40,54 +40,125 @@ router.post('/twitch', async (req, res) => {
   try {
     const { code } = req.body;
     
+    console.log('[Twitch Auth] POST /api/auth/twitch received');
+    console.log('[Twitch Auth] Code present:', !!code);
+    
     if (!code) {
       return res.status(400).json({ error: 'Authorization code is required' });
     }
 
-    // Exchange code for access token with Twitch
-    const twitchTokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        client_id: process.env.TWITCH_CLIENT_ID,
-        client_secret: process.env.TWITCH_CLIENT_SECRET,
-        code: code,
-        grant_type: 'authorization_code',
-        redirect_uri: process.env.TWITCH_REDIRECT_URI || 'http://localhost:3000/auth/callback'
-      })
+    // Log environment check (without exposing secrets)
+    console.log('[Twitch Auth] Environment check:', {
+      hasClientId: !!process.env.TWITCH_CLIENT_ID,
+      hasClientSecret: !!process.env.TWITCH_CLIENT_SECRET,
+      redirectUri: process.env.TWITCH_REDIRECT_URI || 'http://localhost:3000/auth/callback'
     });
 
+    // Exchange code for access token with Twitch
+    console.log('[Twitch Auth] Attempting token exchange...');
+    let twitchTokenResponse;
+    try {
+      twitchTokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          client_id: process.env.TWITCH_CLIENT_ID,
+          client_secret: process.env.TWITCH_CLIENT_SECRET,
+          code: code,
+          grant_type: 'authorization_code',
+          redirect_uri: process.env.TWITCH_REDIRECT_URI || 'http://localhost:3000/auth/callback'
+        })
+      });
+      console.log('[Twitch Auth] Token exchange response status:', twitchTokenResponse.status);
+    } catch (fetchError) {
+      console.error('[Twitch Auth] Network error during token exchange:', fetchError);
+      console.error('[Twitch Auth] Network error stack:', fetchError.stack);
+      throw new Error(`Network error: ${fetchError.message}`);
+    }
+
     if (!twitchTokenResponse.ok) {
-      const errorData = await twitchTokenResponse.json();
-      console.error('Twitch token exchange failed:', errorData);
-      return res.status(400).json({ error: 'Failed to authenticate with Twitch' });
+      let errorData;
+      try {
+        errorData = await twitchTokenResponse.json();
+      } catch (parseError) {
+        const text = await twitchTokenResponse.text();
+        console.error('[Twitch Auth] Failed to parse error response. Status:', twitchTokenResponse.status);
+        console.error('[Twitch Auth] Response text:', text);
+        return res.status(400).json({ 
+          error: 'Failed to authenticate with Twitch',
+          details: `HTTP ${twitchTokenResponse.status}: ${text}`
+        });
+      }
+      
+      console.error('[Twitch Auth] Token exchange failed:', {
+        status: twitchTokenResponse.status,
+        statusText: twitchTokenResponse.statusText,
+        error: errorData
+      });
+      
+      return res.status(400).json({ 
+        error: 'Failed to authenticate with Twitch',
+        details: errorData.error || errorData.message || 'Unknown error',
+        twitchError: errorData
+      });
     }
 
     const { access_token, refresh_token } = await twitchTokenResponse.json();
+    console.log('[Twitch Auth] Token exchange successful');
 
     // Get Twitch user info
-    const twitchUserResponse = await fetch('https://api.twitch.tv/helix/users', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Client-Id': process.env.TWITCH_CLIENT_ID
-      }
-    });
+    console.log('[Twitch Auth] Fetching user info...');
+    let twitchUserResponse;
+    try {
+      twitchUserResponse = await fetch('https://api.twitch.tv/helix/users', {
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Client-Id': process.env.TWITCH_CLIENT_ID
+        }
+      });
+      console.log('[Twitch Auth] User info response status:', twitchUserResponse.status);
+    } catch (fetchError) {
+      console.error('[Twitch Auth] Network error fetching user info:', fetchError);
+      console.error('[Twitch Auth] Network error stack:', fetchError.stack);
+      throw new Error(`Network error fetching user info: ${fetchError.message}`);
+    }
 
     if (!twitchUserResponse.ok) {
-      console.error('Failed to fetch Twitch user info');
-      return res.status(400).json({ error: 'Failed to fetch user information' });
+      let errorText;
+      try {
+        errorText = await twitchUserResponse.text();
+        const errorData = JSON.parse(errorText);
+        console.error('[Twitch Auth] Failed to fetch user info:', {
+          status: twitchUserResponse.status,
+          statusText: twitchUserResponse.statusText,
+          error: errorData
+        });
+      } catch (parseError) {
+        errorText = await twitchUserResponse.text();
+        console.error('[Twitch Auth] Failed to fetch user info. Status:', twitchUserResponse.status);
+        console.error('[Twitch Auth] Response text:', errorText);
+      }
+      
+      return res.status(400).json({ 
+        error: 'Failed to fetch user information',
+        details: `HTTP ${twitchUserResponse.status}`
+      });
     }
 
     const twitchData = await twitchUserResponse.json();
     const twitchUser = twitchData.data[0];
 
     if (!twitchUser) {
+      console.error('[Twitch Auth] No user data in response:', twitchData);
       return res.status(400).json({ error: 'No user data received from Twitch' });
     }
 
+    console.log('[Twitch Auth] User authenticated:', twitchUser.login);
+
     // Find all heroes for this user (update all of them with twitchUsername)
+    console.log('[Twitch Auth] Looking up heroes for user:', twitchUser.id);
     const heroQuery = await db.collection('heroes')
       .where('twitchUserId', '==', twitchUser.id)
       .get();
@@ -95,6 +166,7 @@ router.post('/twitch', async (req, res) => {
     let hero = null;
 
     if (!heroQuery.empty) {
+      console.log('[Twitch Auth] Found', heroQuery.docs.length, 'heroes for user');
       // Existing heroes found - update all of them with twitchUsername
       const batch = db.batch();
       const updateData = {
@@ -121,19 +193,22 @@ router.post('/twitch', async (req, res) => {
       });
       
       try {
+        console.log('[Twitch Auth] Committing hero updates...');
         await batch.commit();
+        console.log('[Twitch Auth] Hero updates committed successfully');
       } catch (batchError) {
-        console.error('Error committing batch update:', batchError);
+        console.error('[Twitch Auth] Error committing batch update:', batchError);
+        console.error('[Twitch Auth] Batch error stack:', batchError.stack);
         throw new Error(`Failed to update heroes: ${batchError.message}`);
       }
       
       // Use first hero for response (for backward compatibility)
       const firstHeroDoc = heroQuery.docs[0];
       hero = { id: firstHeroDoc.id, ...firstHeroDoc.data() };
-      console.log(`Updated ${heroQuery.docs.length} heroes with twitchUsername: ${twitchUser.login.toLowerCase()}`);
+      console.log(`[Twitch Auth] Updated ${heroQuery.docs.length} heroes with twitchUsername: ${twitchUser.login.toLowerCase()}`);
     } else {
       // No hero found - user needs to create one in the Electron app
-      console.log(`No hero found for Twitch user ${twitchUser.id} (${twitchUser.display_name})`);
+      console.log(`[Twitch Auth] No hero found for Twitch user ${twitchUser.id} (${twitchUser.display_name})`);
       hero = null;
     }
     
@@ -179,9 +254,12 @@ router.post('/twitch', async (req, res) => {
       displayName: twitchUser.display_name
     };
 
+    console.log('[Twitch Auth] Generating JWT token...');
     const token = jwt.sign(jwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    console.log('[Twitch Auth] JWT token generated successfully');
 
     // Return user data and token
+    console.log('[Twitch Auth] Authentication successful, returning response');
     res.json({
       user: {
         id: hero ? hero.id : null,
@@ -192,17 +270,19 @@ router.post('/twitch', async (req, res) => {
       token
     });
   } catch (error) {
-    console.error('Authentication error:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      code: error.code,
+    console.error('[Twitch Auth] ========== AUTHENTICATION ERROR ==========');
+    console.error('[Twitch Auth] Error message:', error.message);
+    console.error('[Twitch Auth] Error name:', error.name);
+    console.error('[Twitch Auth] Error code:', error.code);
+    console.error('[Twitch Auth] Error stack:', error.stack);
+    console.error('[Twitch Auth] Environment check:', {
       twitchClientId: process.env.TWITCH_CLIENT_ID ? 'set' : 'missing',
       twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ? 'set' : 'missing',
       jwtSecret: process.env.JWT_SECRET ? 'set' : 'missing',
       redirectUri: process.env.TWITCH_REDIRECT_URI || 'default'
     });
+    console.error('[Twitch Auth] ===========================================');
+    
     res.status(500).json({ 
       error: 'Authentication failed', 
       details: error.message,
