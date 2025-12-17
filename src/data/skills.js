@@ -106,6 +106,7 @@ export function getAllSkills() {
     { key: 'shaman', name: 'Spirit Healer', cat: 'healer' },
     { key: 'mistweaver', name: 'Mistweaver', cat: 'healer' },
     { key: 'chronomancer', name: 'Chronomender', cat: 'healer' },
+    { key: 'bard', name: 'Bard', cat: 'healer' },
     // DPS
     { key: 'berserker', name: 'Berserker', cat: 'dps' },
     { key: 'crusader', name: 'Crusader', cat: 'dps' },
