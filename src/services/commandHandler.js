@@ -6,6 +6,7 @@
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import admin from 'firebase-admin';
+import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
 
 /**
  * Get all heroes in a battlefield
@@ -128,17 +129,63 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
         break;
     }
     
-    // Get hero for commands that need it
-    const heroesSnapshot = await db.collection('heroes')
-      .where('twitchUserId', '==', viewerId)
-      .where('currentBattlefieldId', '==', battlefieldId)
-      .limit(1)
-      .get();
-
+    // Get hero for commands that need it (with caching)
+    const heroCache = getHeroCache();
+    const twitchIdCache = getHeroByTwitchIdCache();
     let hero = null;
-    if (!heroesSnapshot.empty) {
-      const heroDoc = heroesSnapshot.docs[0];
-      hero = { id: heroDoc.id, ...heroDoc.data() };
+    
+    // Try cache first
+    let cachedHeroId = twitchIdCache.get(viewerId);
+    if (cachedHeroId) {
+      hero = heroCache.get(cachedHeroId);
+      if (hero && hero.currentBattlefieldId === battlefieldId) {
+        // Cache hit and hero is in correct battlefield
+      } else {
+        hero = null; // Cache miss or wrong battlefield
+      }
+    }
+    
+    if (!hero) {
+      // Cache miss - query Firestore
+      const heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', viewerId)
+        .where('currentBattlefieldId', '==', battlefieldId)
+        .limit(1)
+        .get();
+
+      if (!heroesSnapshot.empty) {
+        const heroDoc = heroesSnapshot.docs[0];
+        hero = { id: heroDoc.id, ...heroDoc.data() };
+        
+        // Cache the hero
+        heroCache.set(hero.id, hero);
+        twitchIdCache.set(viewerId, hero.id);
+        
+        // Initialize equipment slots if missing
+        const { initializeEquipmentSlots } = await import('./gearService.js');
+        const initializedEquipment = initializeEquipmentSlots(hero);
+        if (initializedEquipment) {
+          const currentSlots = Object.keys(hero.equipment || {});
+          const expectedSlots = Object.keys(initializedEquipment);
+          const needsUpdate = expectedSlots.some(slot => !(slot in (hero.equipment || {})));
+          
+          if (needsUpdate) {
+            const heroRef = db.collection('heroes').doc(hero.id);
+            await heroRef.update({ equipment: initializedEquipment });
+            hero.equipment = initializedEquipment;
+            
+            // Invalidate cache after update
+            heroCache.invalidate(hero.id);
+            
+            console.log(`✅ [Command] Initialized equipment slots for hero ${hero.id}`);
+          }
+        }
+      } else {
+        // No hero found - clear cache entry if it exists
+        if (cachedHeroId) {
+          twitchIdCache.invalidate(viewerId);
+        }
+      }
       
       // Initialize equipment slots if missing (similar to quest progress)
       const { initializeEquipmentSlots } = await import('./gearService.js');

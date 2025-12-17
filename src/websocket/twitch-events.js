@@ -62,17 +62,29 @@ async function trackChatActivity(channelName, userId, username, streamerTwitchId
   }
   
   // Also broadcast chat_activity event for rested XP bonuses
-  // Look up heroId from userId (async, but don't block)
+  // Look up heroId from userId (async, but don't block, with caching)
   if (streamerTwitchId) {
-    // Try to find hero for this user (non-blocking)
-    db.collection('heroes')
-      .where('twitchUserId', '==', userId)
-      .limit(1)
-      .get()
-      .then(snapshot => {
-        let heroId = null;
-        if (!snapshot.empty) {
-          heroId = snapshot.docs[0].id;
+    // Use cache to reduce Firestore reads
+    (async () => {
+      try {
+        const { getHeroByTwitchIdCache } = await import('../utils/heroCache.js');
+        const twitchIdCache = getHeroByTwitchIdCache();
+        
+        // Check cache first
+        let heroId = twitchIdCache.get(userId);
+        
+        if (!heroId) {
+          // Cache miss - query Firestore
+          const snapshot = await db.collection('heroes')
+            .where('twitchUserId', '==', userId)
+            .limit(1)
+            .get();
+          
+          if (!snapshot.empty) {
+            heroId = snapshot.docs[0].id;
+            // Cache the mapping
+            twitchIdCache.set(userId, heroId);
+          }
         }
         
         broadcastToRoom(String(streamerTwitchId), {
@@ -82,6 +94,18 @@ async function trackChatActivity(channelName, userId, username, streamerTwitchId
           heroId: heroId, // Include heroId if found
           timestamp: now
         });
+      } catch (error) {
+        console.error('[WebSocket] Error looking up hero for chat activity:', error);
+        // Still broadcast without heroId
+        broadcastToRoom(String(streamerTwitchId), {
+          type: 'chat_activity',
+          username: username,
+          userId: userId,
+          heroId: null,
+          timestamp: now
+        });
+      }
+    })();
       })
       .catch(err => {
         // If lookup fails, still send event without heroId

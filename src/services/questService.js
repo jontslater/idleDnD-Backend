@@ -143,30 +143,66 @@ export async function checkAndResetQuests() {
 async function resetPlayerQuestProgress(type) {
   console.log(`🔄 Resetting player ${type} quest progress...`);
   
-  const heroesSnapshot = await db.collection('heroes').get();
-  const batch = db.batch();
+  // Use query with limit to process in chunks (Firestore batch limit is 500)
+  const BATCH_SIZE = 500;
+  let lastDoc = null;
+  let totalProcessed = 0;
   
-  heroesSnapshot.forEach(doc => {
-    const updateData = {};
-    updateData[`questProgress.${type}`] = {};
-    updateData[`questProgress.last${capitalize(type)}Reset`] = admin.firestore.FieldValue.serverTimestamp();
+  while (true) {
+    let query = db.collection('heroes').limit(BATCH_SIZE);
     
-    if (type === 'daily') {
-      updateData['questProgress.dailyBonusClaimed'] = false;
-    } else if (type === 'weekly') {
-      updateData['questProgress.weeklyBonusClaimed'] = false;
-      updateData['questProgress.dailiesCompletedThisWeek'] = 0;
-    } else if (type === 'monthly') {
-      updateData['questProgress.monthlyBonusClaimed'] = false;
-      updateData['questProgress.dailiesCompletedThisMonth'] = 0;
-      updateData['questProgress.weekliesCompletedThisMonth'] = 0;
+    // Use cursor pagination to get next batch
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
     }
     
-    batch.update(doc.ref, updateData);
-  });
+    const heroesSnapshot = await query.get();
+    
+    if (heroesSnapshot.empty) {
+      break; // No more heroes to process
+    }
+    
+    // Process this batch
+    const batch = db.batch();
+    let batchCount = 0;
+    
+    heroesSnapshot.forEach(doc => {
+      const updateData = {};
+      updateData[`questProgress.${type}`] = {};
+      updateData[`questProgress.last${capitalize(type)}Reset`] = admin.firestore.FieldValue.serverTimestamp();
+      
+      if (type === 'daily') {
+        updateData['questProgress.dailyBonusClaimed'] = false;
+      } else if (type === 'weekly') {
+        updateData['questProgress.weeklyBonusClaimed'] = false;
+        updateData['questProgress.dailiesCompletedThisWeek'] = 0;
+      } else if (type === 'monthly') {
+        updateData['questProgress.monthlyBonusClaimed'] = false;
+        updateData['questProgress.dailiesCompletedThisMonth'] = 0;
+        updateData['questProgress.weekliesCompletedThisMonth'] = 0;
+      }
+      
+      batch.update(doc.ref, updateData);
+      batchCount++;
+    });
+    
+    // Commit this batch
+    if (batchCount > 0) {
+      await batch.commit();
+      totalProcessed += batchCount;
+      console.log(`  ✅ Processed batch: ${batchCount} heroes (total: ${totalProcessed})`);
+    }
+    
+    // Check if we got fewer than BATCH_SIZE (means we're done)
+    if (heroesSnapshot.size < BATCH_SIZE) {
+      break;
+    }
+    
+    // Set cursor for next iteration
+    lastDoc = heroesSnapshot.docs[heroesSnapshot.docs.length - 1];
+  }
   
-  await batch.commit();
-  console.log(`✅ Reset ${heroesSnapshot.size} players' ${type} progress`);
+  console.log(`✅ Reset ${totalProcessed} players' ${type} progress`);
 }
 
 // Helper to capitalize first letter

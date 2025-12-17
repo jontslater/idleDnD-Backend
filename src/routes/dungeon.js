@@ -36,18 +36,8 @@ router.get('/queue/status', async (req, res) => {
     
     const queueEntry = queueSnapshot.docs[0].data();
     
-    // Get queue counts by role
-    const allQueue = await db.collection('dungeonQueue').get();
-    const roleCounts = {
-      tank: 0,
-      healer: 0,
-      dps: 0
-    };
-    
-    allQueue.docs.forEach(doc => {
-      const entry = doc.data();
-      roleCounts[entry.role] = (roleCounts[entry.role] || 0) + 1;
-    });
+    // Get queue counts from counters document (much more efficient)
+    const roleCounts = await getQueueCounters();
     
     res.json({
       inQueue: true,
@@ -100,6 +90,9 @@ router.post('/queue', async (req, res) => {
     
     const queueRef = await db.collection('dungeonQueue').add(queueEntry);
     
+    // Update queue counters (increment role count)
+    await updateQueueCounters(role, 1);
+    
     // Try to match
     await tryMatchmaking();
     
@@ -128,7 +121,13 @@ router.delete('/queue', async (req, res) => {
       return res.status(404).json({ error: 'Not in queue' });
     }
     
+    const queueEntry = queueSnapshot.docs[0].data();
+    const role = queueEntry.role;
+    
     await queueSnapshot.docs[0].ref.delete();
+    
+    // Update queue counters (decrement role count)
+    await updateQueueCounters(role, -1);
     
     res.json({ success: true, message: 'Left queue' });
   } catch (error) {
@@ -184,6 +183,11 @@ async function tryMatchmaking() {
       
       const deletePromises = idsToRemove.map(id => db.collection('dungeonQueue').doc(id).delete());
       await Promise.all(deletePromises);
+      
+      // Update queue counters (decrement for each role)
+      await updateQueueCounters('tank', -1);
+      await updateQueueCounters('healer', -1);
+      await updateQueueCounters('dps', -3);
       
       groupsFormed++;
       

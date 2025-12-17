@@ -1,6 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { getBattlefieldCache } from '../utils/battlefieldCache.js';
 
 const router = express.Router();
 
@@ -8,12 +9,22 @@ const router = express.Router();
 router.get('/:battlefieldId/heroes', async (req, res) => {
   try {
     const { battlefieldId } = req.params;
+    const battlefieldCache = getBattlefieldCache();
     
-    const snapshot = await db.collection('heroes')
-      .where('currentBattlefieldId', '==', battlefieldId)
-      .get();
+    // Check cache first
+    let heroes = battlefieldCache.get(battlefieldId);
     
-    const heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+    if (!heroes) {
+      // Cache miss - fetch from Firestore
+      const snapshot = await db.collection('heroes')
+        .where('currentBattlefieldId', '==', battlefieldId)
+        .get();
+      
+      heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      
+      // Cache the result
+      battlefieldCache.set(battlefieldId, heroes);
+    }
     
     res.json(heroes);
   } catch (error) {
@@ -61,22 +72,39 @@ router.get('/:battlefieldId/state', async (req, res) => {
     // Decode the battlefieldId in case it was URL encoded
     const { battlefieldId } = req.params;
     const decodedBattlefieldId = decodeURIComponent(battlefieldId);
+    const battlefieldCache = getBattlefieldCache();
     
-    // Get heroes in this battlefield
-    const heroesSnapshot = await db.collection('heroes')
-      .where('currentBattlefieldId', '==', decodedBattlefieldId)
-      .get();
+    // Check cache first
+    let cachedHeroes = battlefieldCache.get(decodedBattlefieldId);
+    let heroes;
     
-    const heroes = heroesSnapshot.docs.map(doc => {
-      const hero = doc.data();
-      return {
-        id: doc.id,
+    if (cachedHeroes) {
+      // Use cached heroes but format them for state response
+      heroes = cachedHeroes.map(hero => ({
+        id: hero.id,
         ...hero,
-        // Include sprite info if available
         spriteImage: hero.spriteImage || null,
         spritePosition: hero.spritePosition || null
-      };
-    });
+      }));
+    } else {
+      // Cache miss - fetch from Firestore
+      const heroesSnapshot = await db.collection('heroes')
+        .where('currentBattlefieldId', '==', decodedBattlefieldId)
+        .get();
+      
+      heroes = heroesSnapshot.docs.map(doc => {
+        const hero = doc.data();
+        return {
+          id: doc.id,
+          ...hero,
+          spriteImage: hero.spriteImage || null,
+          spritePosition: hero.spritePosition || null
+        };
+      });
+      
+      // Cache the result
+      battlefieldCache.set(decodedBattlefieldId, heroes);
+    }
     
     // For now, return basic state
     // TODO: Add enemy state, combat log, effects when Electron app syncs this data

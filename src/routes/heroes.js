@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
+import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
 
 const router = express.Router();
 
@@ -173,13 +174,25 @@ router.post('/login-reward/:userId', async (req, res) => {
 // Get hero by user ID
 router.get('/:userId', async (req, res) => {
   try {
-    const doc = await db.collection('heroes').doc(req.params.userId).get();
+    const heroId = req.params.userId;
+    const heroCache = getHeroCache();
     
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'Hero not found' });
+    // Check cache first
+    let heroData = heroCache.get(heroId);
+    
+    if (!heroData) {
+      // Cache miss - fetch from Firestore
+      const doc = await db.collection('heroes').doc(heroId).get();
+      
+      if (!doc.exists) {
+        return res.status(404).json({ error: 'Hero not found' });
+      }
+      
+      heroData = { ...doc.data(), id: doc.id };
+      
+      // Cache the hero data
+      heroCache.set(heroId, heroData);
     }
-    
-    const heroData = doc.data();
     
     // Initialize equipment slots if missing (similar to quest progress initialization)
     const { initializeEquipmentSlots } = await import('../services/gearService.js');
@@ -193,13 +206,18 @@ router.get('/:userId', async (req, res) => {
       
       if (needsUpdate) {
         // Update hero with initialized equipment slots
-        await doc.ref.update({ equipment: initializedEquipment });
+        const heroRef = db.collection('heroes').doc(heroId);
+        await heroRef.update({ equipment: initializedEquipment });
         heroData.equipment = initializedEquipment;
-        console.log(`✅ Initialized equipment slots for hero ${req.params.userId}`);
+        
+        // Invalidate cache so next request gets updated data
+        heroCache.invalidate(heroId);
+        
+        console.log(`✅ Initialized equipment slots for hero ${heroId}`);
       }
     }
     
-    console.log(`📥 Fetching hero ${req.params.userId}`);
+    console.log(`📥 Fetching hero ${heroId}`);
     console.log(`📦 Inventory in response: ${heroData.inventory?.length || 0} items`);
     if (heroData.inventory && heroData.inventory.length > 0) {
       console.log(`🔍 First item:`, JSON.stringify(heroData.inventory[0]));
@@ -359,9 +377,24 @@ router.get('/:userId/slots', async (req, res) => {
 router.get('/twitch/:twitchUserId', async (req, res) => {
   try {
     const { twitchUserId } = req.params; // string from URL
+    const heroCache = getHeroCache();
+    const twitchIdCache = getHeroByTwitchIdCache();
+    
+    // Check if we have a cached heroId for this twitchUserId
+    let cachedHeroId = twitchIdCache.get(twitchUserId);
+    let hero = null;
+    
+    if (cachedHeroId) {
+      // Try to get from hero cache
+      hero = heroCache.get(cachedHeroId);
+      if (hero) {
+        console.log(`📥 [Cache Hit] Hero by Twitch ID ${twitchUserId} -> docId=${hero.id}`);
+        return res.json(hero);
+      }
+    }
+    
+    // Cache miss - query Firestore
     const heroesRef = db.collection('heroes');
-
-    const numericId = Number(twitchUserId);
     let snapshot;
     try {
       snapshot = await heroesRef.where('twitchUserId', '==', twitchUserId).get();
@@ -369,7 +402,6 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
       // Handle Firestore quota errors gracefully - return 404 so UI can handle gracefully
       if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
         console.warn(`[Heroes] Firestore quota exceeded for twitchId ${twitchUserId}, returning 404`);
-        // Return 404 so frontend can handle it (same as "no hero found")
         return res.status(404).json({ error: 'Hero not found' });
       }
       throw firestoreError;
@@ -386,7 +418,12 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
       return bTime - aTime;
     });
 
-    const hero = heroes[0];
+    hero = heroes[0];
+    
+    // Cache the hero and the twitchUserId -> heroId mapping
+    heroCache.set(hero.id, hero);
+    twitchIdCache.set(twitchUserId, hero.id);
+    
     console.log(`📥 Fetching hero by Twitch ID ${twitchUserId} -> docId=${hero.id}, role=${hero.role}, level=${hero.level}`);
     return res.json(hero);
   } catch (error) {
@@ -821,6 +858,11 @@ router.put('/:userId', async (req, res) => {
     }
     
     await heroRef.update(updateData);
+    
+    // Invalidate cache after update
+    const heroCache = getHeroCache();
+    heroCache.invalidate(heroId);
+    
     const updated = await heroRef.get();
     
     res.json({ ...updated.data(), id: updated.id });
