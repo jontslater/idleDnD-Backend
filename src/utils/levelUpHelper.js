@@ -1,26 +1,29 @@
 /**
  * Level Up Helper
  * Handles hero level-ups with proper maxXp calculation and multiple level-up support
- * Matches Electron app logic: maxXp = Math.floor(maxXp * 1.5) on each level-up
+ * Uses polynomial maxXp formula (WoW-style) for balanced leveling progression
  */
 
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 
 /**
  * Calculate maxXp for a given level
- * Uses the same formula as Electron app: starts at 100, multiplies by 1.5 each level
+ * Uses polynomial growth (WoW-style) instead of exponential for better balance
+ * Tuned for 5-15 minutes per level (idle game pacing)
  * @param {number} level - Hero level
  * @returns {number} Max XP required for that level
  */
 export function calculateMaxXp(level) {
   if (level <= 1) return 100;
   
-  // Calculate: 100 * (1.5 ^ (level - 1))
-  // Level 1: 100
-  // Level 2: 100 * 1.5 = 150
-  // Level 3: 150 * 1.5 = 225
-  // etc.
-  return Math.floor(100 * Math.pow(1.5, level - 1));
+  // Polynomial growth: 40 * level² + 300 * level - 240
+  // Level 1: 100 XP
+  // Level 10: ~4,060 XP
+  // Level 50: ~102,760 XP
+  // Level 100: ~403,760 XP
+  // Level 177: ~1,265,000 XP
+  // This creates predictable, reasonable leveling times
+  return Math.floor(40 * level * level + 300 * level - 240);
 }
 
 /**
@@ -44,12 +47,13 @@ export function processLevelUps(hero, newXp) {
     maxXp: currentMaxXp
   };
   
-  // Handle multiple level-ups (matches Electron app logic)
+  // Handle multiple level-ups
   while (currentXp >= currentMaxXp) {
     newLevel++;
     totalLevelsGained++;
     currentXp = currentXp - currentMaxXp;
-    currentMaxXp = Math.floor(currentMaxXp * 1.5); // Multiply by 1.5 each level (Electron app formula)
+    // Use polynomial formula for next level instead of multiplying
+    currentMaxXp = calculateMaxXp(newLevel);
   }
   
   if (totalLevelsGained > 0) {
