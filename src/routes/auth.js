@@ -159,9 +159,23 @@ router.post('/twitch', async (req, res) => {
 
     // Find all heroes for this user (update all of them with twitchUsername)
     console.log('[Twitch Auth] Looking up heroes for user:', twitchUser.id);
-    const heroQuery = await db.collection('heroes')
-      .where('twitchUserId', '==', twitchUser.id)
-      .get();
+    let heroQuery;
+    try {
+      heroQuery = await db.collection('heroes')
+        .where('twitchUserId', '==', twitchUser.id)
+        .get();
+    } catch (firestoreError) {
+      // Handle Firestore quota errors gracefully
+      if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn('[Twitch Auth] Firestore quota exceeded during hero lookup. Proceeding with authentication without hero update.');
+        console.warn('[Twitch Auth] User will need to refresh or try again later to sync hero data.');
+        // Create empty query result to continue auth flow
+        heroQuery = { empty: true, docs: [] };
+      } else {
+        // Re-throw other Firestore errors
+        throw firestoreError;
+      }
+    }
 
     let hero = null;
 
@@ -197,9 +211,17 @@ router.post('/twitch', async (req, res) => {
         await batch.commit();
         console.log('[Twitch Auth] Hero updates committed successfully');
       } catch (batchError) {
-        console.error('[Twitch Auth] Error committing batch update:', batchError);
-        console.error('[Twitch Auth] Batch error stack:', batchError.stack);
-        throw new Error(`Failed to update heroes: ${batchError.message}`);
+        // Handle Firestore quota errors gracefully - don't fail auth
+        if (batchError.code === 8 || batchError.message?.includes('Quota exceeded') || batchError.message?.includes('RESOURCE_EXHAUSTED')) {
+          console.warn('[Twitch Auth] ⚠️ Firestore quota exceeded during hero update');
+          console.warn('[Twitch Auth] Authentication will succeed, but hero updates were not saved');
+          console.warn('[Twitch Auth] User can refresh later to sync hero data');
+          // Continue with auth - don't throw error
+        } else {
+          console.error('[Twitch Auth] Error committing batch update:', batchError);
+          console.error('[Twitch Auth] Batch error stack:', batchError.stack);
+          throw new Error(`Failed to update heroes: ${batchError.message}`);
+        }
       }
       
       // Use first hero for response (for backward compatibility)
