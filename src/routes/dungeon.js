@@ -4,6 +4,40 @@ import { db } from '../index.js';
 
 const router = express.Router();
 
+// Helper function to update queue role counters
+async function updateQueueCounters(role, delta) {
+  try {
+    const countersRef = db.collection('dungeonQueueStats').doc('counters');
+    await countersRef.set({
+      [role]: admin.firestore.FieldValue.increment(delta),
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error('[Dungeon Queue] Error updating counters:', error);
+    // Don't throw - counters are best effort
+  }
+}
+
+// Helper function to get queue role counters
+async function getQueueCounters() {
+  try {
+    const countersDoc = await db.collection('dungeonQueueStats').doc('counters').get();
+    if (countersDoc.exists) {
+      const data = countersDoc.data();
+      return {
+        tank: data.tank || 0,
+        healer: data.healer || 0,
+        dps: data.dps || 0
+      };
+    }
+  } catch (error) {
+    console.error('[Dungeon Queue] Error getting counters:', error);
+  }
+  
+  // Fallback: return zeros if counters don't exist
+  return { tank: 0, healer: 0, dps: 0 };
+}
+
 // Get all dungeons
 router.get('/', async (req, res) => {
   try {
