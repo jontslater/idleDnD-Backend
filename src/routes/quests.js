@@ -12,7 +12,16 @@ router.get('/daily', async (req, res) => {
     res.json(quests);
   } catch (error) {
     console.error('Error fetching daily quests:', error);
-    res.status(500).json({ error: error.message });
+    
+    // Handle quota errors specifically
+    if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable due to high load. Please try again in a few moments.',
+        retryAfter: 60 // Suggest retrying after 60 seconds
+      });
+    }
+    
+    res.status(500).json({ error: error.message || 'Failed to fetch daily quests' });
   }
 });
 
@@ -23,7 +32,16 @@ router.get('/weekly', async (req, res) => {
     res.json(quests);
   } catch (error) {
     console.error('Error fetching weekly quests:', error);
-    res.status(500).json({ error: error.message });
+    
+    // Handle quota errors specifically
+    if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable due to high load. Please try again in a few moments.',
+        retryAfter: 60
+      });
+    }
+    
+    res.status(500).json({ error: error.message || 'Failed to fetch weekly quests' });
   }
 });
 
@@ -34,7 +52,16 @@ router.get('/monthly', async (req, res) => {
     res.json(quests);
   } catch (error) {
     console.error('Error fetching monthly quests:', error);
-    res.status(500).json({ error: error.message });
+    
+    // Handle quota errors specifically
+    if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable due to high load. Please try again in a few moments.',
+        retryAfter: 60
+      });
+    }
+    
+    res.status(500).json({ error: error.message || 'Failed to fetch monthly quests' });
   }
 });
 

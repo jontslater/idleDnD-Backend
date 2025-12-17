@@ -120,7 +120,12 @@ router.post('/twitch', async (req, res) => {
         batch.update(heroDoc.ref, updateData);
       });
       
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (batchError) {
+        console.error('Error committing batch update:', batchError);
+        throw new Error(`Failed to update heroes: ${batchError.message}`);
+      }
       
       // Use first hero for response (for backward compatibility)
       const firstHeroDoc = heroQuery.docs[0];
@@ -161,6 +166,12 @@ router.post('/twitch', async (req, res) => {
     }
 
     // Generate JWT token
+    // Verify JWT_SECRET is set
+    if (!JWT_SECRET || JWT_SECRET === 'your-secret-key-change-in-production') {
+      console.error('⚠️ JWT_SECRET is not properly configured!');
+      throw new Error('Server configuration error: JWT_SECRET not set');
+    }
+    
     const jwtPayload = {
       userId: hero ? hero.id : null,
       twitchUserId: twitchUser.id,
@@ -182,7 +193,21 @@ router.post('/twitch', async (req, res) => {
     });
   } catch (error) {
     console.error('Authentication error:', error);
-    res.status(500).json({ error: 'Authentication failed', details: error.message });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      twitchClientId: process.env.TWITCH_CLIENT_ID ? 'set' : 'missing',
+      twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ? 'set' : 'missing',
+      jwtSecret: process.env.JWT_SECRET ? 'set' : 'missing',
+      redirectUri: process.env.TWITCH_REDIRECT_URI || 'default'
+    });
+    res.status(500).json({ 
+      error: 'Authentication failed', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
