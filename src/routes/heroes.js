@@ -5,6 +5,33 @@ import { ROLE_CONFIG } from '../data/roleConfig.js';
 
 const router = express.Router();
 
+// Track wave completion for periodic chat updates
+router.post('/:userId/track-wave', async (req, res) => {
+  try {
+    const heroId = req.params.userId;
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+    
+    const hero = doc.data();
+    const twitchId = hero.twitchUserId || hero.twitchId;
+    
+    if (twitchId) {
+      const { trackWaveCompleted } = await import('../services/streamStatsService.js');
+      await trackWaveCompleted(twitchId);
+      res.json({ success: true, message: 'Wave tracked' });
+    } else {
+      res.status(400).json({ error: 'Hero has no Twitch ID' });
+    }
+  } catch (error) {
+    console.error('Error tracking wave:', error);
+    res.status(500).json({ error: 'Failed to track wave' });
+  }
+});
+
 // Create test hero for testing (dev only)
 router.post('/test/create', async (req, res) => {
   try {
@@ -489,8 +516,11 @@ router.post('/create', async (req, res) => {
     const heroName = req.body.twitchUsername || req.body.name || `User${twitchUserId || tiktokUserId || 'Hero'}`;
     
     // Check if user has founder pack from existing heroes (apply to all heroes)
+    // Also inherit twitchUsername from existing heroes
     let founderPackTier = null;
     let founderPackTierLevel = null;
+    let twitchUsername = req.body.twitchUsername || null;
+    
     if (existingHeroes.length > 0) {
       const firstHero = existingHeroes[0];
       if (firstHero.founderPackTier) {
@@ -498,12 +528,18 @@ router.post('/create', async (req, res) => {
         founderPackTierLevel = firstHero.founderPackTierLevel;
         console.log(`[Create Hero] Inheriting founder pack tier: ${founderPackTier} from existing hero`);
       }
+      // Inherit twitchUsername from existing hero if not provided
+      if (!twitchUsername && firstHero.twitchUsername) {
+        twitchUsername = firstHero.twitchUsername;
+        console.log(`[Create Hero] Inheriting twitchUsername: ${twitchUsername} from existing hero`);
+      }
     }
     
     const heroData = {
       name: heroName,
       ...(twitchUserId && { twitchUserId }),
       ...(tiktokUserId && { tiktokUserId }),
+      ...(twitchUsername && { twitchUsername }),
       role: classKey,
       level: 1,
       hp: config.baseHp,
@@ -725,10 +761,41 @@ router.put('/:userId', async (req, res) => {
       return res.status(404).json({ error: 'Hero not found', heroId });
     }
     
+    const oldHero = doc.data();
     const updateData = {
       ...req.body,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
+    
+    // Track stats for periodic chat updates
+    try {
+      const { trackXpGained, trackLevelUp } = await import('../services/streamStatsService.js');
+      const twitchId = oldHero.twitchUserId || oldHero.twitchId;
+      
+      if (twitchId) {
+        // Track XP gain (if XP increased)
+        if (req.body.xp !== undefined && oldHero.xp !== undefined) {
+          const xpDelta = req.body.xp - oldHero.xp;
+          if (xpDelta > 0) {
+            await trackXpGained(twitchId, xpDelta);
+          }
+        }
+        
+        // Track level up (if level increased)
+        if (req.body.level !== undefined && oldHero.level !== undefined) {
+          const levelDelta = req.body.level - oldHero.level;
+          if (levelDelta > 0) {
+            // Track each level up
+            for (let i = 0; i < levelDelta; i++) {
+              await trackLevelUp(twitchId);
+            }
+          }
+        }
+      }
+    } catch (statsError) {
+      // Don't fail the hero update if stats tracking fails
+      console.error('[Update Hero] Error tracking stats:', statsError);
+    }
     
     await heroRef.update(updateData);
     const updated = await heroRef.get();

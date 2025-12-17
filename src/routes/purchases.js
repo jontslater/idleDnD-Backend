@@ -239,6 +239,12 @@ router.get('/founders', async (req, res) => {
     console.log(`[Founders Hall] Checking ${allHeroesSnapshot.docs.length} heroes for founderPackTier...`);
 
     allHeroesSnapshot.docs.forEach(heroDoc => {
+      // Skip this specific hero that shouldn't appear in Founders Hall
+      if (heroDoc.id === 'NRy5VebeCTxM3wX99k1o') {
+        console.log(`[Founders Hall] Skipping excluded hero: ${heroDoc.id}`);
+        return;
+      }
+      
       const hero = heroDoc.data();
       const founderTier = hero.founderPackTier;
       const founderTierLevel = hero.founderPackTierLevel;
@@ -281,22 +287,65 @@ router.get('/founders', async (req, res) => {
         return;
       }
 
-      const userId = hero.twitchUserId || hero.id;
+      // Only use twitchUserId - skip heroes without a valid Twitch user ID
+      // Normalize to string to ensure consistent comparison (Firestore may store as string or number)
+      const userId = hero.twitchUserId ? String(hero.twitchUserId) : null;
       
       if (!userId) {
-        console.log(`[Founders Hall] Skipping hero ${heroDoc.id} - no userId (twitchUsername: ${hero.twitchUsername}, username: ${hero.username})`);
+        console.log(`[Founders Hall] Skipping hero ${heroDoc.id} - no twitchUserId (twitchUsername: ${hero.twitchUsername}, username: ${hero.username})`);
         return;
       }
 
-      // Skip if we already added this user
+      // Skip if userId looks like a document ID (20 character alphanumeric) instead of a numeric Twitch ID
+      if (!/^\d+$/.test(userId)) {
+        console.log(`[Founders Hall] Skipping hero ${heroDoc.id} - userId "${userId}" is not a valid Twitch user ID (looks like document ID)`);
+        return;
+      }
+
+      // Skip if we already added this user (normalized to string for consistent comparison)
       if (foundUserIds.has(userId)) {
-        console.log(`[Founders Hall] Skipping duplicate user: ${userId}`);
+        console.log(`[Founders Hall] Skipping duplicate user: ${userId} (hero ${heroDoc.id})`);
         return;
       }
 
         foundUserIds.add(userId);
 
-        const displayName = hero.twitchUsername || hero.username || hero.name || userId;
+        // Try to get display name - if missing, look up from other heroes with same twitchUserId
+        let displayName = hero.twitchUsername || hero.username || hero.name;
+        
+        // If displayName is still missing and we have twitchUserId, try to find it from other heroes
+        if (!displayName && hero.twitchUserId) {
+          // Look for other heroes from the same user that might have twitchUsername
+          const otherHeroes = allHeroesSnapshot.docs.filter(doc => {
+            const otherHero = doc.data();
+            return otherHero.twitchUserId === hero.twitchUserId && 
+                   doc.id !== heroDoc.id && 
+                   (otherHero.twitchUsername || otherHero.username);
+          });
+          
+          if (otherHeroes.length > 0) {
+            const otherHero = otherHeroes[0].data();
+            displayName = otherHero.twitchUsername || otherHero.username;
+            console.log(`[Founders Hall] Found twitchUsername from other hero for user ${hero.twitchUserId}: ${displayName}`);
+          } else {
+            console.log(`[Founders Hall] No other heroes found with twitchUsername for user ${hero.twitchUserId}, hero ${heroDoc.id}`);
+          }
+        }
+        
+        // Final fallback: use userId only if it's a numeric Twitch ID, not a document ID
+        // Document IDs are typically 20 characters, Twitch IDs are numeric
+        if (!displayName) {
+          if (userId && /^\d+$/.test(userId)) {
+            // It's a numeric Twitch ID, use it as last resort
+            displayName = `User${userId}`;
+            console.log(`[Founders Hall] Using numeric Twitch ID as fallback: ${displayName}`);
+          } else {
+            // It's likely a document ID, try to get from purchase records or use hero name
+            console.log(`[Founders Hall] Warning: Hero ${heroDoc.id} missing username, userId looks like document ID: ${userId}`);
+            console.log(`[Founders Hall] Hero data: twitchUserId=${hero.twitchUserId}, twitchUsername=${hero.twitchUsername}, username=${hero.username}, name=${hero.name}`);
+            displayName = hero.name || `Hero ${heroDoc.id.substring(0, 8)}`;
+          }
+        }
         
         // Log ALL fields to see what's available
         const allFields = Object.keys(hero);
@@ -343,32 +392,66 @@ router.get('/founders', async (req, res) => {
     // Add any founders from purchases that we don't already have
     for (const purchaseDoc of founderPurchases) {
       const purchase = purchaseDoc.data();
-      const userId = purchase.userId;
+      // Normalize to string for consistent comparison
+      const userId = purchase.userId ? String(purchase.userId) : null;
       
-      if (!userId || foundUserIds.has(userId)) continue;
-
-      foundUserIds.add(userId);
-
-      // Get user's hero for display name
-      const heroesSnapshot = await db.collection('heroes')
-        .where('twitchUserId', '==', userId)
-        .limit(1)
-        .get();
-
-      let displayName = userId;
-      let heroName = null;
-
-      if (!heroesSnapshot.empty) {
-        const hero = heroesSnapshot.docs[0].data();
-        displayName = hero.twitchUsername || hero.username || hero.name || userId;
-        heroName = hero.name;
+      if (!userId) continue;
+      
+      // Normalize to string for consistent comparison
+      const normalizedUserId = String(userId);
+      
+      if (foundUserIds.has(normalizedUserId)) {
+        console.log(`[Founders Hall] Skipping duplicate user from purchases: ${normalizedUserId}`);
+        continue;
       }
 
-      // Get hero role if available
-      let heroRole = 'berserker'; // Default
+      foundUserIds.add(normalizedUserId);
+
+      // Get user's heroes for display name
+      // Try both string and number since Firestore might store it either way
+      let heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', userId)
+        .get();
+      
+      // If no results, try with number conversion
+      if (heroesSnapshot.empty && /^\d+$/.test(userId)) {
+        heroesSnapshot = await db.collection('heroes')
+          .where('twitchUserId', '==', Number(userId))
+          .get();
+      }
+
+      let displayName = null;
+      let heroName = null;
+      let heroRole = 'berserker';
+
       if (!heroesSnapshot.empty) {
-        const hero = heroesSnapshot.docs[0].data();
-        heroRole = hero.role || 'berserker';
+        // Try to find a hero with twitchUsername set (preferred)
+        const heroWithUsername = heroesSnapshot.docs.find(doc => {
+          const hero = doc.data();
+          return hero.twitchUsername || hero.username;
+        });
+        
+        if (heroWithUsername) {
+          const hero = heroWithUsername.data();
+          displayName = hero.twitchUsername || hero.username;
+          heroName = hero.name;
+          heroRole = hero.role || hero.class || 'berserker';
+        } else {
+          // Fallback to first hero
+          const hero = heroesSnapshot.docs[0].data();
+          displayName = hero.twitchUsername || hero.username || hero.name;
+          heroName = hero.name;
+          heroRole = hero.role || hero.class || 'berserker';
+        }
+      }
+      
+      // Final fallback: if userId is numeric (Twitch ID), format it nicely
+      if (!displayName) {
+        if (userId && /^\d+$/.test(userId)) {
+          displayName = `User${userId}`;
+        } else {
+          displayName = userId; // Last resort
+        }
       }
 
       founders.push({
@@ -478,10 +561,10 @@ router.get('/founders', async (req, res) => {
  */
 router.post('/set-founder', async (req, res) => {
   try {
-    const { userId, tier } = req.body;
+    const { userId, username, tier } = req.body;
 
-    if (!userId || !tier) {
-      return res.status(400).json({ error: 'userId and tier are required' });
+    if ((!userId && !username) || !tier) {
+      return res.status(400).json({ error: 'Either userId or username, and tier are required' });
     }
 
     if (!['bronze', 'silver', 'gold', 'platinum'].includes(tier.toLowerCase())) {
@@ -491,20 +574,81 @@ router.post('/set-founder', async (req, res) => {
     const tierLower = tier.toLowerCase();
     const tierLevel = TIER_LEVELS[tierLower];
 
-    console.log(`[Founders Pack] Setting founder status: userId=${userId}, tier=${tierLower}`);
+    let actualUserId = userId;
+    let heroesSnapshot;
+
+    // If username provided instead of userId, look it up
+    if (username && !userId) {
+      console.log(`[Founders Pack] Looking up user by username: ${username}`);
+      
+      // First try to find by twitchUsername in heroes
+      const usernameHeroes = await db.collection('heroes')
+        .where('twitchUsername', '==', username.toLowerCase())
+        .limit(1)
+        .get();
+      
+      if (!usernameHeroes.empty) {
+        const hero = usernameHeroes.docs[0].data();
+        actualUserId = hero.twitchUserId;
+        console.log(`[Founders Pack] Found userId ${actualUserId} for username ${username}`);
+      } else {
+        // Try to look up via Twitch API
+        try {
+          const fetch = (await import('node-fetch')).default;
+          const twitchResponse = await fetch(`https://api.twitch.tv/helix/users?login=${username}`, {
+            headers: {
+              'Client-Id': process.env.TWITCH_CLIENT_ID,
+              'Authorization': `Bearer ${process.env.TWITCH_APP_ACCESS_TOKEN || ''}`
+            }
+          });
+          
+          if (twitchResponse.ok) {
+            const twitchData = await twitchResponse.json();
+            if (twitchData.data && twitchData.data.length > 0) {
+              actualUserId = twitchData.data[0].id;
+              console.log(`[Founders Pack] Found userId ${actualUserId} via Twitch API for username ${username}`);
+            } else {
+              return res.status(404).json({ error: `User not found: ${username}` });
+            }
+          } else {
+            console.warn(`[Founders Pack] Twitch API lookup failed, trying hero lookup by username field`);
+            // Fallback: try username field
+            const fallbackHeroes = await db.collection('heroes')
+              .where('username', '==', username.toLowerCase())
+              .limit(1)
+              .get();
+            
+            if (!fallbackHeroes.empty) {
+              const hero = fallbackHeroes.docs[0].data();
+              actualUserId = hero.twitchUserId;
+              console.log(`[Founders Pack] Found userId ${actualUserId} via username field for ${username}`);
+            } else {
+              return res.status(404).json({ error: `User not found: ${username}. Please provide userId instead.` });
+            }
+          }
+        } catch (err) {
+          console.error(`[Founders Pack] Error looking up user:`, err);
+          return res.status(500).json({ error: 'Failed to look up user. Please provide userId instead.' });
+        }
+      }
+    }
+
+    console.log(`[Founders Pack] Setting founder status: userId=${actualUserId}, tier=${tierLower}`);
 
     // Find user's heroes
-    const heroesSnapshot = await db.collection('heroes')
-      .where('twitchUserId', '==', userId)
+    heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', actualUserId)
       .get();
 
     if (heroesSnapshot.empty) {
-      return res.status(404).json({ error: 'No heroes found for user' });
+      return res.status(404).json({ error: `No heroes found for user ${actualUserId}` });
     }
 
     // Update all user's heroes with founder pack benefits
     const batch = db.batch();
     const updates = [];
+
+    const packConfig = PACK_TIERS[tierLower];
 
     heroesSnapshot.docs.forEach(heroDoc => {
       const heroRef = db.collection('heroes').doc(heroDoc.id);
@@ -513,6 +657,10 @@ router.post('/set-founder', async (req, res) => {
       const heroUpdate = {
         founderPackTier: tierLower,
         founderPackTierLevel: tierLevel,
+        // Grant premium tokens (only if hero doesn't already have this tier to avoid double-granting)
+        tokens: hero.founderPackTier !== tierLower 
+          ? (hero.tokens || 0) + packConfig.premiumCurrency
+          : (hero.tokens || 0),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
@@ -544,6 +692,89 @@ router.post('/set-founder', async (req, res) => {
   } catch (error) {
     console.error('[Founders Pack] Error setting founder status:', error);
     res.status(500).json({ error: 'Failed to set founder status' });
+  }
+});
+
+/**
+ * Remove founder pack status from a user (admin only)
+ * POST /api/purchases/remove-founder
+ */
+router.post('/remove-founder', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    console.log(`[Founders Pack] Removing founder status from user: ${userId}`);
+
+    let heroesToUpdate = [];
+    
+    // First, try to find by twitchUserId (if userId is numeric Twitch ID)
+    if (/^\d+$/.test(userId)) {
+      const heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', userId)
+        .get();
+      heroesToUpdate = heroesSnapshot.docs;
+      console.log(`[Founders Pack] Found ${heroesToUpdate.length} heroes by twitchUserId: ${userId}`);
+    }
+    
+    // Also try by hero document ID if userId looks like a document ID (20 char alphanumeric)
+    if (heroesToUpdate.length === 0 && /^[a-zA-Z0-9]{20}$/.test(userId)) {
+      const heroDoc = await db.collection('heroes').doc(userId).get();
+      if (heroDoc.exists) {
+        heroesToUpdate = [heroDoc];
+        console.log(`[Founders Pack] Found hero by document ID: ${userId}`);
+      }
+    }
+    
+    // Also try to find all heroes that might have this as their twitchUserId (string match)
+    if (heroesToUpdate.length === 0) {
+      const allHeroesSnapshot = await db.collection('heroes').get();
+      heroesToUpdate = allHeroesSnapshot.docs.filter(doc => {
+        const hero = doc.data();
+        return hero.twitchUserId === userId || doc.id === userId;
+      });
+      console.log(`[Founders Pack] Found ${heroesToUpdate.length} heroes by searching all (userId: ${userId})`);
+    }
+
+    if (heroesToUpdate.length === 0) {
+      return res.status(404).json({ error: `No heroes found for userId: ${userId}` });
+    }
+
+    // Remove founder pack from all found heroes
+    const batch = db.batch();
+    const updates = [];
+
+    heroesToUpdate.forEach(heroDoc => {
+      const heroRef = heroDoc.ref || db.collection('heroes').doc(heroDoc.id);
+      const heroData = heroDoc.data();
+      
+      console.log(`[Founders Pack] Removing founder status from hero ${heroDoc.id} (${heroData.name || heroData.username || 'unknown'})`);
+      
+      batch.update(heroRef, {
+        founderPackTier: admin.firestore.FieldValue.delete(),
+        founderPackTierLevel: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      updates.push({ heroId: heroDoc.id, heroName: heroData.name || heroData.username || heroData.twitchUsername });
+    });
+
+    await batch.commit();
+
+    console.log(`[Founders Pack] ✅ Removed founder status from ${updates.length} heroes`);
+
+    res.json({
+      success: true,
+      message: 'Founder status removed successfully',
+      heroesUpdated: updates.length,
+      heroes: updates
+    });
+
+  } catch (error) {
+    console.error('[Founders Pack] Error removing founder status:', error);
+    res.status(500).json({ error: 'Failed to remove founder status' });
   }
 });
 

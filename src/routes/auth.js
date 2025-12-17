@@ -87,21 +87,16 @@ router.post('/twitch', async (req, res) => {
       return res.status(400).json({ error: 'No user data received from Twitch' });
     }
 
-    // Find hero in Firebase (no longer auto-creates)
+    // Find all heroes for this user (update all of them with twitchUsername)
     const heroQuery = await db.collection('heroes')
       .where('twitchUserId', '==', twitchUser.id)
-      .limit(1)
       .get();
 
-    let heroDoc = null;
     let hero = null;
 
     if (!heroQuery.empty) {
-      // Existing hero found
-      heroDoc = heroQuery.docs[0];
-      
-      // Update last login and store Twitch tokens (encrypted) for chat listener
-      // Only store if user is a streamer (has a battlefield)
+      // Existing heroes found - update all of them with twitchUsername
+      const batch = db.batch();
       const updateData = {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
@@ -115,11 +110,22 @@ router.post('/twitch', async (req, res) => {
         }
         updateData.twitchTokenExpiresAt = Date.now() + (60 * 60 * 1000); // 1 hour from now
         updateData.twitchUsername = twitchUser.login.toLowerCase(); // Store username for lookup
+      } else {
+        // Even without token, update twitchUsername for Founders Hall display
+        updateData.twitchUsername = twitchUser.login.toLowerCase();
       }
       
-      await heroDoc.ref.update(updateData);
+      // Update all user's heroes with twitchUsername
+      heroQuery.docs.forEach(heroDoc => {
+        batch.update(heroDoc.ref, updateData);
+      });
       
-      hero = { id: heroDoc.id, ...heroDoc.data() };
+      await batch.commit();
+      
+      // Use first hero for response (for backward compatibility)
+      const firstHeroDoc = heroQuery.docs[0];
+      hero = { id: firstHeroDoc.id, ...firstHeroDoc.data() };
+      console.log(`Updated ${heroQuery.docs.length} heroes with twitchUsername: ${twitchUser.login.toLowerCase()}`);
     } else {
       // No hero found - user needs to create one in the Electron app
       console.log(`No hero found for Twitch user ${twitchUser.id} (${twitchUser.display_name})`);
