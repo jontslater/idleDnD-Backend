@@ -576,10 +576,15 @@ router.post('/:userId/claim/:questId', async (req, res) => {
       return res.status(404).json({ error: 'Quest not found' });
     }
     
+    // Scale quest XP with hero level (max 3x multiplier for balance)
+    const heroLevel = hero.level || 1;
+    const levelScaling = Math.min(1 + (heroLevel / 100), 3); // Max 3x at level 200+
+    const scaledXp = Math.floor(quest.rewards.xp * levelScaling);
+    
     // Apply rewards
     const updateData = {
       gold: (hero.gold || 0) + quest.rewards.gold,
-      xp: (hero.xp || 0) + quest.rewards.xp,
+      xp: (hero.xp || 0) + scaledXp,
       tokens: (hero.tokens || 0) + quest.rewards.tokens,
       [`questProgress.${type}.${questId}.claimedAt`]: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -696,11 +701,15 @@ router.post('/:userId/claim-bonus/:type', async (req, res) => {
       return res.status(400).json({ error: 'Not all quests completed' });
     }
     
-    // Apply completion bonus
+    // Apply completion bonus (reduced by 50% and scaled with level)
     const bonus = questData.completionBonus;
+    const heroLevel = hero.level || 1;
+    const levelScaling = Math.min(1 + (heroLevel / 100), 3); // Max 3x at level 200+
+    const scaledBonusXp = Math.floor(bonus.xp * 0.5 * levelScaling); // 50% reduction + level scaling
+    
     const updateData = {
       gold: (hero.gold || 0) + bonus.gold,
-      xp: (hero.xp || 0) + bonus.xp,
+      xp: (hero.xp || 0) + scaledBonusXp,
       tokens: (hero.tokens || 0) + bonus.tokens,
       [`questProgress.${type}BonusClaimed`]: true
     };
@@ -788,6 +797,10 @@ router.post('/auto-claim-all', async (req, res) => {
     let claimedCount = 0;
     const updates = {};
     
+    // Scale quest XP with hero level (max 3x multiplier for balance)
+    const heroLevel = hero.level || 1;
+    const levelScaling = Math.min(1 + (heroLevel / 100), 3); // Max 3x at level 200+
+    
     // Check all quest types
     for (const type of ['daily', 'weekly', 'monthly']) {
       const questDoc = await db.collection('quests').doc(type).get();
@@ -801,9 +814,9 @@ router.post('/auto-claim-all', async (req, res) => {
         const progress = typeProgress[quest.id];
         
         if (progress && progress.completed && !progress.claimedAt) {
-          // Claim this quest
+          // Claim this quest (scale XP with level)
           totalGold += quest.rewards.gold || 0;
-          totalXp += quest.rewards.xp || 0;
+          totalXp += Math.floor((quest.rewards.xp || 0) * levelScaling);
           totalTokens += quest.rewards.tokens || 0;
           
           if (quest.rewards.items) {
@@ -921,6 +934,10 @@ router.post('/claim-all/:userId', async (req, res) => {
     let claimedCount = 0;
     const updates = {};
     
+    // Scale quest XP with hero level (max 3x multiplier for balance)
+    const heroLevel = hero.level || 1;
+    const levelScaling = Math.min(1 + (heroLevel / 100), 3); // Max 3x at level 200+
+    
     // Determine which types to check
     const typesToCheck = type ? [type] : ['daily', 'weekly', 'monthly'];
     
@@ -937,9 +954,9 @@ router.post('/claim-all/:userId', async (req, res) => {
         const progress = typeProgress[quest.id];
         
         if (progress && progress.completed && !progress.claimedAt) {
-          // Claim this quest
+          // Claim this quest (scale XP with level)
           totalGold += quest.rewards.gold || 0;
-          totalXp += quest.rewards.xp || 0;
+          totalXp += Math.floor((quest.rewards.xp || 0) * levelScaling);
           totalTokens += quest.rewards.tokens || 0;
           
           if (quest.rewards.items) {

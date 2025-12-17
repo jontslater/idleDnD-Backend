@@ -173,7 +173,7 @@ export const DAILY_QUEST_POOL = [
 
 export const DAILY_COMPLETION_BONUS = {
   gold: 5000,
-  xp: 10000,
+  xp: 5000, // Reduced from 10000 to 5000 (50% reduction)
   tokens: 100,
   materials: [
     { type: 'essence', rarity: 'rare', amount: 1 }
@@ -332,7 +332,7 @@ export const WEEKLY_QUEST_POOL = [
 
 export const WEEKLY_COMPLETION_BONUS = {
   gold: 25000,
-  xp: 100000,
+  xp: 50000, // Reduced from 100000 to 50000 (50% reduction)
   tokens: 500,
   items: [
     {
@@ -530,7 +530,7 @@ export const MONTHLY_QUEST_POOL = [
 
 export const MONTHLY_COMPLETION_BONUS = {
   gold: 100000,
-  xp: 500000,
+  xp: 250000, // Reduced from 500000 to 250000 (50% reduction)
   tokens: 2000,
   items: [
     {
