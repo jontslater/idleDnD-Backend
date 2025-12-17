@@ -52,3 +52,4 @@ export const DEFAULT_FILTER_SETTINGS = {
   maturityFilter: false,
   maturityLevel: 'moderate'
 };
+

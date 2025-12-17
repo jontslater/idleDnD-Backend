@@ -77,3 +77,4 @@ All achievement titles are correctly defined in `src/data/achievements.js`. The 
   - The title wasn't added when the achievement was unlocked (check hero's titles array in database)
   - There's a display/filtering issue in the frontend
 
+

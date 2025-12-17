@@ -41,6 +41,11 @@ try {
   admin.initializeApp({ credential });
   db = admin.firestore();
   console.log('✅ Firebase initialized successfully');
+  
+  // Initialize write batcher to reduce Firestore quota usage
+  const { getWriteBatcher } = await import('./utils/writeBatcher.js');
+  const writeBatcher = getWriteBatcher(db);
+  console.log('✅ Write batcher initialized (reduces Firestore writes)');
 } catch (error) {
   console.error('❌ Failed to initialize Firebase:', error);
   process.exit(1);
@@ -548,15 +553,20 @@ Press Ctrl+C to stop
     initializeTwitchEventHandlers();
   }
 
-  // Initialize periodic chat updates service (runs every 5 minutes)
-  try {
-    const { initializePeriodicChatUpdates } = await import('./services/periodicChatUpdates.js');
-    const updateInterval = process.env.CHAT_UPDATE_INTERVAL_MINUTES 
-      ? parseInt(process.env.CHAT_UPDATE_INTERVAL_MINUTES, 10) 
-      : 5;
-    initializePeriodicChatUpdates(updateInterval);
-  } catch (error) {
-    console.error('❌ Failed to initialize periodic chat updates:', error);
+  // Initialize periodic chat updates service (DISABLED to reduce Firestore quota usage)
+  // Re-enable when quota issues are resolved or after upgrading Firestore plan
+  if (process.env.ENABLE_PERIODIC_UPDATES === 'true') {
+    try {
+      const { initializePeriodicChatUpdates } = await import('./services/periodicChatUpdates.js');
+      const updateInterval = process.env.CHAT_UPDATE_INTERVAL_MINUTES 
+        ? parseInt(process.env.CHAT_UPDATE_INTERVAL_MINUTES, 10) 
+        : 30; // Increased to 30 minutes to reduce Firestore quota usage
+      initializePeriodicChatUpdates(updateInterval);
+    } catch (error) {
+      console.error('❌ Failed to initialize periodic chat updates:', error);
+    }
+  } else {
+    console.log('[Periodic Updates] ⏸️ Disabled to reduce Firestore quota usage. Set ENABLE_PERIODIC_UPDATES=true to enable.');
   }
 });
 

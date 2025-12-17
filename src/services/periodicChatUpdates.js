@@ -14,6 +14,20 @@ const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 let updateInterval = null;
 let twitchAccessToken = null;
 
+// Cache for streamer settings to reduce Firestore reads
+const streamerSettingsCache = {
+  data: new Map(),
+  expiresAt: new Map(),
+  ttl: 5 * 60 * 1000 // 5 minutes
+};
+
+// Cache for usernames to reduce Firestore reads
+const usernameCache = {
+  data: new Map(),
+  expiresAt: new Map(),
+  ttl: 10 * 60 * 1000 // 10 minutes
+};
+
 /**
  * Get Twitch API access token
  */
@@ -88,27 +102,47 @@ async function checkStreamStatus(twitchId) {
 }
 
 /**
- * Get streamer's chat update settings
+ * Get streamer's chat update settings (with caching)
  * @param {string} twitchId - Streamer's Twitch ID
  * @returns {Promise<Object|null>}
  */
 async function getStreamerSettings(twitchId) {
+  // Check cache first
+  const cached = streamerSettingsCache.data.get(twitchId);
+  const expiresAt = streamerSettingsCache.expiresAt.get(twitchId);
+  if (cached !== undefined && expiresAt && Date.now() < expiresAt) {
+    return cached;
+  }
+
   try {
     // Try to find in streamerSettings collection first
     const settingsDoc = await db.collection('streamerSettings').doc(twitchId).get();
+    let settings = null;
+    
     if (settingsDoc.exists) {
-      return settingsDoc.data().chatUpdates || null;
+      settings = settingsDoc.data().chatUpdates || null;
+    } else {
+      // Fallback: try to find in user document
+      const userDoc = await db.collection('users').doc(twitchId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        settings = userData.chatUpdates || null;
+      }
     }
 
-    // Fallback: try to find in user document
-    const userDoc = await db.collection('users').doc(twitchId).get();
-    if (userDoc.exists) {
-      const userData = userDoc.data();
-      return userData.chatUpdates || null;
-    }
+    // Update cache
+    streamerSettingsCache.data.set(twitchId, settings);
+    streamerSettingsCache.expiresAt.set(twitchId, Date.now() + streamerSettingsCache.ttl);
 
-    return null;
+    return settings;
   } catch (error) {
+    // Handle quota errors - return cached if available
+    if (error.code === 8 || error.message?.includes('Quota exceeded')) {
+      if (cached !== undefined) {
+        console.warn(`[Periodic Updates] ⚠️ Quota exceeded, using cached settings for ${twitchId}`);
+        return cached;
+      }
+    }
     console.error(`[Periodic Updates] ❌ Error getting settings for ${twitchId}:`, error);
     return null;
   }
@@ -167,11 +201,18 @@ function formatUpdateMessage(stats, settings) {
 }
 
 /**
- * Get streamer's Twitch username from their Twitch ID
+ * Get streamer's Twitch username from their Twitch ID (with caching)
  * @param {string} twitchId - Streamer's Twitch user ID
  * @returns {Promise<string|null>}
  */
 async function getStreamerUsername(twitchId) {
+  // Check cache first
+  const cached = usernameCache.data.get(twitchId);
+  const expiresAt = usernameCache.expiresAt.get(twitchId);
+  if (cached !== undefined && expiresAt && Date.now() < expiresAt) {
+    return cached;
+  }
+
   try {
     // Try to find hero with this twitchId to get username
     const heroesSnapshot = await db.collection('heroes')
@@ -179,20 +220,33 @@ async function getStreamerUsername(twitchId) {
       .limit(1)
       .get();
 
+    let username = null;
+
     if (!heroesSnapshot.empty) {
       const hero = heroesSnapshot.docs[0].data();
-      return hero.twitchUsername || hero.name || null;
+      username = hero.twitchUsername || hero.name || null;
+    } else {
+      // Fallback: try user document
+      const userDoc = await db.collection('users').doc(twitchId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        username = userData.twitchUsername || userData.username || null;
+      }
     }
 
-    // Fallback: try user document
-    const userDoc = await db.collection('users').doc(twitchId).get();
-    if (userDoc.exists) {
-      const userData = userDoc.data();
-      return userData.twitchUsername || userData.username || null;
-    }
+    // Update cache
+    usernameCache.data.set(twitchId, username);
+    usernameCache.expiresAt.set(twitchId, Date.now() + usernameCache.ttl);
 
-    return null;
+    return username;
   } catch (error) {
+    // Handle quota errors - return cached if available
+    if (error.code === 8 || error.message?.includes('Quota exceeded')) {
+      if (cached !== undefined) {
+        console.warn(`[Periodic Updates] ⚠️ Quota exceeded, using cached username for ${twitchId}`);
+        return cached;
+      }
+    }
     console.error(`[Periodic Updates] ❌ Error getting username for ${twitchId}:`, error);
     return null;
   }
@@ -256,9 +310,19 @@ async function runPeriodicUpdates() {
 
     // Get all streamers with chat updates enabled
     // Check streamerSettings collection
-    const settingsSnapshot = await db.collection('streamerSettings')
-      .where('chatUpdates.enabled', '==', true)
-      .get();
+    let settingsSnapshot, usersSnapshot;
+    
+    try {
+      settingsSnapshot = await db.collection('streamerSettings')
+        .where('chatUpdates.enabled', '==', true)
+        .get();
+    } catch (error) {
+      if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn('[Periodic Updates] ⚠️ Firestore quota exceeded, skipping updates');
+        return;
+      }
+      throw error;
+    }
 
     const streamerIds = new Set();
     
@@ -270,16 +334,27 @@ async function runPeriodicUpdates() {
     });
 
     // Also check users collection for settings
-    const usersSnapshot = await db.collection('users')
-      .where('chatUpdates.enabled', '==', true)
-      .get();
-
-    usersSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      if (data.chatUpdates && data.chatUpdates.enabled) {
-        streamerIds.add(doc.id);
+    try {
+      usersSnapshot = await db.collection('users')
+        .where('chatUpdates.enabled', '==', true)
+        .get();
+    } catch (error) {
+      if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn('[Periodic Updates] ⚠️ Firestore quota exceeded on users query, continuing with streamerSettings only');
+        // Continue with what we have
+      } else {
+        throw error;
       }
-    });
+    }
+
+    if (usersSnapshot) {
+      usersSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.chatUpdates && data.chatUpdates.enabled) {
+          streamerIds.add(doc.id);
+        }
+      });
+    }
 
     if (streamerIds.size === 0) {
       console.log('[Periodic Updates] ℹ️ No streamers with chat updates enabled');
@@ -291,13 +366,23 @@ async function runPeriodicUpdates() {
     // Process each streamer
     const promises = Array.from(streamerIds).map(twitchId => 
       sendChatUpdateForStreamer(twitchId).catch(err => {
-        console.error(`[Periodic Updates] ❌ Error processing ${twitchId}:`, err);
+        // Don't log quota errors as errors - they're expected
+        if (err.code === 8 || err.message?.includes('Quota exceeded') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+          console.warn(`[Periodic Updates] ⚠️ Skipping ${twitchId} due to quota`);
+        } else {
+          console.error(`[Periodic Updates] ❌ Error processing ${twitchId}:`, err);
+        }
       })
     );
 
     await Promise.all(promises);
     console.log('[Periodic Updates] ✅ Completed periodic updates');
   } catch (error) {
+    // Handle quota errors at top level
+    if (error.code === 8 || error.message?.includes('Quota exceeded') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn('[Periodic Updates] ⚠️ Firestore quota exceeded, skipping this update cycle');
+      return;
+    }
     console.error('[Periodic Updates] ❌ Error running periodic updates:', error);
   }
 }
@@ -338,3 +423,5 @@ export function stopPeriodicChatUpdates() {
     console.log('[Periodic Updates] 🛑 Service stopped');
   }
 }
+
+

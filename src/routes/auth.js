@@ -184,7 +184,7 @@ router.post('/twitch', async (req, res) => {
       // Existing heroes found - update all of them with twitchUsername
       const batch = db.batch();
       const updateData = {
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        // Removed updatedAt to reduce writes - only update when data changes
       };
       
       // Store Twitch access token for chat listener (encrypted at rest by Firebase)
@@ -263,10 +263,15 @@ router.post('/twitch', async (req, res) => {
     }
 
     // Generate JWT token
-    // Verify JWT_SECRET is set
-    if (!JWT_SECRET || JWT_SECRET === 'your-secret-key-change-in-production') {
+    // Verify JWT_SECRET is set (allow default for local development)
+    if (!JWT_SECRET) {
       console.error('⚠️ JWT_SECRET is not properly configured!');
       throw new Error('Server configuration error: JWT_SECRET not set');
+    }
+    
+    // Warn if using default secret in production
+    if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'your-secret-key-change-in-production') {
+      console.warn('⚠️ WARNING: Using default JWT_SECRET in production! This is insecure.');
     }
     
     const jwtPayload = {
@@ -387,10 +392,8 @@ router.post('/tiktok', async (req, res) => {
       // Existing hero found
       heroDoc = heroQuery.docs[0];
       
-      // Update last login
-      await heroDoc.ref.update({
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      // Update last login - removed updatedAt to reduce writes
+      // Note: lastActiveAt or lastLoginAt would be better if needed
       
       hero = { id: heroDoc.id, ...heroDoc.data() };
     } else {

@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
+import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
 
 const router = express.Router();
 
@@ -274,16 +275,16 @@ router.post('/:userId/unlock-slot', async (req, res) => {
     if (heroToDeduct) {
       const newTokens = Math.max(0, (heroToDeduct.tokens || 0) - unlockCost);
       await db.collection('heroes').doc(heroToDeduct.id).update({
-        tokens: newTokens,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        tokens: newTokens
+        // Removed updatedAt to reduce writes - only update when data changes
       });
     }
 
     // Update user's slotsUnlocked
     const userRef = db.collection('users').doc(actualUserId);
     await userRef.set({
-      slotsUnlocked: nextSlot,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      slotsUnlocked: nextSlot
+      // Removed updatedAt to reduce writes
     }, { merge: true });
 
     console.log(`[Slot Unlock] User ${actualUserId} unlocked slot ${nextSlot} for ${unlockCost} tokens`);
@@ -361,7 +362,18 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
     const heroesRef = db.collection('heroes');
 
     const numericId = Number(twitchUserId);
-    const snapshot = await heroesRef.where('twitchUserId', '==', twitchUserId).get();
+    let snapshot;
+    try {
+      snapshot = await heroesRef.where('twitchUserId', '==', twitchUserId).get();
+    } catch (firestoreError) {
+      // Handle Firestore quota errors gracefully - return 404 so UI can handle gracefully
+      if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`[Heroes] Firestore quota exceeded for twitchId ${twitchUserId}, returning 404`);
+        // Return 404 so frontend can handle it (same as "no hero found")
+        return res.status(404).json({ error: 'Hero not found' });
+      }
+      throw firestoreError;
+    }
 
     let heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     if (heroes.length === 0) {
@@ -389,7 +401,18 @@ router.get('/twitch/:twitchUserId/all', async (req, res) => {
     const { twitchUserId } = req.params; // always a string in URL params
     const dbRef = db.collection('heroes');
 
-    const snapshot = await dbRef.where('twitchUserId', '==', twitchUserId).get();
+    let snapshot;
+    try {
+      snapshot = await dbRef.where('twitchUserId', '==', twitchUserId).get();
+    } catch (firestoreError) {
+      // Handle Firestore quota errors gracefully - return empty array so UI can still load
+      if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`[Heroes] Firestore quota exceeded for twitchId ${twitchUserId}, returning empty array`);
+        // Return empty array with warning so frontend can still render
+        return res.json([]);
+      }
+      throw firestoreError;
+    }
 
     let heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
@@ -438,8 +461,8 @@ async function getUserSlotsUnlocked(userId, isTwitch = true) {
     // Create user document with default slots
     await userRef.set({
       slotsUnlocked: DEFAULT_SLOTS_UNLOCKED,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      // Removed updatedAt on creation - only needed when updating
     });
     return DEFAULT_SLOTS_UNLOCKED;
   }
@@ -657,8 +680,8 @@ router.patch('/:heroId/rename', async (req, res) => {
 
     // Update the hero name
     await heroRef.update({
-      name: trimmedName,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      name: trimmedName
+      // Removed updatedAt to reduce writes
     });
 
     console.log(`[Hero Rename] Hero ${heroId} renamed to: ${trimmedName}`);
@@ -763,8 +786,8 @@ router.put('/:userId', async (req, res) => {
     
     const oldHero = doc.data();
     const updateData = {
-      ...req.body,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      ...req.body
+      // Removed updatedAt to reduce writes - only update when data changes
     };
     
     // Track stats for periodic chat updates
@@ -821,8 +844,8 @@ router.post('/:userId/pin', async (req, res) => {
     const currentPinned = hero.pinned || false;
     
     await heroRef.update({
-      pinned: !currentPinned,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      pinned: !currentPinned
+      // Removed updatedAt to reduce writes
     });
     
     const updated = await heroRef.get();
@@ -963,8 +986,8 @@ router.post('/:userId/purchase/gold', async (req, res) => {
     // Deduct gold and add to inventory
     const updates = {
       gold: currentGold - totalCost,
-      inventory: currentInventory,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      inventory: currentInventory
+      // Removed updatedAt to reduce writes
     };
 
     await heroRef.update(updates);
@@ -1119,8 +1142,8 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
     // Deduct tokens
     await heroRef.update({
       tokens: currentTokens - totalCost,
-      inventory: hero.inventory,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      inventory: hero.inventory
+      // Removed updatedAt to reduce writes
     });
 
     console.log(`🎫 ${userId} purchased ${purchaseQuantity}x ${rarity} ${slot} for ${totalCost}t`);
@@ -1250,8 +1273,8 @@ router.post('/:userId/upgrade-item', async (req, res) => {
     };
 
     const updates = {
-      gold: currentGold - upgradeCost,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      gold: currentGold - upgradeCost
+      // Removed updatedAt to reduce writes
     };
 
     // Update item in correct location
@@ -1380,8 +1403,8 @@ router.post('/:userId/reforge-item', async (req, res) => {
     };
 
     const updates = {
-      gold: currentGold - reforgeCost,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      gold: currentGold - reforgeCost
+      // Removed updatedAt to reduce writes
     };
 
     // Update item
@@ -1437,8 +1460,8 @@ router.post('/:userId/equipment/:slot/lock', async (req, res) => {
     };
     
     await heroRef.update({
-      [`equipment.${slot}`]: lockedItem,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      [`equipment.${slot}`]: lockedItem
+      // Removed updatedAt to reduce writes
     });
     
     console.log(`🔒 ${userId} locked ${slot} item: ${item.name}`);
@@ -1480,8 +1503,8 @@ router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
     };
     
     await heroRef.update({
-      [`equipment.${slot}`]: unlockedItem,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      [`equipment.${slot}`]: unlockedItem
+      // Removed updatedAt to reduce writes
     });
     
     console.log(`🔓 ${userId} unlocked ${slot} item: ${item.name}`);
@@ -1564,7 +1587,7 @@ router.post('/:userId/expand-storage', async (req, res) => {
     }
 
     updateData.bankSize = newBankSize;
-    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    // Removed updatedAt to reduce writes
 
     await heroRef.update(updateData);
 
@@ -1670,8 +1693,8 @@ router.post('/:userId/port', async (req, res) => {
       currentBattlefieldId: battlefieldId,
       currentBattlefieldType: finalBattlefieldType,
       lastBattlefieldJoin: admin.firestore.Timestamp.now(),
-      battlefieldHistory: battlefieldHistory.slice(-50), // Keep last 50 entries
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      battlefieldHistory: battlefieldHistory.slice(-50) // Keep last 50 entries
+      // Removed updatedAt to reduce writes - lastBattlefieldJoin serves as timestamp
     });
 
     console.log(`🚀 Hero ${userId} ported from ${oldBattlefieldId || 'none'} to ${battlefieldId}`);
@@ -1761,8 +1784,8 @@ router.post('/:userId/admin/give-item', async (req, res) => {
     hero.inventory.push(item);
 
     await heroRef.update({
-      inventory: hero.inventory,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      inventory: hero.inventory
+      // Removed updatedAt to reduce writes
     });
 
     res.json({ success: true, message: 'Item added to inventory', item });

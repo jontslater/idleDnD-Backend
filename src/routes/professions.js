@@ -149,8 +149,8 @@ router.post('/:userId/profession', async (req, res) => {
     console.log('Profession data:', JSON.stringify(professionData, null, 2));
     
     const updateResult = await heroRef.update({
-      profession: professionData,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      profession: professionData
+      // Removed updatedAt to reduce writes
     });
     
     console.log(`✅ Profession ${type} set for hero ${userId}`);
@@ -244,8 +244,8 @@ router.post('/:userId/craft', async (req, res) => {
       }
       // Deduct gold
       await heroRef.update({
-        gold: heroGold - (socketCost * quantity),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        gold: heroGold - (socketCost * quantity)
+        // Removed updatedAt to reduce writes
       });
     } else if (profession.type === 'enchanting' && recipeCost.essence) {
       const have = profession.materials.essence || 0;
@@ -440,8 +440,8 @@ router.post('/:userId/craft', async (req, res) => {
     try {
       const updateData = {
         profession: profession,
-        inventory: hero.inventory,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        inventory: hero.inventory
+        // Removed updatedAt to reduce writes
       };
       console.log(`📤 Sending update to Firestore...`);
       
@@ -702,8 +702,8 @@ router.post('/:userId/gather', async (req, res) => {
     }
     
     const updateData = {
-      profession: profession,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      profession: profession
+      // Removed updatedAt to reduce writes
     };
     
     // Update inventory if gems were added
@@ -1061,7 +1061,7 @@ router.post('/:userId/use', async (req, res) => {
     // Remove item from inventory
     inventory.splice(itemIndex, 1);
     updates.inventory = inventory;
-    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    // Removed updatedAt to reduce writes
     
     await heroRef.update(updates);
     

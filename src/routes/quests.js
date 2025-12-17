@@ -901,7 +901,7 @@ router.post('/auto-claim-all', async (req, res) => {
       Object.assign(updates, levelUpResult.updates);
     }
     
-    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    // Removed updatedAt to reduce writes - only update when data changes
     
     await heroRef.update(updates);
     
@@ -1041,7 +1041,7 @@ router.post('/claim-all/:userId', async (req, res) => {
       Object.assign(updates, levelUpResult.updates);
     }
     
-    updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    // Removed updatedAt to reduce writes - only update when data changes
     
     await heroRef.update(updates);
     
