@@ -106,17 +106,6 @@ async function trackChatActivity(channelName, userId, username, streamerTwitchId
         });
       }
     })();
-      })
-      .catch(err => {
-        // If lookup fails, still send event without heroId
-        console.warn(`[Chatter Tracking] Failed to lookup heroId for userId ${userId}:`, err);
-        broadcastToRoom(String(streamerTwitchId), {
-          type: 'chat_activity',
-          username: username,
-          userId: userId,
-          timestamp: now
-        });
-      });
   }
   
   return count;
