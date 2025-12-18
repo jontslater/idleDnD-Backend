@@ -200,3 +200,4 @@ currentMaxXp = Math.floor(currentMaxXp * 1.4); // Reduced from 1.5
 - Dragon: 200 * 50 = **10,000 XP** (70% reduction)
 
 **Result:** Leveling will be ~3x slower at high levels, more balanced for idle game progression.
+

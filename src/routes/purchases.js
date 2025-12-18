@@ -635,10 +635,45 @@ router.post('/set-founder', async (req, res) => {
 
     console.log(`[Founders Pack] Setting founder status: userId=${actualUserId}, tier=${tierLower}`);
 
-    // Find user's heroes
-    heroesSnapshot = await db.collection('heroes')
-      .where('twitchUserId', '==', actualUserId)
-      .get();
+    // Find user's heroes - try both string and number formats
+    try {
+      // Try as string first (most common case)
+      heroesSnapshot = await db.collection('heroes')
+        .where('twitchUserId', '==', actualUserId)
+        .get();
+      
+      // If no results and actualUserId looks like a number, try as number
+      if (heroesSnapshot.empty && /^\d+$/.test(actualUserId)) {
+        const numericId = parseInt(actualUserId, 10);
+        console.log(`[Founders Pack] No heroes found with string twitchUserId "${actualUserId}", trying as number: ${numericId}`);
+        heroesSnapshot = await db.collection('heroes')
+          .where('twitchUserId', '==', numericId)
+          .get();
+      }
+      
+      // Also try the legacy 'twitchId' field (without 'User' suffix)
+      if (heroesSnapshot.empty) {
+        heroesSnapshot = await db.collection('heroes')
+          .where('twitchId', '==', actualUserId)
+          .get();
+        
+        // Try legacy field as number too
+        if (heroesSnapshot.empty && /^\d+$/.test(actualUserId)) {
+          const numericId = parseInt(actualUserId, 10);
+          console.log(`[Founders Pack] Trying legacy 'twitchId' field as number: ${numericId}`);
+          heroesSnapshot = await db.collection('heroes')
+            .where('twitchId', '==', numericId)
+            .get();
+        }
+      }
+    } catch (firestoreError) {
+      // Handle Firestore quota errors gracefully
+      if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`[Founders Pack] Firestore quota exceeded for userId ${actualUserId}`);
+        return res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+      }
+      throw firestoreError;
+    }
 
     if (heroesSnapshot.empty) {
       return res.status(404).json({ error: `No heroes found for user ${actualUserId}` });

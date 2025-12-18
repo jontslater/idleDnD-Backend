@@ -396,8 +396,41 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
     // Cache miss - query Firestore
     const heroesRef = db.collection('heroes');
     let snapshot;
+    let heroes = [];
+    
     try {
+      // Try as string first (most common case)
       snapshot = await heroesRef.where('twitchUserId', '==', twitchUserId).get();
+      heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      
+      // If no results and twitchUserId looks like a number, try as number
+      if (heroes.length === 0 && /^\d+$/.test(twitchUserId)) {
+        const numericId = parseInt(twitchUserId, 10);
+        console.log(`[Heroes] No heroes found with string twitchUserId "${twitchUserId}", trying as number: ${numericId}`);
+        snapshot = await heroesRef.where('twitchUserId', '==', numericId).get();
+        heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      }
+      
+      // Also try the legacy 'twitchId' field (without 'User' suffix)
+      if (heroes.length === 0) {
+        snapshot = await heroesRef.where('twitchId', '==', twitchUserId).get();
+        const legacyHeroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        if (legacyHeroes.length > 0) {
+          console.log(`[Heroes] Found ${legacyHeroes.length} hero(es) using legacy 'twitchId' field`);
+          heroes = legacyHeroes;
+        }
+        
+        // Try legacy field as number too
+        if (heroes.length === 0 && /^\d+$/.test(twitchUserId)) {
+          const numericId = parseInt(twitchUserId, 10);
+          snapshot = await heroesRef.where('twitchId', '==', numericId).get();
+          const legacyNumericHeroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          if (legacyNumericHeroes.length > 0) {
+            console.log(`[Heroes] Found ${legacyNumericHeroes.length} hero(es) using legacy 'twitchId' field as number`);
+            heroes = legacyNumericHeroes;
+          }
+        }
+      }
     } catch (firestoreError) {
       // Handle Firestore quota errors gracefully - return 404 so UI can handle gracefully
       if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
@@ -407,7 +440,6 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
       throw firestoreError;
     }
 
-    let heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     if (heroes.length === 0) {
       return res.status(404).json({ error: 'Hero not found' });
     }
@@ -439,8 +471,41 @@ router.get('/twitch/:twitchUserId/all', async (req, res) => {
     const dbRef = db.collection('heroes');
 
     let snapshot;
+    let heroes = [];
+    
     try {
+      // Try as string first (most common case)
       snapshot = await dbRef.where('twitchUserId', '==', twitchUserId).get();
+      heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      
+      // If no results and twitchUserId looks like a number, try as number
+      if (heroes.length === 0 && /^\d+$/.test(twitchUserId)) {
+        const numericId = parseInt(twitchUserId, 10);
+        console.log(`[Heroes] No heroes found with string twitchUserId "${twitchUserId}", trying as number: ${numericId}`);
+        snapshot = await dbRef.where('twitchUserId', '==', numericId).get();
+        heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      }
+      
+      // Also try the legacy 'twitchId' field (without 'User' suffix)
+      if (heroes.length === 0) {
+        snapshot = await dbRef.where('twitchId', '==', twitchUserId).get();
+        const legacyHeroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        if (legacyHeroes.length > 0) {
+          console.log(`[Heroes] Found ${legacyHeroes.length} hero(es) using legacy 'twitchId' field`);
+          heroes = legacyHeroes;
+        }
+        
+        // Try legacy field as number too
+        if (heroes.length === 0 && /^\d+$/.test(twitchUserId)) {
+          const numericId = parseInt(twitchUserId, 10);
+          snapshot = await dbRef.where('twitchId', '==', numericId).get();
+          const legacyNumericHeroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          if (legacyNumericHeroes.length > 0) {
+            console.log(`[Heroes] Found ${legacyNumericHeroes.length} hero(es) using legacy 'twitchId' field as number`);
+            heroes = legacyNumericHeroes;
+          }
+        }
+      }
     } catch (firestoreError) {
       // Handle Firestore quota errors gracefully - return empty array so UI can still load
       if (firestoreError.code === 8 || firestoreError.message?.includes('Quota exceeded') || firestoreError.message?.includes('RESOURCE_EXHAUSTED')) {
@@ -450,8 +515,6 @@ router.get('/twitch/:twitchUserId/all', async (req, res) => {
       }
       throw firestoreError;
     }
-
-    let heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
     heroes.sort((a, b) => {
       const aTime = a.updatedAt?.toMillis?.() ?? new Date(a.updatedAt ?? 0).getTime();

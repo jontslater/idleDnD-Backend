@@ -24,6 +24,36 @@ const activeChatters = new Map(); // channelName -> Map<userId, timestamp>
 const channelToStreamerId = new Map(); // channelName -> streamerTwitchId (for broadcasting)
 const CHATTER_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
+// List of valid game commands (whitelist approach)
+// Only commands in this list will be processed - all others are silently ignored
+const VALID_GAME_COMMANDS = new Set([
+  // Basic commands
+  'join', 'classes', 'help', 'commands', 'heroes',
+  // Combat commands
+  'stats', 'gear', 'shop', 'attack', 'heal', 'cast', 'defend',
+  'buy', 'use', 'rest', 'claim', 'tokens', 'leave', 'rejoin',
+  'switch', 'switchhero', 'auto',
+  // Profession commands
+  'profession', 'gather', 'herbs', 'recipes', 'craft', 'elixirs',
+  // Equipment commands
+  'equip', 'unequip', 'upgrade', 'reforge', 'lock', 'unlock',
+  // Skill/Quest commands
+  'skills', 'skill', 'quest', 'quests', 'potion', 'dispel',
+  // Social commands
+  'party', 'invite', 'accept', 'decline',
+  // Raid/Dungeon commands
+  'raid', 'raids', 'dungeon', 'dungeons', 'queue',
+  'qdungeon', 'qraid', 'qstatus', 'qstart', 'qcancel', 'qleave',
+  // Guild commands
+  'guild', 'create',
+  // Leaderboard commands
+  'leaderboard', 'rank',
+  // Command aliases (shortcuts)
+  'a', 'h', 's', 'g',
+  // Admin commands (only for streamer)
+  'level', 'grantlegendary', 'grantlegendaries', 'push', 'pushfirebase', 'sync', 'syncfirebase'
+]);
+
 /**
  * Track chat activity for a user in a channel
  * Updates active chatters and broadcasts updates
@@ -237,11 +267,6 @@ export function handleTwitchEvents() {
       trackChatActivity(channelName, userId, username, streamerTwitchId);
     }
     
-    // Log all messages for debugging
-    if (message.trim().startsWith('!')) {
-      console.log(`📨 [${channelName}] Received command: ${message} from ${username}`);
-    }
-    
     // Skip if streamer has their own client connected (to avoid duplicate processing)
     if (streamerClients.has(channelName)) {
       console.log(`⏭️  Skipping bot account handler for ${channelName} - streamer client is active`);
@@ -251,14 +276,18 @@ export function handleTwitchEvents() {
     // Parse command
     const commandMatch = message.trim().match(/^!(\w+)(?:\s+(.+))?$/);
     if (!commandMatch) {
-      if (message.trim().startsWith('!')) {
-        console.log(`⚠️  [${channelName}] Command pattern didn't match: ${message}`);
-      }
+      // Not a command pattern - silently ignore
       return;
     }
     
     const command = commandMatch[1].toLowerCase();
     const args = commandMatch[2] ? commandMatch[2].trim().split(/\s+/) : [];
+    
+    // Only process if it's a valid game command - silently ignore others
+    if (!VALID_GAME_COMMANDS.has(command)) {
+      // Not a game command - silently ignore (don't log, don't respond)
+      return;
+    }
     
     console.log(`💬 [${channelName}] ${username}: !${command} ${args.join(' ')}`);
     
@@ -308,15 +337,15 @@ export function handleTwitchEvents() {
         if (response.ok) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
-          // Send response to chat
+          // Send response to chat as TNEWBOT
           if (result.message) {
             console.log(`💬 [Join] Sending message to chat: ${result.message}`);
-            await client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
           } else {
             console.warn(`⚠️ [Join] No message in response, sending default`);
-            await client.say(channel, `@${username} Joined the battlefield!`).catch(err => {
+            await sendChatMessageAsBot(channel, `@${username} Joined the battlefield!`).catch(err => {
               console.error(`❌ Failed to send default message:`, err);
             });
           }
@@ -346,17 +375,17 @@ export function handleTwitchEvents() {
           }
         } else {
           console.error(`❌ Failed to join: ${result.error || result.message || 'Unknown error'}`);
-          // Send error message to chat
+          // Send error message to chat as TNEWBOT
           const errorMsg = result.error || result.message || `@${username} Failed to join battlefield. Try again!`;
           console.log(`💬 [Join] Sending error to chat: ${errorMsg}`);
-          await client.say(channel, errorMsg).catch(err => {
+          await sendChatMessageAsBot(channel, errorMsg).catch(err => {
             console.error(`❌ Failed to send error message:`, err);
           });
         }
       } catch (error) {
         console.error('❌ Error processing !join command:', error);
-        // Send error message to chat
-        client.say(channel, `@${username} Error processing !join command. Please try again.`).catch(err => {
+        // Send error message to chat as TNEWBOT
+        await sendChatMessageAsBot(channel, `@${username} Error processing !join command. Please try again.`).catch(err => {
           console.error(`❌ Failed to send error message:`, err);
         });
       }
@@ -371,9 +400,9 @@ export function handleTwitchEvents() {
         if (result.success) {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
-          // Send response to chat
+          // Send response to chat as TNEWBOT
           if (result.message) {
-            client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
           }
@@ -391,17 +420,17 @@ export function handleTwitchEvents() {
           });
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
-          // Send error message to chat
+          // Send error message to chat as TNEWBOT
           if (result.message) {
-            client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });
           }
         }
       } catch (error) {
         console.error(`❌ Error processing command !${command} for ${username}:`, error);
-        // Send error message to chat
-        client.say(channel, `@${username} Error processing !${command} command. Please try again.`).catch(err => {
+        // Send error message to chat as TNEWBOT
+        await sendChatMessageAsBot(channel, `@${username} Error processing !${command} command. Please try again.`).catch(err => {
           console.error(`❌ Failed to send error message:`, err);
         });
       }
@@ -592,22 +621,21 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
       trackChatActivity(channelName, userId, username, streamerTwitchId);
     }
     
-    // Log all messages for debugging
-    if (message.trim().startsWith('!')) {
-      console.log(`📨 [${channelName}] Received command: ${message} from ${username}`);
-    }
-    
     // Parse command
     const commandMatch = message.trim().match(/^!(\w+)(?:\s+(.+))?$/);
     if (!commandMatch) {
-      if (message.trim().startsWith('!')) {
-        console.log(`⚠️  [${channelName}] Command pattern didn't match: ${message}`);
-      }
+      // Not a command pattern - silently ignore
       return;
     }
     
     const command = commandMatch[1].toLowerCase();
     const args = commandMatch[2] ? commandMatch[2].trim().split(/\s+/) : [];
+    
+    // Only process if it's a valid game command - silently ignore others
+    if (!VALID_GAME_COMMANDS.has(command)) {
+      // Not a game command - silently ignore (don't log, don't respond)
+      return;
+    }
     
     console.log(`💬 [${channelName}] ${username}: !${command} ${args.join(' ')}`);
     
@@ -657,15 +685,15 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
         if (response.ok) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
-          // Send response to chat
+          // Send response to chat as TNEWBOT
           if (result.message) {
             console.log(`💬 [Join] Sending message to chat: ${result.message}`);
-            await client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
           } else {
             console.warn(`⚠️ [Join] No message in response, sending default`);
-            await client.say(channel, `@${username} Joined the battlefield!`).catch(err => {
+            await sendChatMessageAsBot(channel, `@${username} Joined the battlefield!`).catch(err => {
               console.error(`❌ Failed to send default message:`, err);
             });
           }
@@ -695,17 +723,17 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           }
         } else {
           console.error(`❌ Failed to join: ${result.error || result.message || 'Unknown error'}`);
-          // Send error message to chat
+          // Send error message to chat as TNEWBOT
           const errorMsg = result.error || result.message || `@${username} Failed to join battlefield. Try again!`;
           console.log(`💬 [Join] Sending error to chat: ${errorMsg}`);
-          await client.say(channel, errorMsg).catch(err => {
+          await sendChatMessageAsBot(channel, errorMsg).catch(err => {
             console.error(`❌ Failed to send error message:`, err);
           });
         }
       } catch (error) {
         console.error('❌ Error processing !join command:', error);
-        // Send error message to chat
-        client.say(channel, `@${username} Error processing !join command. Please try again.`).catch(err => {
+        // Send error message to chat as TNEWBOT
+        await sendChatMessageAsBot(channel, `@${username} Error processing !join command. Please try again.`).catch(err => {
           console.error(`❌ Failed to send error message:`, err);
         });
       }
@@ -720,9 +748,9 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
         if (result.success) {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
-          // Send response to chat
+          // Send response to chat as TNEWBOT
           if (result.message) {
-            client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
           }
@@ -740,17 +768,19 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           });
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
-          // Send error message to chat
+          // Send error message to chat as TNEWBOT
           if (result.message) {
-            client.say(channel, result.message).catch(err => {
+            await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });
           }
         }
       } catch (error) {
         console.error(`❌ Error processing command !${command} for ${username}:`, error);
-        // Don't send duplicate error message - command handler already returns error messages
-        // Only send if it's a truly unexpected error that wasn't caught by the handler
+        // Send error message to chat as TNEWBOT
+        await sendChatMessageAsBot(channel, `@${username} Error processing !${command} command. Please try again.`).catch(err => {
+          console.error(`❌ Failed to send error message:`, err);
+        });
       }
     }
   });

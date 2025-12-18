@@ -124,3 +124,4 @@ DEBUG_FIRESTORE=true
 2. If still hitting limits, increase intervals further
 3. Consider implementing Redis cache for frequently accessed data
 4. Review all `.get()` and `.where()` queries for optimization opportunities
+
