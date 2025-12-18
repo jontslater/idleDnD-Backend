@@ -568,6 +568,18 @@ Press Ctrl+C to stop
   } else {
     console.log('[Periodic Updates] ⏸️ Disabled to reduce Firestore quota usage. Set ENABLE_PERIODIC_UPDATES=true to enable.');
   }
+  
+  // Initialize XP accumulator service (reduces API calls for enemy kills)
+  try {
+    const { initializeXPAccumulator } = await import('./services/xpAccumulatorService.js');
+    const xpInterval = process.env.XP_AWARD_INTERVAL_MS 
+      ? parseInt(process.env.XP_AWARD_INTERVAL_MS, 10) 
+      : null; // Use default (30 seconds) if not set
+    initializeXPAccumulator(xpInterval);
+    console.log('✅ XP accumulator service initialized (reduces API calls for enemy kills)');
+  } catch (error) {
+    console.error('❌ Failed to initialize XP accumulator service:', error);
+  }
 });
 
 // Export for Firebase Functions (optional)

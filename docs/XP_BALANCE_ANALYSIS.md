@@ -201,3 +201,5 @@ currentMaxXp = Math.floor(currentMaxXp * 1.4); // Reduced from 1.5
 
 **Result:** Leveling will be ~3x slower at high levels, more balanced for idle game progression.
 
+
+

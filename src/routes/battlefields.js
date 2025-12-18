@@ -481,4 +481,237 @@ router.post('/preferences/sprite-facing/bulk', async (req, res) => {
   }
 });
 
+// Accumulate enemy kill (stores in memory, awards XP periodically)
+// This is the RECOMMENDED endpoint for high-frequency enemy kills
+// Reduces API calls by 80-90% compared to immediate awarding
+router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    const { baseXP, enemyLevel, enemyName, enemies } = req.body;
+    
+    // Support both single enemy and batch
+    if (enemies && Array.isArray(enemies)) {
+      // Batch mode: array of enemies
+      if (enemies.some(e => !e.baseXP || !e.level)) {
+        return res.status(400).json({ 
+          error: 'Each enemy must have baseXP and level' 
+        });
+      }
+      
+      const { accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
+      accumulateEnemyKills(battlefieldId, enemies);
+      
+      res.json({
+        success: true,
+        message: `Accumulated ${enemies.length} enemy/enemies`,
+        accumulated: enemies.length
+      });
+    } else {
+      // Single enemy mode
+      if (!baseXP || !enemyLevel) {
+        return res.status(400).json({ 
+          error: 'baseXP and enemyLevel are required (or use enemies array for batch)' 
+        });
+      }
+      
+      if (baseXP <= 0 || enemyLevel <= 0) {
+        return res.status(400).json({ 
+          error: 'baseXP and enemyLevel must be positive numbers' 
+        });
+      }
+      
+      const { accumulateEnemyKill } = await import('../services/xpAccumulatorService.js');
+      accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+      
+      res.json({
+        success: true,
+        message: 'Enemy kill accumulated',
+        accumulated: 1
+      });
+    }
+  } catch (error) {
+    console.error('Error accumulating enemy kill:', error);
+    res.status(500).json({ error: 'Failed to accumulate enemy kill', details: error.message });
+  }
+});
+
+// Award XP to heroes when enemies are killed (supports single or batch)
+// This is the IMMEDIATE award endpoint - use for important events (level-ups, etc.)
+// For regular enemy kills, use /accumulate instead to reduce API calls
+router.post('/:battlefieldId/combat/xp', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    const { baseXP, enemyLevel, enemyName, heroIds, immediate = false } = req.body;
+    
+    // If immediate=false, use accumulator instead
+    if (!immediate) {
+      // Redirect to accumulate endpoint
+      const { accumulateEnemyKill, accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
+      
+      if (Array.isArray(baseXP)) {
+        const enemies = baseXP.map((xp, i) => ({
+          baseXP: xp,
+          level: Array.isArray(enemyLevel) ? enemyLevel[i] : enemyLevel,
+          name: Array.isArray(enemyName) ? enemyName[i] : (enemyName || 'Unknown')
+        }));
+        accumulateEnemyKills(battlefieldId, enemies);
+      } else {
+        accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+      }
+      
+      return res.json({
+        success: true,
+        message: 'Enemy kill(s) accumulated (will be awarded periodically)',
+        accumulated: Array.isArray(baseXP) ? baseXP.length : 1
+      });
+    }
+    
+    if (!baseXP || !enemyLevel) {
+      return res.status(400).json({ 
+        error: 'baseXP and enemyLevel are required' 
+      });
+    }
+    
+    // Validate single or array values
+    const baseXPArray = Array.isArray(baseXP) ? baseXP : [baseXP];
+    const enemyLevelArray = Array.isArray(enemyLevel) ? enemyLevel : [enemyLevel];
+    
+    if (baseXPArray.some(xp => xp <= 0) || enemyLevelArray.some(level => level <= 0)) {
+      return res.status(400).json({ 
+        error: 'baseXP and enemyLevel must be positive numbers' 
+      });
+    }
+    
+    const { awardCombatXP } = await import('../services/xpDistributionService.js');
+    
+    // Pass arrays or single values - service handles both
+    const result = await awardCombatXP(
+      battlefieldId,
+      baseXP,
+      enemyLevel,
+      {
+        enemyName: enemyName || 'Unknown Enemy',
+        specificHeroIds: heroIds || null
+      }
+    );
+    
+    if (!result.success) {
+      return res.status(500).json({ 
+        error: result.error || 'Failed to award XP',
+        message: result.message 
+      });
+    }
+    
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error awarding combat XP:', error);
+    res.status(500).json({ error: 'Failed to award combat XP', details: error.message });
+  }
+});
+
+// Flush accumulated XP immediately for a battlefield
+// Useful for important events (wave completion, level-ups, etc.)
+router.post('/:battlefieldId/combat/xp/flush', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    
+    const { flushBattlefieldXP } = await import('../services/xpAccumulatorService.js');
+    const result = await flushBattlefieldXP(battlefieldId);
+    
+    if (!result) {
+      return res.json({
+        success: true,
+        message: 'No accumulated XP to flush',
+        flushed: false
+      });
+    }
+    
+    if (!result.success) {
+      return res.status(500).json({ 
+        error: result.error || 'Failed to flush XP',
+        message: result.message 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Accumulated XP flushed and awarded',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error flushing accumulated XP:', error);
+    res.status(500).json({ error: 'Failed to flush accumulated XP', details: error.message });
+  }
+});
+
+// Get accumulator status for a battlefield
+router.get('/:battlefieldId/combat/xp/status', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    
+    const { getAccumulatorStatus } = await import('../services/xpAccumulatorService.js');
+    const status = getAccumulatorStatus(battlefieldId);
+    
+    if (!status) {
+      return res.json({
+        success: true,
+        message: 'No accumulator found for this battlefield',
+        status: null
+      });
+    }
+    
+    res.json({
+      success: true,
+      status
+    });
+  } catch (error) {
+    console.error('Error getting accumulator status:', error);
+    res.status(500).json({ error: 'Failed to get accumulator status', details: error.message });
+  }
+});
+
+// Preview XP distribution without awarding (for UI display)
+router.post('/:battlefieldId/combat/xp/preview', async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    const { baseXP, enemyLevel } = req.body;
+    
+    if (!baseXP || !enemyLevel) {
+      return res.status(400).json({ 
+        error: 'baseXP and enemyLevel are required' 
+      });
+    }
+    
+    // Get all heroes in the battlefield
+    const heroesSnapshot = await db.collection('heroes')
+      .where('currentBattlefieldId', '==', battlefieldId)
+      .get();
+    
+    if (heroesSnapshot.empty) {
+      return res.json({
+        baseXP,
+        enemyLevel,
+        heroesCount: 0,
+        distribution: []
+      });
+    }
+    
+    const heroes = heroesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    const { previewXPDistribution } = await import('../services/xpDistributionService.js');
+    const preview = previewXPDistribution(baseXP, enemyLevel, heroes);
+    
+    res.json(preview);
+  } catch (error) {
+    console.error('Error previewing XP distribution:', error);
+    res.status(500).json({ error: 'Failed to preview XP distribution', details: error.message });
+  }
+});
+
 export default router;
