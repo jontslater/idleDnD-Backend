@@ -750,10 +750,37 @@ async function handleHealCommand(hero, args, username, battlefieldId) {
     });
   }
 
-  // Calculate healing (60-100 HP for healers)
-  const baseHeal = 60;
-  const maxHeal = 100;
-  const healAmount = Math.floor(Math.random() * (maxHeal - baseHeal + 1)) + baseHeal;
+  // Calculate healing based on healer's Intellect, Wisdom, Healing Power, and Spell Damage
+  // Base healing scales from Intellect + Wisdom (like spell power)
+  const totalIntellect = hero.intellect || 0;
+  const totalWisdom = hero.wisdom || 0;
+  
+  // Base heal = Intellect * 1.0 + Wisdom * 0.5 (spell power scaling)
+  // Fallback to level-based healing if no Int/Wis
+  let baseHeal = (totalIntellect * 1.0) + (totalWisdom * 0.5);
+  if (baseHeal < 1) {
+    baseHeal = (hero.level || 1) * 5; // Fallback to level-based
+  }
+  
+  // Add attack as a small bonus (10% contribution)
+  baseHeal += (hero.attack || 0) * 0.1;
+  
+  // Healing Power % bonus (uncapped - better gear should heal more!)
+  const healingPower = hero.healingPower || 0;
+  baseHeal *= (1 + (healingPower * 0.01)); // 1% per point of healing power
+  
+  // Spell Damage also affects healing (healers use spell power for everything)
+  const spellDamage = hero.spellDamage || 0;
+  baseHeal *= (1 + (spellDamage * 0.01)); // 1% per point of spell damage
+  
+  // Divine Grace: 30% chance for 2x healing
+  let divineGraceActive = false;
+  if (Math.random() < 0.30) {
+    divineGraceActive = true;
+    baseHeal *= 2;
+  }
+  
+  const healAmount = Math.floor(baseHeal);
   
   // Apply healing
   const newHp = Math.min((targetHero.hp || 0) + healAmount, targetHero.maxHp || targetHero.hp);
@@ -787,7 +814,7 @@ async function handleHealCommand(hero, args, username, battlefieldId) {
   });
 
   const targetName = targetHero.name || targetHero.characterName || 'target';
-  const message = `@${username} heals ${targetName} for ${actualHeal} HP! (${targetName}: ${newHp}/${targetHero.maxHp} HP)`;
+  const message = `@${username} heals ${targetName} for ${actualHeal} HP! (${targetName}: ${newHp}/${targetHero.maxHp} HP)${divineGraceActive ? ' ✨ Divine Grace!' : ''}`;
 
   return {
     success: true,
