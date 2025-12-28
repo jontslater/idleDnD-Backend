@@ -146,8 +146,18 @@ export function getSkillById(skillId) {
 // Calculate skill points available for a hero
 export function calculateSkillPoints(level) {
   if (level < 6) return 0;
-  // Points at: 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30
-  const pointLevels = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30];
+  
+  // Skill points are granted every 2 levels starting from level 6, up to level 100
+  // Points at: 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, ..., 98, 100
+  const MAX_LEVEL = 100;
+  const firstSkillPointLevel = 6;
+  
+  // Generate all skill point levels from 6 to 100 (every 2 levels)
+  const pointLevels = [];
+  for (let l = firstSkillPointLevel; l <= MAX_LEVEL; l += 2) {
+    pointLevels.push(l);
+  }
+  
   return pointLevels.filter(l => level >= l).length;
 }
 

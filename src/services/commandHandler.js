@@ -751,15 +751,16 @@ async function handleHealCommand(hero, args, username, battlefieldId) {
   }
 
   // Calculate healing based on healer's Intellect, Wisdom, Healing Power, and Spell Damage
+  // Healing is scaled to appropriately heal tanks (who have ~2.2x the HP of healers)
   // Base healing scales from Intellect + Wisdom (like spell power)
   const totalIntellect = hero.intellect || 0;
   const totalWisdom = hero.wisdom || 0;
   
-  // Base heal = Intellect * 1.0 + Wisdom * 0.5 (spell power scaling)
-  // Fallback to level-based healing if no Int/Wis
-  let baseHeal = (totalIntellect * 1.0) + (totalWisdom * 0.5);
+  // Base heal = (Intellect * 1.0 + Wisdom * 0.5) * 5.0 (multiplier scaled for tank HP)
+  // Fallback to level-based healing if no Int/Wis (scaled to heal tanks effectively)
+  let baseHeal = ((totalIntellect * 1.0) + (totalWisdom * 0.5)) * 5.0;
   if (baseHeal < 1) {
-    baseHeal = (hero.level || 1) * 5; // Fallback to level-based
+    baseHeal = (hero.level || 1) * 20; // Fallback: level * 20 (heals ~20% of tank HP at level 100)
   }
   
   // Add attack as a small bonus (10% contribution)
