@@ -208,10 +208,19 @@ router.post('/:userId/craft', async (req, res) => {
     const quantity = req.body.quantity || 1;
     console.log(`🔨 Crafting ${quantity}x ${recipeKey} with cost:`, JSON.stringify(recipeCost));
 
+    // Ensure materials object exists
+    if (!profession.materials) {
+      console.error(`❌ Profession materials is null/undefined for ${profession.type}`);
+      return res.status(400).json({ error: 'Profession materials not initialized' });
+    }
+
     // Validate and deduct materials
     if (profession.type === 'herbalism' && recipeCost.herbs) {
+      if (!profession.materials.herbs) {
+        profession.materials.herbs = { common: 0, uncommon: 0, rare: 0, epic: 0 };
+      }
       for (const [mat, cost] of Object.entries(recipeCost.herbs)) {
-        const have = profession.materials.herbs?.[mat] || 0;
+        const have = profession.materials.herbs[mat] || 0;
         const needed = cost * quantity;
         if (have < needed) {
           return res.status(400).json({ error: `Not enough ${mat} herbs. Need ${needed}, have ${have}` });
@@ -219,11 +228,14 @@ router.post('/:userId/craft', async (req, res) => {
       }
       // Deduct materials
       for (const [mat, cost] of Object.entries(recipeCost.herbs)) {
-        profession.materials.herbs[mat] -= cost * quantity;
+        profession.materials.herbs[mat] = (profession.materials.herbs[mat] || 0) - (cost * quantity);
       }
     } else if (profession.type === 'mining' && recipeCost.ore) {
+      if (!profession.materials.ore) {
+        profession.materials.ore = { iron: 0, steel: 0, mithril: 0, adamantite: 0 };
+      }
       for (const [mat, cost] of Object.entries(recipeCost.ore)) {
-        const have = profession.materials.ore?.[mat] || 0;
+        const have = profession.materials.ore[mat] || 0;
         const needed = cost * quantity;
         if (have < needed) {
           return res.status(400).json({ error: `Not enough ${mat} ore. Need ${needed}, have ${have}` });
@@ -231,7 +243,7 @@ router.post('/:userId/craft', async (req, res) => {
       }
       // Deduct materials
       for (const [mat, cost] of Object.entries(recipeCost.ore)) {
-        profession.materials.ore[mat] -= cost * quantity;
+        profession.materials.ore[mat] = (profession.materials.ore[mat] || 0) - (cost * quantity);
       }
     }
     
@@ -248,13 +260,16 @@ router.post('/:userId/craft', async (req, res) => {
         // Removed updatedAt to reduce writes
       });
     } else if (profession.type === 'enchanting' && recipeCost.essence) {
+      if (profession.materials.essence === undefined || profession.materials.essence === null) {
+        profession.materials.essence = 0;
+      }
       const have = profession.materials.essence || 0;
       const needed = recipeCost.essence * quantity;
       if (have < needed) {
         return res.status(400).json({ error: `Not enough essence. Need ${needed}, have ${have}` });
       }
       // Deduct materials
-      profession.materials.essence -= recipeCost.essence * quantity;
+      profession.materials.essence = (profession.materials.essence || 0) - (recipeCost.essence * quantity);
     }
 
     const itemId = `${recipeKey}_${Date.now()}`;
@@ -291,7 +306,14 @@ router.post('/:userId/craft', async (req, res) => {
     }
 
     // Collect all items to add first, then validate and add
-    const { validateInventorySpace } = await import('../utils/inventoryValidator.js');
+    let validateInventorySpace;
+    try {
+      const inventoryValidator = await import('../utils/inventoryValidator.js');
+      validateInventorySpace = inventoryValidator.validateInventorySpace;
+    } catch (importError) {
+      console.error('❌ Failed to import inventoryValidator:', importError);
+      return res.status(500).json({ error: 'Inventory validation system unavailable' });
+    }
     const itemsToAdd = [];
     
     // Special handling for gem_socket recipe
@@ -504,7 +526,12 @@ router.post('/:userId/craft', async (req, res) => {
 
   } catch (error) {
     console.error('Error crafting:', error);
-    res.status(500).json({ error: 'Failed to craft item' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to craft item',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
