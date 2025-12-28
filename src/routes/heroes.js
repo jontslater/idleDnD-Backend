@@ -171,6 +171,61 @@ router.post('/login-reward/:userId', async (req, res) => {
   }
 });
 
+/**
+ * Get prestige store - available prestige cores based on prestige level
+ * GET /api/heroes/:userId/prestige-store
+ * MUST come before /:userId route to ensure proper matching
+ */
+router.get('/:userId/prestige-store', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = doc.data();
+    const prestigeLevel = hero.prestigeLevel || 0;
+    const prestigeTokens = hero.prestigeTokens || 0;
+
+    const { PRESTIGE_CORE_TIERS, getAvailablePrestigeCoreTiers } = await import('../data/prestigeCores.js');
+
+    // Get available tiers
+    const availableTiers = getAvailablePrestigeCoreTiers(prestigeLevel);
+
+    // Build store catalog (cores, not gear)
+    const catalog = [];
+    
+    availableTiers.forEach(tierKey => {
+      const tierData = PRESTIGE_CORE_TIERS[tierKey];
+      
+      catalog.push({
+        tier: tierKey,
+        name: tierData.name,
+        tokenCost: tierData.tokenCost,
+        prestigeRequired: tierData.prestigeRequired,
+        statBonus: tierData.statBonus,
+        bonus: tierData.bonus,
+        color: tierData.color,
+        canAfford: prestigeTokens >= tierData.tokenCost
+      });
+    });
+
+    res.json({
+      success: true,
+      prestigeLevel,
+      prestigeTokens,
+      catalog,
+      availableTiers
+    });
+  } catch (error) {
+    console.error('Error fetching prestige store:', error);
+    res.status(500).json({ error: 'Failed to fetch prestige store' });
+  }
+});
+
 // Get hero by user ID
 router.get('/:userId', async (req, res) => {
   try {
@@ -704,6 +759,20 @@ router.post('/create', async (req, res) => {
       skillPoints: 0,
       skillPointsEarned: 0,
       joinedAt: Date.now(),
+      // Prestige system - initialize to defaults
+      prestigeLevel: 0,
+      prestigeTokens: 0,
+      prestigeBoosts: {
+        xpGain: 1.0,
+        goldGain: 1.0,
+        idleTicketGain: 1.0,
+        statBoost: {
+          attack: 0,
+          defense: 0,
+          hp: 0
+        }
+      },
+      prestigeSlotCores: {}, // Prestige cores attached to equipment slots (not items)
       // Inherit founder pack tier from existing heroes (applies to all user's heroes)
       ...(founderPackTier && { founderPackTier }),
       ...(founderPackTierLevel !== null && { founderPackTierLevel }),
@@ -885,10 +954,93 @@ router.put('/:userId', async (req, res) => {
     }
     
     const oldHero = doc.data();
+    
+    // CRITICAL: Enforce level cap of 100
+    // This prevents heroes from leveling beyond 100, even if frontend sends invalid data
+    const MAX_LEVEL = 100;
+    const hasPrestiged = (oldHero.prestigeLevel || 0) > 0;
+    
+    if (req.body.level !== undefined) {
+      const requestedLevel = req.body.level;
+      
+      // CRITICAL: If hero has prestiged, they should NEVER be above level 100
+      // Also, if they're at level 1 after prestige, don't allow setting to a high level
+      if (hasPrestiged) {
+        if (requestedLevel > MAX_LEVEL) {
+          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${requestedLevel}, capping at ${MAX_LEVEL}`);
+          req.body.level = MAX_LEVEL;
+        } else if (oldHero.level === 1 && requestedLevel > 100) {
+          // Hero just prestiged (level 1), don't allow setting to high level
+          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) at level 1 attempted to set level ${requestedLevel}, blocking update`);
+          delete req.body.level; // Remove level from update to prevent overwrite
+        }
+      } else if (requestedLevel > MAX_LEVEL) {
+        // Non-prestiged hero, just cap at 100
+        console.warn(`⚠️ [Update Hero] Attempted to set level ${requestedLevel} for hero ${heroId}, capping at ${MAX_LEVEL}`);
+        req.body.level = MAX_LEVEL;
+      }
+      
+      // Cap XP at maxXp for level 100 if level was capped
+      if (req.body.level === MAX_LEVEL) {
+        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
+        req.body.maxXp = calculateMaxXp(MAX_LEVEL);
+        if (req.body.xp !== undefined && req.body.xp > req.body.maxXp) {
+          req.body.xp = req.body.maxXp;
+        }
+      }
+    }
+    
     const updateData = {
       ...req.body
       // Removed updatedAt to reduce writes - only update when data changes
     };
+    
+    // Also check existing hero level and cap it if over 100 (safety check for old data)
+    // This fixes heroes that were already over level 100 from before the cap was implemented
+    if (oldHero.level > MAX_LEVEL) {
+      // CRITICAL: If hero has prestiged, they should be at level 1, not 100
+      if (hasPrestiged) {
+        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level}, fixing to level 1`);
+        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
+        updateData.level = 1;
+        updateData.maxXp = getInitialMaxXp(1);
+        updateData.xp = 0;
+      } else {
+        console.warn(`⚠️ [Update Hero] Hero ${heroId} has level ${oldHero.level}, capping at ${MAX_LEVEL}`);
+        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
+        updateData.level = MAX_LEVEL;
+        updateData.maxXp = calculateMaxXp(MAX_LEVEL);
+        if (updateData.xp === undefined && oldHero.xp > updateData.maxXp) {
+          updateData.xp = updateData.maxXp;
+        } else if (updateData.xp !== undefined && updateData.xp > updateData.maxXp) {
+          updateData.xp = updateData.maxXp;
+        }
+      }
+    }
+    
+    // CRITICAL: If hero has prestiged, protect against ANY invalid level updates
+    // Prestiged heroes should always be between 1 and 100
+    if (hasPrestiged && updateData.level !== undefined) {
+      if (updateData.level > MAX_LEVEL) {
+        console.error(`🚨 [Update Hero] BLOCKED: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${updateData.level}. Forcing to level 1.`);
+        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
+        updateData.level = 1;
+        updateData.xp = 0;
+        updateData.maxXp = getInitialMaxXp(1);
+      } else if (updateData.level < 1) {
+        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} attempted to set level ${updateData.level}, forcing to 1.`);
+        updateData.level = 1;
+      }
+    }
+    
+    // CRITICAL: Additional check - if prestiged hero's current level in DB is > 100, force reset
+    if (hasPrestiged && oldHero.level > MAX_LEVEL) {
+      console.error(`🚨 [Update Hero] CRITICAL: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level} in database. Forcing reset to level 1.`);
+      const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
+      updateData.level = 1;
+      updateData.xp = 0;
+      updateData.maxXp = getInitialMaxXp(1);
+    }
     
     // Track stats for periodic chat updates
     try {
@@ -1241,8 +1393,17 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
         id: `${rarity}_${slot}_${Date.now()}_${i}` // Unique ID for each item
       };
       itemsToAdd.push(itemCopy);
-      hero.inventory.push(itemCopy);
     }
+    
+    // Validate inventory space before adding
+    const { validateInventorySpace } = await import('../utils/inventoryValidator.js');
+    const validation = validateInventorySpace(hero, itemsToAdd);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    
+    // Add items to inventory
+    itemsToAdd.forEach(itemCopy => hero.inventory.push(itemCopy));
 
     // Deduct tokens
     await heroRef.update({
@@ -1885,6 +2046,13 @@ router.post('/:userId/admin/give-item', async (req, res) => {
       hero.inventory = [];
     }
 
+    // Validate inventory space before adding
+    const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+    const validation = validateSingleItem(hero, item);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
     // Add item to inventory
     hero.inventory.push(item);
 
@@ -1897,6 +2065,306 @@ router.post('/:userId/admin/give-item', async (req, res) => {
   } catch (error) {
     console.error('Error giving item:', error);
     res.status(500).json({ error: 'Failed to give item' });
+  }
+});
+
+/**
+ * Prestige endpoint - Reset hero to level 1 and apply permanent boosts
+ * POST /api/heroes/:userId/prestige
+ */
+router.post('/:userId/prestige', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = doc.data();
+    
+    // Validate hero is at least level 100 (allows heroes over 100 to prestige)
+    if (hero.level < 100) {
+      return res.status(400).json({ 
+        error: `Hero must be level 100 or higher to prestige. Current level: ${hero.level}` 
+      });
+    }
+
+    // Import required utilities
+    const { calculateMaxXp, getInitialMaxXp } = await import('../utils/levelUpHelper.js');
+    const { calculatePrestigeBoosts } = await import('../utils/prestigeHelper.js');
+    const { ROLE_CONFIG } = await import('../data/roleConfig.js');
+    const { calculateSkillPoints } = await import('../data/skills.js');
+
+    // Get current prestige level (default to 0)
+    const currentPrestigeLevel = hero.prestigeLevel || 0;
+    const newPrestigeLevel = currentPrestigeLevel + 1;
+
+    // Calculate new prestige boosts
+    const newBoosts = calculatePrestigeBoosts(newPrestigeLevel);
+
+    // Get role config for base stats
+    const roleConfig = ROLE_CONFIG[hero.role];
+    if (!roleConfig) {
+      return res.status(400).json({ error: 'Invalid hero role' });
+    }
+
+    // Calculate base stats for level 1
+    const baseHp = roleConfig.baseHp;
+    const baseAttack = roleConfig.baseAttack;
+    const baseDefense = roleConfig.baseDefense;
+
+    // Update hero data
+    const updateData = {
+      // Reset level and XP
+      level: 1,
+      xp: 0,
+      maxXp: getInitialMaxXp(1),
+      
+      // Reset base stats to level 1 (gear bonuses will remain via equipment)
+      maxHp: baseHp,
+      hp: baseHp, // Full HP on prestige
+      attack: baseAttack,
+      defense: baseDefense,
+      
+      // Reset skill points (free reset on prestige)
+      skillPoints: 0,
+      skillPointsEarned: 0,
+      skills: {}, // Clear all skill investments
+      
+      // Update prestige fields
+      prestigeLevel: newPrestigeLevel,
+      prestigeTokens: (hero.prestigeTokens || 0) + 1, // Award 1 token
+      prestigeBoosts: newBoosts,
+      
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await heroRef.update(updateData);
+
+    // Invalidate cache
+    const heroCache = getHeroCache();
+    heroCache.invalidate(userId);
+
+    // Get updated hero data and verify the update
+    const updatedDoc = await heroRef.get();
+    const updatedHero = updatedDoc.data();
+
+    // CRITICAL: Verify prestige update succeeded
+    if (updatedHero.level !== 1) {
+      console.error(`❌ [Prestige Error] Hero ${hero.name} (${userId}) prestige failed! Level is ${updatedHero.level} but should be 1. Attempting to fix...`);
+      // Force fix the level
+      await heroRef.update({
+        level: 1,
+        xp: 0,
+        maxXp: getInitialMaxXp(1)
+      });
+      console.log(`✅ [Prestige Fix] Corrected level to 1 for hero ${hero.name}`);
+    }
+
+    if (updatedHero.prestigeLevel !== newPrestigeLevel) {
+      console.error(`❌ [Prestige Error] Hero ${hero.name} (${userId}) prestige level mismatch! Expected ${newPrestigeLevel}, got ${updatedHero.prestigeLevel}`);
+    }
+
+    console.log(`⭐ Hero ${hero.name} (${userId}) prestiged! New prestige level: ${newPrestigeLevel}, Level: ${updatedHero.level}`);
+
+    res.json({
+      success: true,
+      message: `Prestige successful! You are now Prestige ${newPrestigeLevel}.`,
+      hero: { ...updatedHero, id: updatedDoc.id },
+      prestigeLevel: newPrestigeLevel,
+      prestigeTokens: updatedHero.prestigeTokens,
+      boosts: newBoosts
+    });
+  } catch (error) {
+    console.error('Error prestiging hero:', error);
+    res.status(500).json({ error: 'Failed to prestige hero' });
+  }
+});
+
+/**
+ * Purchase prestige core
+ * POST /api/heroes/:userId/prestige-store/purchase
+ */
+router.post('/:userId/prestige-store/purchase', async (req, res) => {
+  try {
+    const { tier } = req.body;
+    const { userId } = req.params;
+
+    if (!tier) {
+      return res.status(400).json({ error: 'Tier is required' });
+    }
+
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = doc.data();
+    const prestigeLevel = hero.prestigeLevel || 0;
+    const prestigeTokens = hero.prestigeTokens || 0;
+
+    const { PRESTIGE_CORE_TIERS } = await import('../data/prestigeCores.js');
+    const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+
+    // Validate tier
+    const tierData = PRESTIGE_CORE_TIERS[tier];
+    if (!tierData) {
+      return res.status(400).json({ error: `Invalid prestige tier: ${tier}` });
+    }
+
+    // Check prestige level requirement
+    if (prestigeLevel < tierData.prestigeRequired) {
+      return res.status(400).json({ 
+        error: `Requires Prestige ${tierData.prestigeRequired}. You are Prestige ${prestigeLevel}.` 
+      });
+    }
+
+    // Check token cost
+    if (prestigeTokens < tierData.tokenCost) {
+      return res.status(400).json({ 
+        error: `Not enough prestige tokens! Need ${tierData.tokenCost}, have ${prestigeTokens}` 
+      });
+    }
+
+    // Create prestige core item
+    const coreItem = {
+      id: `prestige_core_${tier}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: tierData.name,
+      type: 'prestige_core',
+      tier: tier,
+      rarity: 'prestige',
+      color: tierData.color,
+      statBonus: tierData.statBonus,
+      bonus: tierData.bonus,
+      prestigeRequired: tierData.prestigeRequired,
+      purchasedAt: Date.now()
+    };
+
+    // Check inventory space
+    const validation = validateSingleItem(hero, coreItem);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    // Initialize inventory if needed
+    if (!hero.inventory) {
+      hero.inventory = [];
+    }
+
+    // Add core to inventory
+    hero.inventory.push(coreItem);
+
+    // Deduct prestige tokens
+    const newPrestigeTokens = prestigeTokens - tierData.tokenCost;
+
+    // Update hero
+    await heroRef.update({
+      inventory: hero.inventory,
+      prestigeTokens: newPrestigeTokens,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`⭐ ${hero.name} purchased ${tierData.name} for ${tierData.tokenCost} prestige tokens`);
+
+    res.json({
+      success: true,
+      message: `Purchased ${tierData.name}!`,
+      item: coreItem,
+      prestigeTokens: newPrestigeTokens,
+      tokensSpent: tierData.tokenCost
+    });
+  } catch (error) {
+    console.error('Error purchasing prestige core:', error);
+    res.status(500).json({ error: 'Failed to purchase prestige core' });
+  }
+});
+
+/**
+ * Apply prestige core to equipment slot (not item - persists when gear is replaced)
+ * POST /api/heroes/:userId/prestige-store/apply
+ */
+router.post('/:userId/prestige-store/apply', async (req, res) => {
+  try {
+    const { coreId, slot } = req.body;
+    const { userId } = req.params;
+
+    if (!coreId || !slot) {
+      return res.status(400).json({ error: 'coreId and slot are required' });
+    }
+
+    // Validate slot
+    const validSlots = ['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots'];
+    if (!validSlots.includes(slot)) {
+      return res.status(400).json({ error: `Invalid slot: ${slot}. Valid slots: ${validSlots.join(', ')}` });
+    }
+
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = doc.data();
+
+    // Find core in inventory
+    const coreIndex = hero.inventory?.findIndex(item => item.id === coreId);
+    if (coreIndex === -1) {
+      return res.status(400).json({ error: 'Prestige core not found in inventory' });
+    }
+
+    const coreItem = hero.inventory[coreIndex];
+    if (coreItem.type !== 'prestige_core') {
+      return res.status(400).json({ error: 'Item is not a prestige core' });
+    }
+
+    // Initialize prestigeSlotCores if it doesn't exist
+    if (!hero.prestigeSlotCores) {
+      hero.prestigeSlotCores = {};
+    }
+
+    // Check if slot already has a prestige core (can replace)
+    const existingCore = hero.prestigeSlotCores[slot];
+    
+    // Apply prestige core to slot (not item)
+    hero.prestigeSlotCores[slot] = {
+      id: coreItem.id,
+      tier: coreItem.tier,
+      name: coreItem.name,
+      statBonus: coreItem.statBonus,
+      bonus: coreItem.bonus,
+      color: coreItem.color,
+      appliedAt: Date.now()
+    };
+
+    // Remove core from inventory
+    hero.inventory.splice(coreIndex, 1);
+
+    // If replacing, optionally return old core to inventory (for now, we'll just replace)
+    // Could add logic here to return old core if desired
+
+    // Update hero
+    await heroRef.update({
+      prestigeSlotCores: hero.prestigeSlotCores,
+      inventory: hero.inventory,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`⭐ ${hero.name} applied ${coreItem.name} to ${slot} slot`);
+
+    res.json({
+      success: true,
+      message: `Applied ${coreItem.name} to ${slot} slot! The core will persist even when you replace gear in this slot.`,
+      prestigeSlotCores: hero.prestigeSlotCores,
+      replacedCore: existingCore || null
+    });
+  } catch (error) {
+    console.error('Error applying prestige core:', error);
+    res.status(500).json({ error: 'Failed to apply prestige core' });
   }
 });
 
