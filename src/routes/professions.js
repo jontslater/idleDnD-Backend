@@ -1191,33 +1191,43 @@ router.post('/:userId/equip', async (req, res) => {
 
     const hero = doc.data();
     
-    // Initialize inventory if it doesn't exist
-    if (!hero.inventory) {
+    // Initialize inventory if it doesn't exist (ensure it's always an array)
+    if (!Array.isArray(hero.inventory)) {
       hero.inventory = [];
     }
 
+    // Initialize equipment if it doesn't exist
+    if (!hero.equipment) {
+      hero.equipment = {};
+    }
+
     // If there's already an item in this slot, add it to inventory (if not already there)
-    const equipment = hero.equipment || {};
+    const equipment = hero.equipment;
     const currentItem = equipment[slot];
     if (currentItem) {
       // Check if the current item is already in inventory to prevent duplicates
-      const alreadyInInventory = hero.inventory.some(invItem => invItem.id === currentItem.id);
+      const alreadyInInventory = hero.inventory.some(invItem => invItem && invItem.id === currentItem.id);
       if (!alreadyInInventory) {
-        const { validateSingleItem } = await import('../utils/inventoryValidator.js');
-        const validation = validateSingleItem(hero, currentItem);
-        if (!validation.valid) {
-          // If inventory is full, warn but still allow equipping (old item will be lost)
-          console.warn(`⚠️ Inventory full when equipping ${slot}. Current item will be removed from equipment but cannot be added to inventory.`);
-          // Don't add to inventory, but still proceed with equipping new item
-        } else {
-          hero.inventory.push(currentItem);
+        try {
+          const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+          const validation = validateSingleItem(hero, currentItem);
+          if (!validation.valid) {
+            // If inventory is full, warn but still allow equipping (old item will be lost)
+            console.warn(`⚠️ Inventory full when equipping ${slot}. Current item will be removed from equipment but cannot be added to inventory.`);
+            // Don't add to inventory, but still proceed with equipping new item
+          } else {
+            hero.inventory.push(currentItem);
+          }
+        } catch (validationError) {
+          console.error('Error validating inventory space:', validationError);
+          // Continue anyway - don't block equipping if validation fails
         }
       }
     }
 
     // Remove the item from inventory if it's being equipped from inventory
     // Find the item in inventory by ID
-    const itemIndex = hero.inventory.findIndex(invItem => invItem.id === item.id);
+    const itemIndex = hero.inventory.findIndex(invItem => invItem && invItem.id === item.id);
     if (itemIndex !== -1) {
       hero.inventory.splice(itemIndex, 1);
     }
@@ -1228,22 +1238,43 @@ router.post('/:userId/equip', async (req, res) => {
     }
     
     // Initialize enchantedItems if it doesn't exist
-    if (!hero.enchantedItems) {
+    if (!Array.isArray(hero.enchantedItems)) {
       hero.enchantedItems = [];
     }
 
-    // Update equipment and inventory
-    await heroRef.update({
+    // Prepare update data - clean up any undefined values that Firestore doesn't like
+    const updateData = {
       [`equipment.${slot}`]: item,
       inventory: hero.inventory,
       enchantedItems: hero.enchantedItems,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Remove any undefined values from updateData
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
     });
+
+    // Update equipment and inventory
+    await heroRef.update(updateData);
 
     res.json({ success: true, message: 'Item equipped' });
   } catch (error) {
     console.error('Error equipping item:', error);
-    res.status(500).json({ error: 'Failed to equip item' });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      userId,
+      slot,
+      itemId: item?.id,
+      itemSlot: item?.slot,
+      itemName: item?.name
+    });
+    res.status(500).json({ 
+      error: 'Failed to equip item',
+      details: error.message || 'Unknown error'
+    });
   }
 });
 
