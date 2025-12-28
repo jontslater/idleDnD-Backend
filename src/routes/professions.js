@@ -290,8 +290,11 @@ router.post('/:userId/craft', async (req, res) => {
       applicableSlots = []; // All herbalism items are consumables
     }
 
+    // Collect all items to add first, then validate and add
+    const { validateInventorySpace } = await import('../utils/inventoryValidator.js');
+    const itemsToAdd = [];
+    
     // Special handling for gem_socket recipe
-    let craftedItem;
     if (recipeKey === 'gem_socket') {
       // Check if socket item already exists in inventory (stack up to 10)
       const existingSocketItem = hero.inventory.find(item => 
@@ -300,7 +303,7 @@ router.post('/:userId/craft', async (req, res) => {
       );
       
       if (existingSocketItem && (existingSocketItem.quantity || 1) < 10) {
-        // Stack with existing socket item
+        // Stack with existing socket item (modify in place, no new items)
         const currentQuantity = existingSocketItem.quantity || 1;
         const newQuantity = Math.min(currentQuantity + quantity, 10);
         const addedQuantity = newQuantity - currentQuantity;
@@ -311,7 +314,7 @@ router.post('/:userId/craft', async (req, res) => {
         if (addedQuantity < quantity) {
           const remaining = quantity - addedQuantity;
           for (let i = 0; i < remaining; i++) {
-            const additionalSocketItem = {
+            itemsToAdd.push({
               id: `${recipeKey}_${Date.now()}_${i}`,
               name: 'Gem Socket',
               slot: 'consumable',
@@ -327,16 +330,12 @@ router.post('/:userId/craft', async (req, res) => {
               tier: 1,
               quantity: 1,
               craftedAt: Date.now()
-            };
-            hero.inventory.push(additionalSocketItem);
+            });
           }
         }
-        
-        // Don't add craftedItem since we stacked it
-        craftedItem = null;
       } else {
         // Create new socket item(s)
-        craftedItem = {
+        const firstSocketItem = {
           id: itemId,
           name: 'Gem Socket',
           slot: 'consumable',
@@ -353,12 +352,13 @@ router.post('/:userId/craft', async (req, res) => {
           quantity: Math.min(quantity, 10), // Stack up to 10
           craftedAt: Date.now()
         };
+        itemsToAdd.push(firstSocketItem);
         
         // If quantity > 10, create additional items
         if (quantity > 10) {
           const remaining = quantity - 10;
           for (let i = 0; i < remaining; i++) {
-            const additionalSocketItem = {
+            itemsToAdd.push({
               id: `${recipeKey}_${Date.now()}_${i}`,
               name: 'Gem Socket',
               slot: 'consumable',
@@ -374,18 +374,16 @@ router.post('/:userId/craft', async (req, res) => {
               tier: 1,
               quantity: i < remaining - 1 ? 10 : (remaining % 10 || 10), // Fill stacks of 10
               craftedAt: Date.now()
-            };
-            hero.inventory.push(additionalSocketItem);
+            });
           }
         }
       }
     } else {
       // Regular crafted item
       // Create items based on quantity
-      const itemsToAdd = [];
       for (let i = 0; i < quantity; i++) {
         const itemIdForThis = i === 0 ? itemId : `${recipeKey}_${Date.now()}_${i}`;
-        const craftedItem = {
+        itemsToAdd.push({
           id: itemIdForThis,
           name: recipeKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
           slot: 'consumable', // Mark as profession item
@@ -402,18 +400,19 @@ router.post('/:userId/craft', async (req, res) => {
           quantity: 1, // Each item has quantity 1, we create multiple items
           applicableSlots, // Store slot restrictions
           craftedAt: Date.now()
-        };
-        itemsToAdd.push(craftedItem);
+        });
+      }
+    }
+
+    // Validate inventory space before adding
+    if (itemsToAdd.length > 0) {
+      const validation = validateInventorySpace(hero, itemsToAdd);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
       }
       
       // Add all items to inventory
       hero.inventory.push(...itemsToAdd);
-      craftedItem = null; // Don't add single item below
-    }
-
-    // Add to hero's main inventory (simple array) - only if craftedItem exists
-    if (craftedItem) {
-      hero.inventory.push(craftedItem);
     }
 
     // Award profession XP for crafting
@@ -430,11 +429,10 @@ router.post('/:userId/craft', async (req, res) => {
       leveledUp = true;
     }
 
-    console.log(`💾 Saving to Firestore...`);
-    console.log(`📝 Hero inventory before save:`, hero.inventory.length, 'items');
-    console.log(`⭐ Profession XP gained: +${xpGain} (${profession.xp}/${profession.maxXp})${leveledUp ? ' 🎉 LEVEL UP!' : ''}`);
-    console.log(`🔍 Crafted item being added:`, JSON.stringify(craftedItem));
-    console.log(`📋 Full inventory array:`, JSON.stringify(hero.inventory, null, 2));
+    // Reduced logging - only log important info
+    if (leveledUp) {
+      console.log(`⭐ Profession level up! ${profession.type} now level ${profession.level}`);
+    }
     
     // Update profession (materials, XP, level) and hero inventory
     try {
@@ -443,10 +441,7 @@ router.post('/:userId/craft', async (req, res) => {
         inventory: hero.inventory
         // Removed updatedAt to reduce writes
       };
-      console.log(`📤 Sending update to Firestore...`);
-      
       await heroRef.update(updateData);
-      console.log(`✅ Update complete`);
     } catch (updateError) {
       console.error(`❌ Firestore update error:`, updateError);
       throw updateError;
@@ -458,7 +453,7 @@ router.post('/:userId/craft', async (req, res) => {
       const twitchUserId = hero.twitchUserId || hero.twitchId || userId;
       
       // Call quest update endpoint to track crafting
-      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update`, {
+      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -488,26 +483,15 @@ router.post('/:userId/craft', async (req, res) => {
       console.log(`⚠️ Quest tracking error (non-critical):`, questError.message);
     }
 
-    // Verify it saved
-    console.log(`🔍 Fetching document to verify...`);
-    const verifyDoc = await heroRef.get();
-    const verifyData = verifyDoc.data();
-    console.log(`📦 Inventory after save: ${verifyData.inventory?.length || 0} total items`);
-    console.log(`🔍 Full verified inventory:`, JSON.stringify(verifyData.inventory || [], null, 2));
-    
-    if (verifyData.inventory && verifyData.inventory.length > 0) {
-      const lastItem = verifyData.inventory[verifyData.inventory.length - 1];
-      console.log(`✅ Last item in Firebase:`, JSON.stringify(lastItem));
-    } else {
-      console.error(`❌ WARNING: Inventory is empty or undefined in Firebase!`);
-    }
+    // Verification removed - no need to re-fetch and log entire inventory
     
     res.json({ 
       success: true, 
       message: leveledUp 
         ? `Crafted ${quantity}x ${recipeKey}! 🎉 Profession level up! Now level ${profession.level}!`
         : `Crafted ${quantity}x ${recipeKey}! +${xpGain} XP`,
-      item: craftedItem,
+      items: itemsToAdd.length > 0 ? itemsToAdd : [],
+      itemsCrafted: itemsToAdd.length,
       materials: profession.materials,
       profession: {
         level: profession.level,
@@ -879,6 +863,8 @@ router.post('/:userId/apply', async (req, res) => {
         statBonus = { hp: Math.floor(15 * tierMultiplier) };
       } else if (foundRecipeKey.includes('arcane')) {
         statBonus = { attack: Math.floor(4 * tierMultiplier), defense: Math.floor(2 * tierMultiplier) };
+      } else if (foundRecipeKey.includes('frozen_armor')) {
+        statBonus = { defense: Math.floor(2 * tierMultiplier) };
       }
       upgradeApplied = true;
     }
@@ -900,6 +886,47 @@ router.post('/:userId/apply', async (req, res) => {
       bonus: statBonus
     }];
 
+    // Also create/update enchantedItems entry for combat processing
+    // Map recipe keys to enchantment types for combat engine
+    let enchantmentType = null;
+    let enchantmentBaseValue = 5; // Default
+    
+    if (professionType === 'enchanting') {
+      if (foundRecipeKey.includes('fiery_weapon') || foundRecipeKey.includes('fiery')) {
+        enchantmentType = 'fiery_weapon';
+        enchantmentBaseValue = 5; // Fire DoT damage per tick
+      } else if (foundRecipeKey.includes('vampiric_touch') || foundRecipeKey.includes('vampiric')) {
+        enchantmentType = 'lifesteal_weapon';
+        enchantmentBaseValue = 5; // Lifesteal percentage
+      } else if (foundRecipeKey.includes('frozen_armor') || foundRecipeKey.includes('frozen')) {
+        enchantmentType = 'frozen_armor';
+        enchantmentBaseValue = 5; // Proc chance percentage (5% per tier, stacks up to 50%)
+      } else if (foundRecipeKey.includes('thorns')) {
+        enchantmentType = 'thorns_armor';
+        enchantmentBaseValue = 5; // Proc chance percentage (5% per tier, stacks up to 50%)
+      }
+    }
+    
+    // Initialize enchantedItems if it doesn't exist
+    if (!hero.enchantedItems) {
+      hero.enchantedItems = [];
+    }
+    
+    // Remove old enchantment entry for this item if it exists
+    hero.enchantedItems = hero.enchantedItems.filter(ei => ei.itemId !== equipment.id);
+    
+    // Add new enchantment entry if it's an enchantment (not just a stat upgrade)
+    if (enchantmentType) {
+      hero.enchantedItems.push({
+        itemId: equipment.id,
+        enchantments: [{
+          type: enchantmentType,
+          level: foundItem.tier || 1,
+          baseValue: enchantmentBaseValue
+        }]
+      });
+    }
+
     // Remove item from inventory (consume it)
     // Handle stacked items (quantity > 1)
     if (foundItem.quantity && foundItem.quantity > 1) {
@@ -918,6 +945,7 @@ router.post('/:userId/apply', async (req, res) => {
     await heroRef.update({
       equipment: hero.equipment,
       inventory: hero.inventory,
+      enchantedItems: hero.enchantedItems || [],
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -1065,6 +1093,45 @@ router.post('/:userId/use', async (req, res) => {
     
     await heroRef.update(updates);
     
+    // QUEST TRACKING: Track consumable usage for quests
+    try {
+      // Get user's Twitch ID for quest tracking
+      const twitchUserId = hero.twitchUserId || hero.twitchId || userId;
+      
+      // Only track if it's actually a consumable (potion or buff)
+      if (itemType === 'potion' || itemType === 'buff' || item.itemKey) {
+        // Call quest update endpoint to track consumable usage
+        const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            updates: [{
+              trackingKey: 'use',
+              type: 'daily',
+              increment: 1
+            }, {
+              trackingKey: 'use',
+              type: 'weekly',
+              increment: 1
+            }, {
+              trackingKey: 'use',
+              type: 'monthly',
+              increment: 1
+            }]
+          })
+        });
+        
+        if (!questUpdateResponse.ok) {
+          console.log(`⚠️ Quest tracking failed (non-critical):`, await questUpdateResponse.text());
+        } else {
+          console.log(`✅ Quest tracking updated for consumable usage`);
+        }
+      }
+    } catch (questError) {
+      // Non-critical - don't fail the use if quest tracking fails
+      console.log(`⚠️ Quest tracking error (non-critical):`, questError.message);
+    }
+    
     console.log(`🧪 ${userId} used ${item.name || itemKey} (${inventory.length} items remaining in inventory)`);
     console.log(`🧪 Hero HP: ${hero.hp} → ${updates.hp || hero.hp}, Shield: ${hero.shield || 0} → ${updates.shield || hero.shield || 0}`);
     
@@ -1136,7 +1203,15 @@ router.post('/:userId/equip', async (req, res) => {
       // Check if the current item is already in inventory to prevent duplicates
       const alreadyInInventory = hero.inventory.some(invItem => invItem.id === currentItem.id);
       if (!alreadyInInventory) {
-        hero.inventory.push(currentItem);
+        const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+        const validation = validateSingleItem(hero, currentItem);
+        if (!validation.valid) {
+          // If inventory is full, warn but still allow equipping (old item will be lost)
+          console.warn(`⚠️ Inventory full when equipping ${slot}. Current item will be removed from equipment but cannot be added to inventory.`);
+          // Don't add to inventory, but still proceed with equipping new item
+        } else {
+          hero.inventory.push(currentItem);
+        }
       }
     }
 
@@ -1147,10 +1222,21 @@ router.post('/:userId/equip', async (req, res) => {
       hero.inventory.splice(itemIndex, 1);
     }
 
+    // Clean up enchantedItems for the old item if it was replaced
+    if (currentItem && hero.enchantedItems) {
+      hero.enchantedItems = hero.enchantedItems.filter(ei => ei.itemId !== currentItem.id);
+    }
+    
+    // Initialize enchantedItems if it doesn't exist
+    if (!hero.enchantedItems) {
+      hero.enchantedItems = [];
+    }
+
     // Update equipment and inventory
     await heroRef.update({
       [`equipment.${slot}`]: item,
       inventory: hero.inventory,
+      enchantedItems: hero.enchantedItems,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -1201,13 +1287,32 @@ router.post('/:userId/unequip', async (req, res) => {
     
     // Only add to inventory if it's not already there
     if (!alreadyInInventory) {
-      hero.inventory.push(itemToUnequip);
+      const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+      const validation = validateSingleItem(hero, itemToUnequip);
+      if (!validation.valid) {
+        // If inventory is full, warn but still allow unequipping (item will be lost)
+        console.warn(`⚠️ Inventory full when unequipping ${slot}. Item will be removed from equipment but cannot be added to inventory.`);
+        // Don't add to inventory, but still proceed with unequipping
+      } else {
+        hero.inventory.push(itemToUnequip);
+      }
+    }
+
+    // Clean up enchantedItems for the unequipped item
+    if (hero.enchantedItems) {
+      hero.enchantedItems = hero.enchantedItems.filter(ei => ei.itemId !== itemToUnequip.id);
+    }
+    
+    // Initialize enchantedItems if it doesn't exist
+    if (!hero.enchantedItems) {
+      hero.enchantedItems = [];
     }
 
     // Update hero: set equipment slot to null and update inventory
     await heroRef.update({
       [`equipment.${slot}`]: null,
       inventory: hero.inventory,
+      enchantedItems: hero.enchantedItems,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -1767,6 +1872,11 @@ router.post('/:userId/remove-gem', async (req, res) => {
     };
     
     // Return gem to inventory
+    const { validateSingleItem } = await import('../utils/inventoryValidator.js');
+    const validation = validateSingleItem(hero, gemItem);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
     hero.inventory.push(gemItem);
     
     // Remove gem from socket
