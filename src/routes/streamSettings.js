@@ -6,9 +6,146 @@
 import express from 'express';
 import { db } from '../index.js';
 import admin from 'firebase-admin';
-import { joinChannelAsBot, leaveChannelAsBot } from '../websocket/twitch-events.js';
+import { joinChannelAsBot, leaveChannelAsBot, sendChatMessageAsBot } from '../websocket/twitch-events.js';
 
 const router = express.Router();
+
+/**
+ * Get streamer's Twitch username from their Twitch ID
+ * @param {string} twitchId - Streamer's Twitch user ID
+ * @returns {Promise<string|null>}
+ */
+async function getStreamerUsername(twitchId) {
+  try {
+    // Try to find hero with this twitchId to get username
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', twitchId)
+      .limit(1)
+      .get();
+
+    if (!heroesSnapshot.empty) {
+      const hero = heroesSnapshot.docs[0].data();
+      return hero.twitchUsername || hero.name || null;
+    }
+
+    // Fallback: try user document
+    const userDoc = await db.collection('users').doc(twitchId).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return userData.twitchUsername || userData.username || null;
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[Stream Settings] ❌ Error getting username for ${twitchId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Get default chat update settings
+ */
+function getDefaultSettings() {
+  return {
+    enabled: false, // Default to disabled (opt-in)
+    intervalMinutes: 7,
+    showWaves: true,
+    showXp: true,
+    showLevelUps: true,
+    showGold: false,
+    customMessage: null
+  };
+}
+
+/**
+ * Test chat update (sends a test message to chat)
+ * POST /api/stream/settings/:twitchId/test
+ * Must be before /:twitchId route to avoid route conflicts
+ */
+router.post('/:twitchId/test', async (req, res) => {
+  try {
+    const { twitchId } = req.params;
+
+    // Get streamer's settings
+    const settingsDoc = await db.collection('streamerSettings').doc(twitchId).get();
+    let settings = null;
+    
+    if (settingsDoc.exists) {
+      settings = settingsDoc.data().chatUpdates || getDefaultSettings();
+    } else {
+      // Fallback: try user document
+      const userDoc = await db.collection('users').doc(twitchId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        settings = userData.chatUpdates || getDefaultSettings();
+      } else {
+        settings = getDefaultSettings();
+      }
+    }
+
+    // Get streamer's username
+    const username = await getStreamerUsername(twitchId);
+    if (!username) {
+      return res.status(404).json({
+        success: false,
+        error: 'Could not find username for this Twitch ID'
+      });
+    }
+
+    // Create test message based on settings
+    const testParts = [];
+    
+    if (settings.showWaves) {
+      testParts.push('5 waves completed');
+    }
+    
+    if (settings.showXp) {
+      testParts.push('1,250 XP gained');
+    }
+    
+    if (settings.showLevelUps) {
+      testParts.push('2 heroes leveled up');
+    }
+    
+    if (settings.showGold) {
+      testParts.push('500 gold gained');
+    }
+
+    let testMessage;
+    if (settings.customMessage) {
+      // Use custom template with test data
+      testMessage = settings.customMessage
+        .replace(/{time}/g, '1 minute')
+        .replace(/{waves}/g, '5')
+        .replace(/{xp}/g, '1,250')
+        .replace(/{levelups}/g, '2')
+        .replace(/{gold}/g, '500');
+    } else {
+      // Default format
+      if (testParts.length === 0) {
+        testMessage = '🧪 Test message: No stats enabled to display';
+      } else {
+        testMessage = `🧪 Test message: Last 1 minute: ${testParts.join(', ')}!`;
+      }
+    }
+
+    // Send test message via TNEWBOT
+    await sendChatMessageAsBot(username, testMessage);
+    console.log(`[Stream Settings] ✅ Sent test message to ${username}: ${testMessage}`);
+
+    res.json({
+      success: true,
+      message: `Test message sent to ${username}'s chat`,
+      testMessage: testMessage
+    });
+  } catch (error) {
+    console.error('Error testing chat update:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to send test message'
+    });
+  }
+});
 
 /**
  * Get streamer's chat update settings
@@ -55,7 +192,7 @@ router.get('/:twitchId', async (req, res) => {
  * PUT /api/stream/settings/:twitchId
  * Body: {
  *   enabled: boolean,
- *   intervalMinutes: number (5-10),
+ *   intervalMinutes: number (5-60),
  *   showWaves: boolean,
  *   showXp: boolean,
  *   showLevelUps: boolean,
@@ -76,10 +213,10 @@ router.put('/:twitchId', async (req, res) => {
       customMessage
     } = req.body;
 
-    // Validate interval
-    if (intervalMinutes !== undefined && (intervalMinutes < 5 || intervalMinutes > 10)) {
+    // Validate interval (5 minutes to 1 hour)
+    if (intervalMinutes !== undefined && (intervalMinutes < 5 || intervalMinutes > 60)) {
       return res.status(400).json({ 
-        error: 'intervalMinutes must be between 5 and 10' 
+        error: 'intervalMinutes must be between 5 and 60' 
       });
     }
 
@@ -147,52 +284,5 @@ router.put('/:twitchId', async (req, res) => {
     res.status(500).json({ error: 'Failed to update stream settings' });
   }
 });
-
-/**
- * Get streamer's Twitch username from their Twitch ID
- * @param {string} twitchId - Streamer's Twitch user ID
- * @returns {Promise<string|null>}
- */
-async function getStreamerUsername(twitchId) {
-  try {
-    // Try to find hero with this twitchId to get username
-    const heroesSnapshot = await db.collection('heroes')
-      .where('twitchUserId', '==', twitchId)
-      .limit(1)
-      .get();
-
-    if (!heroesSnapshot.empty) {
-      const hero = heroesSnapshot.docs[0].data();
-      return hero.twitchUsername || hero.name || null;
-    }
-
-    // Fallback: try user document
-    const userDoc = await db.collection('users').doc(twitchId).get();
-    if (userDoc.exists) {
-      const userData = userDoc.data();
-      return userData.twitchUsername || userData.username || null;
-    }
-
-    return null;
-  } catch (error) {
-    console.error(`[Stream Settings] ❌ Error getting username for ${twitchId}:`, error);
-    return null;
-  }
-}
-
-/**
- * Get default chat update settings
- */
-function getDefaultSettings() {
-  return {
-    enabled: false, // Default to disabled (opt-in)
-    intervalMinutes: 7,
-    showWaves: true,
-    showXp: true,
-    showLevelUps: true,
-    showGold: false,
-    customMessage: null
-  };
-}
 
 export default router;

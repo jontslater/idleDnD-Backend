@@ -180,3 +180,5 @@ TWITCH_CHANNELS=tehchno,theneverendingwar
 Once set up, all command responses will automatically appear from TNEWBOT instead of the streamer, making it clear to viewers that these are game responses.
 
 
+
+
