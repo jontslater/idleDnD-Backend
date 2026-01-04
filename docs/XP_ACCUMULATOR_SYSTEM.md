@@ -267,3 +267,4 @@ The accumulator uses the existing `xpDistributionService` for actual XP awarding
 - **Firestore**: Same number of writes, just batched together
 
 
+

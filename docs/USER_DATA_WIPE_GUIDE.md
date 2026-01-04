@@ -139,3 +139,4 @@ If you only want to delete heroes but keep user settings:
 3. They can create new heroes, but will retain their slot unlocks
 
 
+
