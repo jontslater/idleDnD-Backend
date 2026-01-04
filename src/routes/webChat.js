@@ -26,15 +26,16 @@ function checkRateLimit(userId) {
  * Body: {
  *   userId: string,
  *   heroId: string,
- *   channel: 'party' | 'world' | 'whisper',
+ *   channel: 'party' | 'world' | 'whisper' | 'guild',
  *   message: string,
  *   partyId?: string (required for party chat),
+ *   guildId?: string (required for guild chat),
  *   recipientId?: string (required for whisper)
  * }
  */
 router.post('/send', async (req, res) => {
   try {
-    const { userId, heroId, channel, message, partyId, recipientId } = req.body;
+    const { userId, heroId, channel, message, partyId, guildId, recipientId } = req.body;
 
     if (!userId || !heroId || !channel || !message) {
       return res.status(400).json({ error: 'Missing required fields: userId, heroId, channel, message' });
@@ -44,12 +45,16 @@ router.post('/send', async (req, res) => {
     const normalizedUserId = String(userId);
     const normalizedRecipientId = recipientId ? String(recipientId) : null;
 
-    if (channel !== 'party' && channel !== 'world' && channel !== 'whisper') {
-      return res.status(400).json({ error: 'channel must be "party", "world", or "whisper"' });
+    if (channel !== 'party' && channel !== 'world' && channel !== 'whisper' && channel !== 'guild') {
+      return res.status(400).json({ error: 'channel must be "party", "world", "whisper", or "guild"' });
     }
 
     if (channel === 'party' && !partyId) {
       return res.status(400).json({ error: 'partyId required for party chat' });
+    }
+
+    if (channel === 'guild' && !guildId) {
+      return res.status(400).json({ error: 'guildId required for guild chat' });
     }
 
     if (channel === 'whisper' && !normalizedRecipientId) {
@@ -94,6 +99,7 @@ router.post('/send', async (req, res) => {
     // Get hero data
     const heroDoc = await db.collection('heroes').doc(heroId).get();
     if (!heroDoc.exists) {
+      console.error('[WebChat] Hero document not found:', { heroId });
       return res.status(404).json({ error: 'Hero not found' });
     }
 
@@ -101,7 +107,42 @@ router.post('/send', async (req, res) => {
     const username = hero.twitchUsername || hero.username || hero.name || 'Unknown';
     const heroName = hero.name || username;
     const heroRole = hero.role || 'berserker';
+    
+    // Get hero level - ensure it's a number
+    // Check multiple possible field names and ensure we get the actual level
+    let heroLevel = 1;
+    
+    // First check the standard 'level' field
+    if (hero.level !== undefined && hero.level !== null) {
+      heroLevel = typeof hero.level === 'number' ? hero.level : parseInt(hero.level, 10);
+      if (isNaN(heroLevel)) {
+        console.warn('[WebChat] Hero level is not a valid number, defaulting to 1:', { heroId, level: hero.level });
+        heroLevel = 1;
+      }
+    } else {
+      // Level field doesn't exist or is null/undefined
+      console.warn('[WebChat] Hero level field is missing or null:', {
+        heroId,
+        heroName,
+        hasLevelField: 'level' in hero,
+        levelValue: hero.level,
+        allHeroFields: Object.keys(hero).slice(0, 20) // First 20 fields for debugging
+      });
+    }
+    
     const founderPackTier = hero.founderPackTier || null; // Include founder pack tier for badge display
+    
+    // Debug logging for hero level - always log to help diagnose
+    console.log('[WebChat] Hero data for message:', {
+      heroId,
+      heroName,
+      heroLevel,
+      heroLevelRaw: hero.level,
+      heroLevelType: typeof hero.level,
+      hasLevelField: 'level' in hero,
+      levelIsUndefined: hero.level === undefined,
+      levelIsNull: hero.level === null
+    });
 
     // For party chat, verify user is in the party
     if (channel === 'party') {
@@ -152,6 +193,39 @@ router.post('/send', async (req, res) => {
       });
     }
 
+    // For guild chat, verify the HERO is a guild member (guilds are per-hero, not per-user)
+    if (channel === 'guild') {
+      const guildDoc = await db.collection('guilds').doc(guildId).get();
+      if (!guildDoc.exists) {
+        return res.status(404).json({ error: 'Guild not found' });
+      }
+
+      const guild = guildDoc.data();
+      const memberIds = guild.memberIds || [];
+      
+      // Normalize IDs to strings for comparison
+      const heroIdStr = String(heroId);
+      
+      // Check if this specific hero is a member (guilds store hero IDs in memberIds)
+      const isMember = memberIds.some(memberId => {
+        const normalizedMemberId = String(memberId);
+        return normalizedMemberId === heroIdStr;
+      });
+      
+      if (!isMember) {
+        return res.status(403).json({ 
+          error: 'This hero is not a member of this guild'
+        });
+      }
+      
+      console.log('[WebChat] Guild membership verified for hero:', {
+        heroId: heroIdStr,
+        heroName: hero.name,
+        guildId,
+        isMember: true
+      });
+    }
+
     // For whispers, get recipient user ID and hero data
     let recipientHeroName = null;
     let recipientHeroId = null;
@@ -186,9 +260,11 @@ router.post('/send', async (req, res) => {
       heroId,
       heroName,
       heroRole,
+      heroLevel: heroLevel, // Include hero level for display
       message: message.trim(),
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       partyId: channel === 'party' ? partyId : null,
+      guildId: channel === 'guild' ? guildId : null,
       recipientId: null, // Deprecated - use recipientHeroId for whispers
       recipientHeroId: channel === 'whisper' ? recipientHeroId : null, // Store hero ID for hero-to-hero messaging
       recipientHeroName: channel === 'whisper' ? recipientHeroName : null,
@@ -210,21 +286,39 @@ router.post('/send', async (req, res) => {
       
       // Ensure IDs are strings (should already be normalized, but double-check)
       messagePayload.userId = String(messagePayload.userId);
+      messagePayload.heroId = String(messagePayload.heroId);
       if (messagePayload.recipientId) {
         messagePayload.recipientId = String(messagePayload.recipientId);
+      }
+      if (messagePayload.recipientHeroId) {
+        messagePayload.recipientHeroId = String(messagePayload.recipientHeroId);
       }
       
       console.log('[WebChat] Broadcasting message:', {
         channel,
         messageId,
         userId: messagePayload.userId,
+        heroId: messagePayload.heroId,
         recipientId: messagePayload.recipientId,
+        recipientHeroId: messagePayload.recipientHeroId,
         heroName: messagePayload.heroName,
         message: messagePayload.message?.substring(0, 50)
       });
       
       if (channel === 'party') {
         // Broadcast to party members (via world room for now, filtered on frontend)
+        broadcastToRoom('world', {
+          type: 'chat:message',
+          message: messagePayload
+        });
+      } else if (channel === 'guild') {
+        // Broadcast to guild members (via world room, filtered on frontend)
+        console.log('[WebChat] Broadcasting guild message:', {
+          guildId: messagePayload.guildId,
+          heroId: messagePayload.heroId,
+          heroName: messagePayload.heroName,
+          message: messagePayload.message?.substring(0, 50)
+        });
         broadcastToRoom('world', {
           type: 'chat:message',
           message: messagePayload
@@ -275,25 +369,36 @@ router.post('/send', async (req, res) => {
  * Get chat history
  * GET /api/web-chat/history
  * Query params:
- *   channel: 'party' | 'world' | 'whisper'
+ *   channel: 'party' | 'world' | 'whisper' | 'guild'
  *   partyId?: string (required for party chat)
+ *   guildId?: string (required for guild chat)
  *   recipientId?: string (required for whisper - recipient hero ID)
  *   heroId?: string (required for whisper - current user's hero ID)
  *   limit?: number (default: 50)
  */
 router.get('/history', async (req, res) => {
   try {
-    const { channel, partyId, recipientId, heroId, limit = 50 } = req.query;
+    const { channel, partyId, guildId, recipientId, heroId, limit = 50 } = req.query;
 
-    if (!channel || (channel !== 'party' && channel !== 'world' && channel !== 'whisper')) {
-      return res.status(400).json({ error: 'channel must be "party", "world", or "whisper"' });
+    console.log('[WebChat] History request:', { channel, partyId, guildId, recipientId, heroId, limit });
+
+    if (!channel || (channel !== 'party' && channel !== 'world' && channel !== 'whisper' && channel !== 'guild')) {
+      console.error('[WebChat] Invalid channel:', channel);
+      return res.status(400).json({ error: 'channel must be "party", "world", "whisper", or "guild"' });
     }
 
     if (channel === 'party' && !partyId) {
+      console.error('[WebChat] Missing partyId for party chat');
       return res.status(400).json({ error: 'partyId required for party chat' });
     }
 
+    if (channel === 'guild' && !guildId) {
+      console.error('[WebChat] Missing guildId for guild chat');
+      return res.status(400).json({ error: 'guildId required for guild chat' });
+    }
+
     if (channel === 'whisper' && !heroId) {
+      console.error('[WebChat] Missing heroId for whisper history');
       return res.status(400).json({ error: 'heroId required for whisper history' });
     }
     
@@ -304,6 +409,9 @@ router.get('/history', async (req, res) => {
 
     if (channel === 'party') {
       query = query.where('partyId', '==', partyId);
+    } else if (channel === 'guild') {
+      query = query.where('guildId', '==', guildId);
+      console.log('[WebChat] Building guild chat query:', { channel, guildId });
     } else if (channel === 'whisper') {
       // For whispers, get messages where current user is either sender or recipient
       // We'll need to filter in memory since Firestore doesn't support OR queries easily
@@ -339,6 +447,8 @@ router.get('/history', async (req, res) => {
           
           if (channel === 'party') {
             fallbackQuery = fallbackQuery.where('partyId', '==', partyId);
+          } else if (channel === 'guild') {
+            fallbackQuery = fallbackQuery.where('guildId', '==', guildId);
           }
           
           snapshot = await fallbackQuery
@@ -362,6 +472,11 @@ router.get('/history', async (req, res) => {
           };
         } catch (fallbackError) {
           console.error('[WebChat] Fallback query also failed:', fallbackError);
+          console.error('[WebChat] Fallback error details:', {
+            message: fallbackError.message,
+            code: fallbackError.code,
+            stack: fallbackError.stack
+          });
           
           // Try to extract the index creation URL from the original error
           let indexUrl = null;
@@ -372,15 +487,19 @@ router.get('/history', async (req, res) => {
             }
           }
           
+          // Return a more helpful error message
           return res.status(400).json({ 
             error: 'Firestore index required',
             message: 'A Firestore composite index is needed for this query. Please create it in the Firebase Console.',
             indexUrl: indexUrl,
-            details: queryError.message
+            details: queryError.message,
+            fallbackError: fallbackError.message
           });
         }
       } else {
-        throw queryError; // Re-throw if it's not an index error
+        // Not an index error, log and re-throw
+        console.error('[WebChat] Query error (not index related):', queryError);
+        throw queryError;
       }
     }
 
@@ -391,6 +510,12 @@ router.get('/history', async (req, res) => {
         ...data,
         timestamp: data.timestamp?.toMillis() || Date.now()
       };
+    });
+
+    console.log('[WebChat] History query successful:', { 
+      channel, 
+      guildId: channel === 'guild' ? guildId : undefined,
+      messageCount: messages.length 
     });
 
     // For whispers, filter to show only messages involving the current user's hero
@@ -428,9 +553,40 @@ router.get('/history', async (req, res) => {
   } catch (error) {
     console.error('[WebChat] Error fetching history:', error);
     console.error('[WebChat] Error stack:', error.stack);
+    console.error('[WebChat] Error details:', {
+      message: error.message,
+      code: error.code,
+      name: error.name
+    });
+    
+    // Check if it's a Firestore index error
+    const isIndexError = error.code === 9 || 
+                        error.code === 'FAILED_PRECONDITION' || 
+                        error.message?.includes('index') ||
+                        error.message?.includes('requires an index');
+    
+    if (isIndexError) {
+      // Try to extract the index creation URL
+      let indexUrl = null;
+      if (error.message) {
+        const urlMatch = error.message.match(/https:\/\/[^\s]+/);
+        if (urlMatch) {
+          indexUrl = urlMatch[0];
+        }
+      }
+      
+      return res.status(400).json({ 
+        error: 'Firestore index required',
+        message: 'A Firestore composite index is needed for this query. Please create it in the Firebase Console.',
+        indexUrl: indexUrl,
+        details: error.message
+      });
+    }
+    
     res.status(500).json({ 
       error: 'Failed to fetch chat history',
-      details: error.message 
+      details: error.message,
+      code: error.code
     });
   }
 });

@@ -234,12 +234,14 @@ router.get('/:userId', async (req, res) => {
     
     // Check cache first
     let heroData = heroCache.get(heroId);
+    let doc = null;
     
     if (!heroData) {
       // Cache miss - fetch from Firestore
-      const doc = await db.collection('heroes').doc(heroId).get();
+      doc = await db.collection('heroes').doc(heroId).get();
       
       if (!doc.exists) {
+        console.log(`[Heroes] Hero not found: ${heroId}`);
         return res.status(404).json({ error: 'Hero not found' });
       }
       
@@ -247,6 +249,11 @@ router.get('/:userId', async (req, res) => {
       
       // Cache the hero data
       heroCache.set(heroId, heroData);
+    } else {
+      // Hero found in cache - ensure it has an id field
+      if (!heroData.id) {
+        heroData.id = heroId;
+      }
     }
     
     // Initialize equipment slots if missing (similar to quest progress initialization)
@@ -278,10 +285,13 @@ router.get('/:userId', async (req, res) => {
       console.log(`🔍 First item:`, JSON.stringify(heroData.inventory[0]));
     }
     
-    res.json({ ...heroData, id: doc.id });
+    // Ensure heroData has an id field (use heroId if missing)
+    const responseData = { ...heroData, id: heroData.id || heroId };
+    res.json(responseData);
   } catch (error) {
-    console.error('Error fetching hero:', error);
-    res.status(500).json({ error: 'Failed to fetch hero' });
+    console.error(`[Heroes] Error fetching hero ${req.params.userId}:`, error);
+    console.error('[Heroes] Error stack:', error.stack);
+    res.status(500).json({ error: 'Failed to fetch hero', details: error.message });
   }
 });
 
@@ -2084,18 +2094,43 @@ router.post('/:userId/prestige', async (req, res) => {
 
     const hero = doc.data();
     
+    // Validate hero exists and has required fields
+    if (!hero) {
+      return res.status(404).json({ error: 'Hero data not found' });
+    }
+
+    if (!hero.role) {
+      return res.status(400).json({ error: 'Hero role is missing' });
+    }
+
     // Validate hero is at least level 100 (allows heroes over 100 to prestige)
-    if (hero.level < 100) {
+    if (!hero.level || hero.level < 100) {
       return res.status(400).json({ 
-        error: `Hero must be level 100 or higher to prestige. Current level: ${hero.level}` 
+        error: `Hero must be level 100 or higher to prestige. Current level: ${hero.level || 0}` 
       });
     }
 
     // Import required utilities
-    const { calculateMaxXp, getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-    const { calculatePrestigeBoosts } = await import('../utils/prestigeHelper.js');
-    const { ROLE_CONFIG } = await import('../data/roleConfig.js');
-    const { calculateSkillPoints } = await import('../data/skills.js');
+    let getInitialMaxXp, calculatePrestigeBoosts;
+    try {
+      const levelUpHelper = await import('../utils/levelUpHelper.js');
+      getInitialMaxXp = levelUpHelper.getInitialMaxXp;
+    } catch (importError) {
+      console.error('Error importing levelUpHelper:', importError);
+      return res.status(500).json({ error: 'Failed to load level up helper', details: importError.message });
+    }
+
+    try {
+      const prestigeHelper = await import('../utils/prestigeHelper.js');
+      calculatePrestigeBoosts = prestigeHelper.calculatePrestigeBoosts;
+    } catch (importError) {
+      console.error('Error importing prestigeHelper:', importError);
+      return res.status(500).json({ error: 'Failed to load prestige helper', details: importError.message });
+    }
+
+    // Use ROLE_CONFIG from top-level import instead of dynamic import
+    // const { ROLE_CONFIG } = await import('../data/roleConfig.js');
+    // ROLE_CONFIG is already imported at the top of the file
 
     // Get current prestige level (default to 0)
     const currentPrestigeLevel = hero.prestigeLevel || 0;
@@ -2107,13 +2142,13 @@ router.post('/:userId/prestige', async (req, res) => {
     // Get role config for base stats
     const roleConfig = ROLE_CONFIG[hero.role];
     if (!roleConfig) {
-      return res.status(400).json({ error: 'Invalid hero role' });
+      return res.status(400).json({ error: `Invalid hero role: ${hero.role}` });
     }
 
     // Calculate base stats for level 1
-    const baseHp = roleConfig.baseHp;
-    const baseAttack = roleConfig.baseAttack;
-    const baseDefense = roleConfig.baseDefense;
+    const baseHp = roleConfig.baseHp || 100;
+    const baseAttack = roleConfig.baseAttack || 10;
+    const baseDefense = roleConfig.baseDefense || 5;
 
     // Update hero data
     const updateData = {
@@ -2153,21 +2188,21 @@ router.post('/:userId/prestige', async (req, res) => {
 
     // CRITICAL: Verify prestige update succeeded
     if (updatedHero.level !== 1) {
-      console.error(`❌ [Prestige Error] Hero ${hero.name} (${userId}) prestige failed! Level is ${updatedHero.level} but should be 1. Attempting to fix...`);
+      console.error(`❌ [Prestige Error] Hero ${hero.name || userId} (${userId}) prestige failed! Level is ${updatedHero.level} but should be 1. Attempting to fix...`);
       // Force fix the level
       await heroRef.update({
         level: 1,
         xp: 0,
         maxXp: getInitialMaxXp(1)
       });
-      console.log(`✅ [Prestige Fix] Corrected level to 1 for hero ${hero.name}`);
+      console.log(`✅ [Prestige Fix] Corrected level to 1 for hero ${hero.name || userId}`);
     }
 
     if (updatedHero.prestigeLevel !== newPrestigeLevel) {
-      console.error(`❌ [Prestige Error] Hero ${hero.name} (${userId}) prestige level mismatch! Expected ${newPrestigeLevel}, got ${updatedHero.prestigeLevel}`);
+      console.error(`❌ [Prestige Error] Hero ${hero.name || userId} (${userId}) prestige level mismatch! Expected ${newPrestigeLevel}, got ${updatedHero.prestigeLevel}`);
     }
 
-    console.log(`⭐ Hero ${hero.name} (${userId}) prestiged! New prestige level: ${newPrestigeLevel}, Level: ${updatedHero.level}`);
+    console.log(`⭐ Hero ${hero.name || userId} (${userId}) prestiged! New prestige level: ${newPrestigeLevel}, Level: ${updatedHero.level}`);
 
     res.json({
       success: true,
@@ -2179,7 +2214,17 @@ router.post('/:userId/prestige', async (req, res) => {
     });
   } catch (error) {
     console.error('Error prestiging hero:', error);
-    res.status(500).json({ error: 'Failed to prestige hero' });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code
+    });
+    res.status(500).json({ 
+      error: 'Failed to prestige hero',
+      details: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+    });
   }
 });
 

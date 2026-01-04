@@ -137,3 +137,6 @@ If you only want to delete heroes but keep user settings:
 1. Delete only from `heroes` collection
 2. Keep the `users` document (so they keep their unlocked slots)
 3. They can create new heroes, but will retain their slot unlocks
+
+
+
