@@ -900,10 +900,56 @@ export async function leaveChannelAsBot(channel) {
  * @param {string} message - Message to send
  * @returns {Promise<void>}
  */
+/**
+ * Check if TNEWBOT client is available and connected
+ * @returns {boolean}
+ */
+function isBotClientConnected() {
+  return twitchClient !== null && twitchClient.readyState() === 'OPEN';
+}
+
+/**
+ * Get connection status message for debugging
+ */
+export function getBotConnectionStatus() {
+  if (!twitchClient) {
+    return 'Bot client not initialized (check TNEWBOT_USERNAME and TNEWBOT_OAUTH_TOKEN environment variables)';
+  }
+  const state = twitchClient.readyState();
+  const states = {
+    'CONNECTING': 'Connecting...',
+    'OPEN': 'Connected',
+    'CLOSING': 'Closing...',
+    'CLOSED': 'Disconnected'
+  };
+  return `Bot client state: ${states[state] || state}`;
+}
+
 export async function sendChatMessageAsBot(channel, message) {
   // Normalize channel name (add # if missing, lowercase)
   const normalizedChannel = channel.startsWith('#') ? channel.toLowerCase() : `#${channel.toLowerCase()}`;
   const channelName = normalizedChannel.replace('#', '');
+  
+  // PRIORITY 1: Try to use streamer's own client first (if they're logged in via OAuth)
+  // This is the preferred method since streamers are already connected
+  const streamerClient = streamerClients.get(channelName);
+  if (streamerClient && streamerClient.readyState() === 'OPEN') {
+    try {
+      await streamerClient.say(normalizedChannel, message);
+      console.log(`[TNEWBOT] ✅ Sent message via streamer client to ${normalizedChannel}: ${message}`);
+      return;
+    } catch (error) {
+      console.error(`[TNEWBOT] ❌ Failed to send message via streamer client:`, error);
+      // Fall through to try bot client
+    }
+  }
+  
+  // PRIORITY 2: Try to use TNEWBOT client (fallback bot)
+  // Check if bot client is connected first
+  if (!isBotClientConnected()) {
+    console.warn(`[TNEWBOT] ⚠️ Bot client not connected. ${getBotConnectionStatus()}`);
+    console.warn(`[TNEWBOT] 💡 Streamer client for ${channelName} is also not available. Streamer may need to log in via OAuth.`);
+  }
   
   // Ensure bot is in the channel before sending
   const joined = await joinChannelAsBot(channelName);
@@ -911,8 +957,7 @@ export async function sendChatMessageAsBot(channel, message) {
     console.warn(`[TNEWBOT] ⚠️ Could not join ${normalizedChannel}, attempting to send anyway...`);
   }
   
-  // Try to use TNEWBOT client (fallback bot)
-  if (twitchClient && twitchClient.readyState() === 'OPEN') {
+  if (isBotClientConnected()) {
     try {
       await twitchClient.say(normalizedChannel, message);
       console.log(`[TNEWBOT] ✅ Sent message to ${normalizedChannel}: ${message}`);
@@ -936,19 +981,19 @@ export async function sendChatMessageAsBot(channel, message) {
     }
   }
   
-  // If TNEWBOT client not available, try to use streamer's client as fallback
-  // (This shouldn't happen in normal operation, but provides a fallback)
-  const streamerClient = streamerClients.get(channelName);
-  if (streamerClient && streamerClient.readyState() === 'OPEN') {
-    try {
-      await streamerClient.say(normalizedChannel, message);
-      console.log(`[TNEWBOT] ✅ Sent message via streamer client to ${normalizedChannel}: ${message}`);
-      return;
-    } catch (error) {
-      console.error(`[TNEWBOT] ❌ Failed to send message via streamer client:`, error);
-    }
+  // Final error - no clients available
+  const errorMsg = `No available Twitch client to send message to ${normalizedChannel}. `;
+  const suggestions = [];
+  
+  if (!isBotClientConnected()) {
+    suggestions.push('TNEWBOT client is not connected. Check that TNEWBOT_USERNAME and TNEWBOT_OAUTH_TOKEN environment variables are set.');
   }
   
-  console.error(`[TNEWBOT] ❌ No available client to send message to ${normalizedChannel}`);
-  throw new Error(`No available Twitch client to send message to ${normalizedChannel}`);
+  const streamerClientCheck = streamerClients.get(channelName);
+  if (!streamerClientCheck || streamerClientCheck.readyState() !== 'OPEN') {
+    suggestions.push(`Streamer client for ${channelName} is not connected. The streamer may need to log in via OAuth.`);
+  }
+  
+  console.error(`[TNEWBOT] ❌ ${errorMsg}${suggestions.join(' ')}`);
+  throw new Error(`${errorMsg}${suggestions.join(' ')}`);
 }

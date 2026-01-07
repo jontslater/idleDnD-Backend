@@ -53,7 +53,8 @@ function getDefaultSettings() {
     showXp: true,
     showLevelUps: true,
     showGold: false,
-    customMessage: null
+    customMessage: null,
+    sendWhenOffline: false // Default to only sending when live
   };
 }
 
@@ -210,7 +211,8 @@ router.put('/:twitchId', async (req, res) => {
       showXp,
       showLevelUps,
       showGold,
-      customMessage
+      customMessage,
+      sendWhenOffline
     } = req.body;
 
     // Validate interval (5 minutes to 1 hour)
@@ -228,7 +230,8 @@ router.put('/:twitchId', async (req, res) => {
       showXp: showXp !== undefined ? showXp : true,
       showLevelUps: showLevelUps !== undefined ? showLevelUps : true,
       showGold: showGold !== undefined ? showGold : false,
-      customMessage: customMessage || null
+      customMessage: customMessage || null,
+      sendWhenOffline: sendWhenOffline !== undefined ? sendWhenOffline : false
     };
 
     // Get previous settings to check if enabled state changed

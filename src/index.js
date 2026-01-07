@@ -209,9 +209,9 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
 });
 
 // Then apply JSON body parser for all other routes
-// Increased limit to 512KB to handle large batch quest updates
-app.use(bodyParser.json({ limit: '512kb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '512kb' }));
+// Increased limit to 2MB to handle large batch quest updates and other large payloads
+app.use(bodyParser.json({ limit: '2mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '2mb' }));
 
 // Request logging
 app.use((req, res, next) => {
@@ -553,20 +553,22 @@ Press Ctrl+C to stop
     initializeTwitchEventHandlers();
   }
 
-  // Initialize periodic chat updates service (DISABLED to reduce Firestore quota usage)
-  // Re-enable when quota issues are resolved or after upgrading Firestore plan
-  if (process.env.ENABLE_PERIODIC_UPDATES === 'true') {
+  // Initialize periodic chat updates service
+  // Can be disabled by setting ENABLE_PERIODIC_UPDATES=false
+  const periodicUpdatesEnabled = process.env.ENABLE_PERIODIC_UPDATES !== 'false';
+  if (periodicUpdatesEnabled) {
     try {
       const { initializePeriodicChatUpdates } = await import('./services/periodicChatUpdates.js');
       const updateInterval = process.env.CHAT_UPDATE_INTERVAL_MINUTES 
         ? parseInt(process.env.CHAT_UPDATE_INTERVAL_MINUTES, 10) 
-        : 30; // Increased to 30 minutes to reduce Firestore quota usage
+        : 7; // Default to 7 minutes (matches default in streamSettings)
       initializePeriodicChatUpdates(updateInterval);
+      console.log(`[Periodic Updates] ✅ Service initialized with ${updateInterval} minute interval`);
     } catch (error) {
       console.error('❌ Failed to initialize periodic chat updates:', error);
     }
   } else {
-    console.log('[Periodic Updates] ⏸️ Disabled to reduce Firestore quota usage. Set ENABLE_PERIODIC_UPDATES=true to enable.');
+    console.log('[Periodic Updates] ⏸️ Disabled via ENABLE_PERIODIC_UPDATES=false');
   }
   
   // Initialize XP accumulator service (reduces API calls for enemy kills)
