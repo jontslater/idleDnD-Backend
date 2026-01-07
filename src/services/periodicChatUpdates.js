@@ -4,6 +4,7 @@
  */
 
 import { db } from '../index.js';
+import admin from 'firebase-admin';
 import { sendChatMessageAsBot } from '../websocket/twitch-events.js';
 import { getStats, resetStats } from './streamStatsService.js';
 import fetch from 'node-fetch';
@@ -159,8 +160,31 @@ function formatUpdateMessage(stats, settings) {
   
   // Calculate time period
   const periodStart = stats.periodStart?.toMillis?.() || new Date(stats.periodStart).getTime();
-  const minutes = Math.floor((Date.now() - periodStart) / 60000);
-  const timeStr = minutes === 1 ? '1 minute' : `${minutes} minutes`;
+  let minutes = Math.floor((Date.now() - periodStart) / 60000);
+  
+  // Cap the time at the configured interval (to avoid showing "Last 30264 minutes" if stats accumulated for days)
+  const maxMinutes = settings.intervalMinutes || 7;
+  if (minutes > maxMinutes) {
+    minutes = maxMinutes;
+  }
+  
+  // Format time string
+  let timeStr;
+  if (minutes === 1) {
+    timeStr = '1 minute';
+  } else if (minutes < 60) {
+    timeStr = `${minutes} minutes`;
+  } else if (minutes === 60) {
+    timeStr = '1 hour';
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+      timeStr = hours === 1 ? '1 hour' : `${hours} hours`;
+    } else {
+      timeStr = `${hours} hour${hours !== 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+    }
+  }
 
   // Build message parts based on enabled stats
   if (settings.showWaves && stats.wavesCompleted > 0) {
@@ -258,28 +282,64 @@ async function getStreamerUsername(twitchId) {
  */
 async function sendChatUpdateForStreamer(twitchId) {
   try {
-    // Check if streamer is live
-    const isLive = await checkStreamStatus(twitchId);
-    if (!isLive) {
-      console.log(`[Periodic Updates] ⏭️ Streamer ${twitchId} is offline, skipping`);
-      return;
-    }
-
-    // Get streamer's settings
+    // Get streamer's settings first (needed to check sendWhenOffline)
     const settings = await getStreamerSettings(twitchId);
     if (!settings || !settings.enabled) {
+      console.log(`[Periodic Updates] ⏭️ Streamer ${twitchId} has chat updates disabled in settings`);
       return; // Chat updates disabled for this streamer
+    }
+
+    // Check if streamer is live (unless sendWhenOffline is enabled)
+    if (!settings.sendWhenOffline) {
+      const isLive = await checkStreamStatus(twitchId);
+      if (!isLive) {
+        console.log(`[Periodic Updates] ⏭️ Streamer ${twitchId} is offline and sendWhenOffline is disabled, skipping`);
+        return;
+      }
+    } else {
+      // Log that we're sending even though offline (for testing)
+      const isLive = await checkStreamStatus(twitchId);
+      if (!isLive) {
+        console.log(`[Periodic Updates] 📤 Streamer ${twitchId} is offline but sendWhenOffline is enabled, sending update anyway`);
+      }
     }
 
     // Get current stats
     const stats = await getStats(twitchId);
     if (!stats) {
+      console.log(`[Periodic Updates] ⏭️ Streamer ${twitchId} has no stats to report`);
       return; // No stats to report
     }
 
-    // Format message
+    // If periodStart is very old (more than 2x the interval), reset it to now
+    // This handles cases where stats accumulated for days before updates were enabled
+    if (stats.periodStart) {
+      const periodStart = stats.periodStart?.toMillis?.() || new Date(stats.periodStart).getTime();
+      const minutesSinceStart = Math.floor((Date.now() - periodStart) / 60000);
+      const maxAge = (settings.intervalMinutes || 7) * 2;
+      
+      if (minutesSinceStart > maxAge) {
+        console.log(`[Periodic Updates] ⚠️ Stats period is ${minutesSinceStart} minutes old (max: ${maxAge}), resetting periodStart to now`);
+        // Update periodStart to now while keeping accumulated stats
+        const statsRef = db.collection('streamStats').doc(twitchId);
+        await statsRef.set({
+          periodStart: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        // Re-fetch stats to get the updated periodStart
+        const updatedStats = await getStats(twitchId);
+        if (updatedStats && updatedStats.periodStart) {
+          stats.periodStart = updatedStats.periodStart;
+        } else {
+          // Fallback: use current time
+          stats.periodStart = { toMillis: () => Date.now() };
+        }
+      }
+    }
+
+    // Format message (will cap time display to interval)
     const message = formatUpdateMessage(stats, settings);
     if (!message) {
+      console.log(`[Periodic Updates] ⏭️ Streamer ${twitchId} has no message to send (no enabled stats with values)`);
       return; // No message to send
     }
 
@@ -291,11 +351,21 @@ async function sendChatUpdateForStreamer(twitchId) {
     }
 
     // Send message via TNEWBOT
-    await sendChatMessageAsBot(username, message);
-    console.log(`[Periodic Updates] ✅ Sent update to ${username}: ${message}`);
+    try {
+      await sendChatMessageAsBot(username, message);
+      console.log(`[Periodic Updates] ✅ Sent update to ${username}: ${message}`);
 
-    // Reset stats for next period
-    await resetStats(twitchId);
+      // Reset stats for next period
+      await resetStats(twitchId);
+    } catch (error) {
+      // Check if it's a connection error
+      if (error.message && error.message.includes('No available Twitch client')) {
+        console.error(`[Periodic Updates] ❌ Cannot send update to ${username} (${twitchId}): Bot client not connected.`);
+        console.error(`[Periodic Updates] 💡 To fix: Ensure TNEWBOT_USERNAME and TNEWBOT_OAUTH_TOKEN are set, or the streamer needs to log in via OAuth.`);
+      } else {
+        throw error; // Re-throw other errors
+      }
+    }
   } catch (error) {
     console.error(`[Periodic Updates] ❌ Error sending update for ${twitchId}:`, error);
   }
@@ -361,7 +431,8 @@ async function runPeriodicUpdates() {
       return;
     }
 
-    console.log(`[Periodic Updates] 📊 Processing ${streamerIds.size} streamer(s)...`);
+    console.log(`[Periodic Updates] 📊 Found ${streamerIds.size} streamer(s) with chat updates enabled: ${Array.from(streamerIds).join(', ')}`);
+    console.log(`[Periodic Updates] 🔄 Processing updates...`);
 
     // Process each streamer
     const promises = Array.from(streamerIds).map(twitchId => 
@@ -423,5 +494,3 @@ export function stopPeriodicChatUpdates() {
     console.log('[Periodic Updates] 🛑 Service stopped');
   }
 }
-
-
