@@ -3,6 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { calculateTotalItemScore } from '../utils/itemScore.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Helper function to update queue role counters
@@ -52,7 +54,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get queue status (must be before /queue route)
-router.get('/queue/status', async (req, res) => {
+router.get('/queue/status', requireAuth, async (req, res) => {
   try {
     const { userId } = req.query;
     
@@ -89,7 +91,7 @@ router.get('/queue/status', async (req, res) => {
 });
 
 // Join queue
-router.post('/queue', async (req, res) => {
+router.post('/queue', requireAuth, async (req, res) => {
   try {
     const { userId, heroId, role, itemScore, dungeonType = 'normal' } = req.body;
     
@@ -139,7 +141,7 @@ router.post('/queue', async (req, res) => {
 });
 
 // Leave queue
-router.delete('/queue', async (req, res) => {
+router.delete('/queue', requireAuth, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -172,7 +174,7 @@ router.delete('/queue', async (req, res) => {
 });
 
 // Accept group invite
-router.post('/group/accept', async (req, res) => {
+router.post('/group/accept', requireAuth, async (req, res) => {
   try {
     const { userId, groupId } = req.body;
     
@@ -413,7 +415,7 @@ function estimateWaitTime(roleCounts, userRole) {
 // ==================== DUNGEON INSTANCE ENDPOINTS ====================
 
 // Start a new dungeon instance
-router.post('/:dungeonId/start', async (req, res) => {
+router.post('/:dungeonId/start', requireAuth, async (req, res) => {
   try {
     const { dungeonId } = req.params;
     const { participants, organizerId } = req.body; // Array of userId strings
@@ -530,7 +532,7 @@ router.get('/instance/:instanceId', async (req, res) => {
 });
 
 // Update dungeon progress (room completed)
-router.post('/instance/:instanceId/progress', async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { room, participants, combatLogEntries } = req.body;
@@ -588,7 +590,7 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
 });
 
 // Complete dungeon and distribute loot
-router.post('/instance/:instanceId/complete', async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, participants, finalCombatLog, combatLog } = req.body;
@@ -613,7 +615,32 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     const { getDungeonById } = await import('../data/dungeons.js');
     const dungeonData = getDungeonById(instance.dungeonId);
     
-    if (!success) {
+    // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
+    // Verify dungeon was actually completed (all rooms cleared, at least one survivor)
+    let serverValidatedSuccess = success;
+    
+    if (success) {
+      // Validate success criteria:
+      // 1. All rooms must be completed (currentRoom >= maxRooms)
+      // 2. At least one participant must be alive
+      const currentRoom = instance.currentRoom || 0;
+      const maxRooms = instance.maxRooms || dungeonData.rooms?.length || 0;
+      const aliveParticipants = participantsData.filter(p => p.isAlive);
+      
+      if (currentRoom < maxRooms) {
+        console.warn(`[Dungeon Complete] Not all rooms cleared (${currentRoom}/${maxRooms}), marking as failed`);
+        serverValidatedSuccess = false;
+      }
+      
+      if (aliveParticipants.length === 0) {
+        console.warn(`[Dungeon Complete] No survivors, marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      console.log(`[Dungeon Complete] Server validation: clientSuccess=${success}, serverValidated=${serverValidatedSuccess}, rooms=${currentRoom}/${maxRooms}, aliveCount=${aliveParticipants.length}`);
+    }
+    
+    if (!serverValidatedSuccess) {
       // Dungeon failed
       // Maintain participantIds using twitchUserId if available, fallback to userId
       const updatedParticipantIds = participantsData.map(p => p.twitchUserId || p.userId).filter(Boolean);
@@ -790,7 +817,7 @@ router.get('/:dungeonId', async (req, res) => {
 });
 
 // Get available dungeons for a user
-router.get('/available/:userId', async (req, res) => {
+router.get('/available/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     

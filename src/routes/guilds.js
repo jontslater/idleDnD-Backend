@@ -1,6 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ router.get('/:guildId', async (req, res) => {
 });
 
 // Get guild for a member (accepts hero ID or user ID - guilds store hero IDs in memberIds)
-router.get('/member/:userId', async (req, res) => {
+router.get('/member/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId; // Can be hero ID or user ID
     
@@ -85,7 +86,7 @@ router.get('/member/:userId', async (req, res) => {
 });
 
 // Create new guild
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     if (!req.body.createdBy) {
       return res.status(400).json({ error: 'createdBy is required' });
@@ -111,7 +112,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update guild
-router.put('/:guildId', async (req, res) => {
+router.put('/:guildId', requireAuth, async (req, res) => {
   try {
     const guildRef = db.collection('guilds').doc(req.params.guildId);
     const doc = await guildRef.get();
@@ -137,7 +138,7 @@ router.put('/:guildId', async (req, res) => {
 
 // Join guild (auto-join if open, or create application if approval required)
 // Uses heroId since guilds are per-hero, not per-user
-router.post('/:guildId/join', async (req, res) => {
+router.post('/:guildId/join', requireAuth, async (req, res) => {
   try {
     const { heroId, heroName, heroRole, heroLevel, message } = req.body;
     const guildRef = db.collection('guilds').doc(req.params.guildId);
@@ -206,7 +207,7 @@ router.post('/:guildId/join', async (req, res) => {
 
 // Apply to join guild (explicit application)
 // Uses heroId since guilds are per-hero, not per-user
-router.post('/:guildId/apply', async (req, res) => {
+router.post('/:guildId/apply', requireAuth, async (req, res) => {
   try {
     const { heroId, heroName, heroRole, heroLevel, message } = req.body;
     const guildRef = db.collection('guilds').doc(req.params.guildId);
@@ -255,7 +256,7 @@ router.post('/:guildId/apply', async (req, res) => {
 
 // Approve application (leader/officer only)
 // Uses heroId since guilds are per-hero
-router.post('/:guildId/approve/:heroId', async (req, res) => {
+router.post('/:guildId/approve/:heroId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { guildId, heroId } = req.params;
     const { approverHeroId } = req.body; // Hero ID of the approver
@@ -309,7 +310,7 @@ router.post('/:guildId/approve/:heroId', async (req, res) => {
 
 // Reject application
 // Uses heroId since guilds are per-hero
-router.post('/:guildId/reject/:heroId', async (req, res) => {
+router.post('/:guildId/reject/:heroId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { guildId, heroId } = req.params;
     const { approverHeroId } = req.body; // Hero ID of the approver
@@ -345,7 +346,7 @@ router.post('/:guildId/reject/:heroId', async (req, res) => {
 
 // Update guild settings
 // Uses heroId since guilds are per-hero
-router.put('/:guildId/settings', async (req, res) => {
+router.put('/:guildId/settings', requireAuth, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { heroId, joinMode } = req.body;
@@ -383,7 +384,7 @@ router.put('/:guildId/settings', async (req, res) => {
 });
 
 // Assign loot to member
-router.post('/:guildId/loot/assign', async (req, res) => {
+router.post('/:guildId/loot/assign', requireAuth, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { userId, itemId, assignedTo } = req.body;
@@ -459,7 +460,7 @@ router.post('/:guildId/loot/assign', async (req, res) => {
 });
 
 // Get unassigned loot
-router.get('/:guildId/loot', async (req, res) => {
+router.get('/:guildId/loot', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     const doc = await db.collection('guilds').doc(guildId).get();
@@ -479,7 +480,7 @@ router.get('/:guildId/loot', async (req, res) => {
 });
 
 // Get loot history
-router.get('/:guildId/loot/history', async (req, res) => {
+router.get('/:guildId/loot/history', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     const doc = await db.collection('guilds').doc(guildId).get();
@@ -500,7 +501,7 @@ router.get('/:guildId/loot/history', async (req, res) => {
 
 // Leave guild
 // Uses heroId since guilds are per-hero
-router.post('/:guildId/leave', async (req, res) => {
+router.post('/:guildId/leave', requireAuth, async (req, res) => {
   try {
     const { heroId } = req.body;
     const guildRef = db.collection('guilds').doc(req.params.guildId);
@@ -522,7 +523,7 @@ router.post('/:guildId/leave', async (req, res) => {
 });
 
 // Get guild members with their heroes
-router.get('/:guildId/members-with-heroes', async (req, res) => {
+router.get('/:guildId/members-with-heroes', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     
@@ -658,7 +659,7 @@ router.get('/:guildId/members-with-heroes', async (req, res) => {
 // Create guild invite
 // POST /api/guilds/:guildId/invite
 // Body: { inviteeHeroId, inviteeHeroName, inviterHeroId, inviterHeroName }
-router.post('/:guildId/invite', async (req, res) => {
+router.post('/:guildId/invite', requireAuth, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { inviteeHeroId, inviteeHeroName, inviterHeroId, inviterHeroName } = req.body;
@@ -771,7 +772,7 @@ router.get('/invite/:inviteId', async (req, res) => {
 // Accept guild invite
 // POST /api/guilds/invite/:inviteId/accept
 // Body: { heroId, heroName, heroRole, heroLevel }
-router.post('/invite/:inviteId/accept', async (req, res) => {
+router.post('/invite/:inviteId/accept', requireAuth, async (req, res) => {
   try {
     const { inviteId } = req.params;
     const { heroId, heroName, heroRole, heroLevel } = req.body;
@@ -853,7 +854,7 @@ router.post('/invite/:inviteId/accept', async (req, res) => {
 
 // Get pending invites for a hero
 // GET /api/guilds/invites/pending/:heroId
-router.get('/invites/pending/:heroId', async (req, res) => {
+router.get('/invites/pending/:heroId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
     
@@ -885,7 +886,7 @@ router.get('/invites/pending/:heroId', async (req, res) => {
 
 // Get all invites for a guild (admin/leader view)
 // GET /api/guilds/:guildId/invites
-router.get('/:guildId/invites', async (req, res) => {
+router.get('/:guildId/invites', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     

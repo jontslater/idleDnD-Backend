@@ -210,23 +210,20 @@ const LEGENDARY_BOSS_LOOT = {
   }
 };
 
-// Rarity distribution for raid loot
-const RAID_RARITY_CHANCES = {
-  normal: {
-    rare: 0.55,
-    epic: 0.35,
-    legendary: 0.10
-  },
-  heroic: {
-    rare: 0.30,
-    epic: 0.50,
-    legendary: 0.20
-  },
-  mythic: {
-    epic: 0.50,
-    legendary: 0.50
-  }
-};
+// Import centralized loot configuration
+import { RAID_RARITY_CHANCES as CENTRALIZED_RAID_RARITY_CHANCES } from './lootConfig.js';
+
+// Rarity distribution for raid loot (imported from lootConfig.js)
+// OLD VALUES (too generous):
+// normal: rare 55%, epic 35%, legendary 10%
+// heroic: rare 30%, epic 50%, legendary 20%
+// mythic: epic 50%, legendary 50%
+//
+// NEW VALUES (properly tuned):
+// normal: rare 70%, epic 28%, legendary 2%
+// heroic: rare 45%, epic 50%, legendary 5%
+// mythic: rare 10%, epic 75%, legendary 15%
+const RAID_RARITY_CHANCES = CENTRALIZED_RAID_RARITY_CHANCES;
 
 // Stat multipliers for rarities (same as regular loot but applied to higher base)
 const RAID_RARITY_MULTIPLIERS = {
@@ -246,8 +243,11 @@ const RAID_RARITY_MULTIPLIERS = {
  */
 function generateRaidLoot(raidId, difficulty, category, slot, bossLevel) {
   // Check if this boss has a legendary item
+  // OLD VALUE: 15% chance (too high)
+  // NEW VALUE: 10% chance for unique legendary (only in mythic)
   const bossLegendary = LEGENDARY_BOSS_LOOT[raidId];
-  if (bossLegendary && Math.random() < 0.15) { // 15% chance for boss legendary
+  const uniqueLegendaryChance = difficulty === 'mythic' ? 0.10 : 0.00;
+  if (bossLegendary && Math.random() < uniqueLegendaryChance) {
     const legendaryItem = Object.entries(bossLegendary)[0];
     return {
       id: Date.now() + Math.random(),
@@ -309,9 +309,12 @@ function generateRaidLoot(raidId, difficulty, category, slot, bossLevel) {
     item.procEffects = generateRaidProcs(category, procCount);
   }
 
-  // Assign set name for raids (60% chance for set piece)
-  // Raids have higher set piece drop rate than regular bosses
-  const shouldBeSetPiece = Math.random() < 0.60;
+  // Assign set name for raids
+  // OLD VALUE: 60% (too high)
+  // NEW VALUES (from lootConfig.js): normal 30%, heroic 45%, mythic 60%
+  import { SET_PIECE_RATES } from './lootConfig.js';
+  const setPieceRate = SET_PIECE_RATES.raid[difficulty] || 0.30;
+  const shouldBeSetPiece = Math.random() < setPieceRate;
   
   if (shouldBeSetPiece && rarity !== 'common') {
     const setName = assignSetName(category, slot);
@@ -439,3 +442,5 @@ export {
   generateRaidProcs,
   calculateRaidItemScore
 };
+
+export { RAID_LOOT, generateRaidLoot, generateRaidProcs, calculateRaidItemScore };

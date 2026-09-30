@@ -2,6 +2,8 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 /**
@@ -94,7 +96,7 @@ function calculateCraftingXP(professionType, recipeKey, tier, quantity) {
  * Choose a profession
  * POST /api/heroes/:userId/profession
  */
-router.post('/:userId/profession', async (req, res) => {
+router.post('/:userId/profession', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { type } = req.body;
     const { userId } = req.params;
@@ -172,7 +174,7 @@ router.post('/:userId/profession', async (req, res) => {
  * Craft an item
  * POST /api/professions/:userId/craft
  */
-router.post('/:userId/craft', async (req, res) => {
+router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { recipeKey } = req.body;
     const { userId } = req.params;
@@ -474,32 +476,23 @@ router.post('/:userId/craft', async (req, res) => {
       // Get user's Twitch ID for quest tracking
       const twitchUserId = hero.twitchUserId || hero.twitchId || userId;
       
-      // Call quest update endpoint to track crafting
-      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          updates: [{
-            trackingKey: 'craft',
-            type: 'daily',
-            increment: quantity
-          }, {
-            trackingKey: 'craft',
-            type: 'weekly',
-            increment: quantity
-          }, {
-            trackingKey: 'craft',
-            type: 'monthly',
-            increment: quantity
-          }]
-        })
-      });
+      // Track crafting for quest progress (direct service call)
+      const { batchUpdateQuestProgress } = await import('../services/questUpdateService.js');
+      await batchUpdateQuestProgress(twitchUserId, [{
+        trackingKey: 'craft',
+        type: 'daily',
+        increment: quantity
+      }, {
+        trackingKey: 'craft',
+        type: 'weekly',
+        increment: quantity
+      }, {
+        trackingKey: 'craft',
+        type: 'monthly',
+        increment: quantity
+      }]);
       
-      if (!questUpdateResponse.ok) {
-        console.log(`⚠️ Quest tracking failed (non-critical):`, await questUpdateResponse.text());
-      } else {
-        console.log(`✅ Quest tracking updated for crafting`);
-      }
+      console.log(`✅ Quest tracking updated for crafting`);
     } catch (questError) {
       // Non-critical - don't fail the craft if quest tracking fails
       console.log(`⚠️ Quest tracking error (non-critical):`, questError.message);
@@ -538,8 +531,10 @@ router.post('/:userId/craft', async (req, res) => {
 /**
  * Gather materials (ore, herbs, gems)
  * POST /api/professions/:userId/gather
+ * SERVER-SIDE CALCULATION (FE #3 requirement 4): All gathering amounts calculated server-side
+ * Client cannot manipulate drop rates or quantities - all RNG happens here
  */
-router.post('/:userId/gather', async (req, res) => {
+router.post('/:userId/gather', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -749,7 +744,7 @@ router.post('/:userId/gather', async (req, res) => {
  * Apply upgrade/enchantment to gear
  * POST /api/professions/:userId/apply
  */
-router.post('/:userId/apply', async (req, res) => {
+router.post('/:userId/apply', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemId, equipmentSlot } = req.body;
     const { userId } = req.params;
@@ -994,7 +989,7 @@ router.post('/:userId/apply', async (req, res) => {
  * Use a consumable
  * POST /api/professions/:userId/use
  */
-router.post('/:userId/use', async (req, res) => {
+router.post('/:userId/use', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemKey, itemId } = req.body;
     const { userId } = req.params;
@@ -1127,32 +1122,23 @@ router.post('/:userId/use', async (req, res) => {
       
       // Only track if it's actually a consumable (potion or buff)
       if (itemType === 'potion' || itemType === 'buff' || item.itemKey) {
-        // Call quest update endpoint to track consumable usage
-        const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            updates: [{
-              trackingKey: 'use',
-              type: 'daily',
-              increment: 1
-            }, {
-              trackingKey: 'use',
-              type: 'weekly',
-              increment: 1
-            }, {
-              trackingKey: 'use',
-              type: 'monthly',
-              increment: 1
-            }]
-          })
-        });
+        // Track consumable usage for quest progress (direct service call)
+        const { batchUpdateQuestProgress } = await import('../services/questUpdateService.js');
+        await batchUpdateQuestProgress(twitchUserId, [{
+          trackingKey: 'use',
+          type: 'daily',
+          increment: 1
+        }, {
+          trackingKey: 'use',
+          type: 'weekly',
+          increment: 1
+        }, {
+          trackingKey: 'use',
+          type: 'monthly',
+          increment: 1
+        }]);
         
-        if (!questUpdateResponse.ok) {
-          console.log(`⚠️ Quest tracking failed (non-critical):`, await questUpdateResponse.text());
-        } else {
-          console.log(`✅ Quest tracking updated for consumable usage`);
-        }
+        console.log(`✅ Quest tracking updated for consumable usage`);
       }
     } catch (questError) {
       // Non-critical - don't fail the use if quest tracking fails
@@ -1180,7 +1166,7 @@ router.post('/:userId/use', async (req, res) => {
  * Equip an item
  * POST /api/heroes/:userId/equip
  */
-router.post('/:userId/equip', async (req, res) => {
+router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { slot, item } = req.body;
     const { userId } = req.params;
@@ -1309,7 +1295,7 @@ router.post('/:userId/equip', async (req, res) => {
  * Unequip an item
  * POST /api/heroes/:userId/unequip
  */
-router.post('/:userId/unequip', async (req, res) => {
+router.post('/:userId/unequip', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { slot } = req.body;
     const { userId } = req.params;
@@ -1558,7 +1544,7 @@ function calculateSocketBonuses(sockets) {
  * Apply socket item to gear
  * POST /api/professions/:userId/apply-socket
  */
-router.post('/:userId/apply-socket', async (req, res) => {
+router.post('/:userId/apply-socket', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketItemId, slot } = req.body;
     const { userId } = req.params;
@@ -1696,7 +1682,7 @@ router.post('/:userId/apply-socket', async (req, res) => {
  * Insert gem into socket
  * POST /api/professions/:userId/gem
  */
-router.post('/:userId/gem', async (req, res) => {
+router.post('/:userId/gem', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketId, gemId } = req.body;
     const { userId } = req.params;
@@ -1842,7 +1828,7 @@ router.post('/:userId/gem', async (req, res) => {
  * Remove gem from socket
  * POST /api/professions/:userId/remove-gem
  */
-router.post('/:userId/remove-gem', async (req, res) => {
+router.post('/:userId/remove-gem', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketId } = req.body;
     const { userId } = req.params;

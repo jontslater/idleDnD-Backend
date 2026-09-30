@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import Stripe from 'stripe';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -36,7 +37,7 @@ const TIER_LEVELS = {
  * Initiate a founders pack purchase
  * POST /api/purchases/founders-pack
  */
-router.post('/founders-pack', async (req, res) => {
+router.post('/founders-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packTier } = req.body;
 
@@ -98,8 +99,20 @@ router.post('/founders-pack', async (req, res) => {
 /**
  * Complete a founders pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
+ * This endpoint remains for backward compatibility but should be removed in production.
  */
-router.post('/complete', async (req, res) => {
+router.post('/complete', requireAuth, async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
+  
+  // Original implementation commented out - webhook handles everything
+  /*
   try {
     const { purchaseId } = req.body;
 
@@ -117,6 +130,7 @@ router.post('/complete', async (req, res) => {
       return res.status(404).json({ error: 'Purchase not found' });
     }
 
+    return; // Early return - never execute
     const purchase = purchaseDoc.data();
 
     if (purchase.status === 'completed') {
@@ -196,7 +210,7 @@ router.post('/complete', async (req, res) => {
  * Get purchase status
  * GET /api/purchases/status/:purchaseId
  */
-router.get('/status/:purchaseId', async (req, res) => {
+router.get('/status/:purchaseId', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 
@@ -559,7 +573,7 @@ router.get('/founders', async (req, res) => {
  * Set founder status for a user (admin/manual grant)
  * POST /api/purchases/set-founder
  */
-router.post('/set-founder', async (req, res) => {
+router.post('/set-founder', requireAdmin, async (req, res) => {
   try {
     const { userId, username, tier } = req.body;
 
@@ -734,7 +748,7 @@ router.post('/set-founder', async (req, res) => {
  * Remove founder pack status from a user (admin only)
  * POST /api/purchases/remove-founder
  */
-router.post('/remove-founder', async (req, res) => {
+router.post('/remove-founder', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.body;
 
@@ -817,7 +831,7 @@ router.post('/remove-founder', async (req, res) => {
  * Initiate a token pack purchase
  * POST /api/purchases/token-pack
  */
-router.post('/token-pack', async (req, res) => {
+router.post('/token-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packType, heroId } = req.body;
 
@@ -879,8 +893,19 @@ router.post('/token-pack', async (req, res) => {
 /**
  * Complete a token pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete-token-pack
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
  */
-router.post('/complete-token-pack', async (req, res) => {
+router.post('/complete-token-pack', requireAuth, async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
+  
+  // Original implementation commented out - webhook handles everything
+  /*
   try {
     const { purchaseId } = req.body;
 
@@ -955,18 +980,19 @@ router.post('/complete-token-pack', async (req, res) => {
     console.error('[Token Pack] Error completing purchase:', error);
     res.status(500).json({ error: 'Failed to complete purchase' });
   }
+  */
 });
 
 /**
  * Create Stripe checkout session endpoint
  * POST /api/purchases/create-checkout-session
  */
-router.post('/create-checkout-session', async (req, res) => {
+router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
-    const { purchaseId, price } = req.body;
+    const { purchaseId } = req.body;
 
-    if (!purchaseId || !price) {
-      return res.status(400).json({ error: 'purchaseId and price are required' });
+    if (!purchaseId) {
+      return res.status(400).json({ error: 'purchaseId is required' });
     }
 
     // In development/localhost, allow mock checkout for testing
@@ -996,23 +1022,36 @@ router.post('/create-checkout-session', async (req, res) => {
     }
 
     const purchase = purchaseDoc.data();
-    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
-    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
-    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
-    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
-
+    
+    // SERVER-SIDE PRICE LOOKUP (FE #3 requirement 1): Never trust client prices
+    // Look up price from server-side configs or purchase record
+    let serverPrice = null;
     let productName = 'Purchase';
     let productDescription = 'Game purchase';
 
     if (purchase.packTier) {
       const packConfig = PACK_TIERS[purchase.packTier];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = `${packConfig.name} Pack`;
       productDescription = `Founder's Pack - ${packConfig.premiumCurrency} Tokens`;
     } else if (purchase.packType) {
       const packConfig = TOKEN_PACKS[purchase.packType];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = packConfig.name;
       productDescription = `${packConfig.tokens} Tokens + ${packConfig.gold} Gold`;
+    } else if (purchase.price) {
+      // Fallback: use price from purchase record (created server-side)
+      serverPrice = purchase.price;
     }
+    
+    if (!serverPrice) {
+      return res.status(400).json({ error: 'Cannot determine purchase price' });
+    }
+    
+    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
+    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
+    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
+    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -1024,7 +1063,7 @@ router.post('/create-checkout-session', async (req, res) => {
               name: productName,
               description: productDescription,
             },
-            unit_amount: Math.round(price * 100), // Convert to cents
+            unit_amount: Math.round(serverPrice * 100), // Convert to cents, using SERVER price
           },
           quantity: 1,
         },
@@ -1074,7 +1113,7 @@ router.get('/cancel', async (req, res) => {
  * Get user's purchase history
  * GET /api/purchases/history/:userId
  */
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -1186,7 +1225,7 @@ router.get('/history/:userId', async (req, res) => {
  * Get purchase details with hero information
  * GET /api/purchases/:purchaseId/details
  */
-router.get('/:purchaseId/details', async (req, res) => {
+router.get('/:purchaseId/details', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 

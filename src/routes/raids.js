@@ -2,6 +2,8 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get all raids
@@ -66,7 +68,7 @@ router.get('/', async (req, res) => {
 });
 
 // Create test raid instance (for testing) - MUST be before /:raidId route
-router.post('/test-instance', async (req, res) => {
+router.post('/test-instance', requireAuth, async (req, res) => {
   try {
     const { organizerId, raidId } = req.body;
     
@@ -209,7 +211,7 @@ router.get('/:raidId', async (req, res) => {
 });
 
 // Sign up for raid
-router.post('/:raidId/signup', async (req, res) => {
+router.post('/:raidId/signup', requireAuth, async (req, res) => {
   try {
     const { guildId, participants } = req.body;
     const raidRef = db.collection('raids').doc(req.params.raidId);
@@ -251,7 +253,7 @@ router.post('/:raidId/signup', async (req, res) => {
 // This will be accessible at /api/raids/worldboss/current
 
 // Sign up for world boss
-router.post('/worldboss/signup', async (req, res) => {
+router.post('/worldboss/signup', requireAuth, async (req, res) => {
   try {
     const { userId, username, heroLevel, heroRole } = req.body;
     
@@ -299,7 +301,7 @@ router.post('/worldboss/signup', async (req, res) => {
 // ==================== RAID INSTANCE ENDPOINTS ====================
 
 // Get available raids for a user based on their level and item score
-router.get('/available/:userId', async (req, res) => {
+router.get('/available/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -385,7 +387,7 @@ router.get('/available/:userId', async (req, res) => {
 });
 
 // Start a new raid instance
-router.post('/:raidId/start', async (req, res) => {
+router.post('/:raidId/start', requireAuth, async (req, res) => {
   try {
     const { raidId } = req.params;
     const { participants, organizerId } = req.body; // Array of userId strings
@@ -597,7 +599,7 @@ router.post('/:raidId/start', async (req, res) => {
 });
 
 // Update raid progress (wave completed)
-router.post('/instance/:instanceId/progress', async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { wave, participants, combatLogEntries, bossHpPercent, currentPhase } = req.body;
@@ -734,7 +736,7 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
 });
 
 // Resume raid from checkpoint
-router.post('/instance/:instanceId/resume', async (req, res) => {
+router.post('/instance/:instanceId/resume', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     
@@ -814,7 +816,7 @@ router.get('/instance/:instanceId/status', async (req, res) => {
 });
 
 // Complete raid and distribute loot
-router.post('/instance/:instanceId/complete', async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, finalCombatLog } = req.body;
@@ -837,7 +839,31 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     const { generateRaidLoot } = await import('../data/raidLoot.js');
     const raidData = getRaidById(instance.raidId);
     
-    if (!success) {
+    // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
+    // Don't blindly trust client's success flag - verify boss defeated and team survived
+    let serverValidatedSuccess = success;
+    
+    if (success) {
+      // Validate success criteria:
+      // 1. Boss must be defeated (bossHp <= 0)
+      // 2. At least one participant must be alive
+      const bossHp = instance.bossHp || instance.boss?.hp || raidData.boss.hp;
+      const aliveParticipants = (finalParticipants || instance.participants || []).filter(p => p.isAlive);
+      
+      if (bossHp > 0) {
+        console.warn(`[Raid Complete] Boss not defeated (HP: ${bossHp}), marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      if (aliveParticipants.length === 0) {
+        console.warn(`[Raid Complete] No survivors, marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      console.log(`[Raid Complete] Server validation: clientSuccess=${success}, serverValidated=${serverValidatedSuccess}, bossHp=${bossHp}, aliveCount=${aliveParticipants.length}`);
+    }
+    
+    if (!serverValidatedSuccess) {
       // Raid failed
       // Use twitchUserId for participantIds (for querying), fallback to userId
       const failedParticipantIds = (finalParticipants || instance.participants || []).map(p => p.twitchUserId || p.userId).filter(Boolean);
@@ -974,7 +1000,7 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
 // ==================== RAID SCHEDULING & PUG QUEUES ====================
 
 // Schedule a raid (guild feature)
-router.post('/schedule', async (req, res) => {
+router.post('/schedule', requireAuth, async (req, res) => {
   try {
     const { raidId, guildId, scheduledTime, participants, organizerId } = req.body;
     
@@ -1021,7 +1047,7 @@ router.post('/schedule', async (req, res) => {
 });
 
 // Join PUG queue for a raid (class-based signup like dungeons)
-router.post('/queue/:raidId/join', async (req, res) => {
+router.post('/queue/:raidId/join', requireAuth, async (req, res) => {
   try {
     const { raidId } = req.params;
     const { userId, heroId, role, itemScore } = req.body;
@@ -1168,7 +1194,7 @@ router.get('/queue/:raidId', async (req, res) => {
 });
 
 // Leave PUG queue
-router.post('/queue/:raidId/leave', async (req, res) => {
+router.post('/queue/:raidId/leave', requireAuth, async (req, res) => {
   try {
     const { raidId } = req.params;
     const { userId } = req.body;
@@ -1685,7 +1711,7 @@ router.get('/:raidId/guild-signup/:guildId', async (req, res) => {
 });
 
 // Guild signup for raid
-router.post('/:raidId/guild-signup', async (req, res) => {
+router.post('/:raidId/guild-signup', requireAuth, async (req, res) => {
   try {
     const { raidId } = req.params;
     const { guildId, assignedPlayers } = req.body;
@@ -1780,7 +1806,7 @@ router.post('/:raidId/guild-signup', async (req, res) => {
 });
 
 // Update guild raid signup (for adding/removing players)
-router.put('/:raidId/guild-signup/:guildId', async (req, res) => {
+router.put('/:raidId/guild-signup/:guildId', requireAuth, async (req, res) => {
   try {
     const { raidId, guildId } = req.params;
     const { assignedPlayers } = req.body;
@@ -1855,7 +1881,7 @@ router.put('/:raidId/guild-signup/:guildId', async (req, res) => {
 });
 
 // Send command to raid instance (for participants to control their hero)
-router.post('/instance/:instanceId/command', async (req, res) => {
+router.post('/instance/:instanceId/command', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { userId, command } = req.body;
@@ -1910,7 +1936,7 @@ router.post('/instance/:instanceId/command', async (req, res) => {
 });
 
 // Send chat message to raid instance
-router.post('/instance/:instanceId/chat', async (req, res) => {
+router.post('/instance/:instanceId/chat', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { userId, message } = req.body;

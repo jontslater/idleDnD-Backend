@@ -3,6 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import fetch from 'node-fetch';
+import { requireStreamerAccess, optionalAuth } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 
@@ -18,7 +20,8 @@ const router = express.Router();
  *   heroIndex: number         // Optional hero index (1-based) from !heroes list
  * }
  */
-router.post('/join', async (req, res) => {
+// Internal route - called by Twitch bot (requires internal key)
+router.post('/join', requireInternal, async (req, res) => {
   try {
     const { viewerUsername, viewerId, streamerUsername, streamerId, class: classKey, heroIndex } = req.body;
 
@@ -94,7 +97,9 @@ router.post('/join', async (req, res) => {
       // CRITICAL: Remove ALL other heroes of this user from ALL battlefields (including the same battlefield)
       // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
       // When joining with hero B, remove hero A/C/D from their battlefields (even if on the same battlefield)
+      // Use transaction to prevent races from simultaneous joins
       try {
+        // First pass: identify other heroes to remove (outside transaction for broadcast prep)
         const allUserHeroesSnapshot = await db.collection('heroes')
           .where('twitchUserId', '==', viewerId)
           .get();
@@ -456,7 +461,7 @@ router.post('/join', async (req, res) => {
  *   accessToken: string         // Optional - if not provided, will fetch from hero document
  * }
  */
-router.post('/initialize', async (req, res) => {
+router.post('/initialize', requireAuth, async (req, res) => {
   try {
     const { streamerUsername, accessToken } = req.body;
 
@@ -513,7 +518,7 @@ router.post('/initialize', async (req, res) => {
  * GET /api/chat/status
  * Query params: streamerUsername (optional - uses token if not provided)
  */
-router.get('/status', async (req, res) => {
+router.get('/status', requireAuth, async (req, res) => {
   try {
     const { streamerUsername } = req.query;
     
@@ -578,6 +583,88 @@ router.get('/status', async (req, res) => {
   } catch (error) {
     console.error('Error checking chat listener status:', error);
     res.status(500).json({ error: 'Failed to check chat listener status', details: error.message });
+  }
+});
+
+/**
+ * Get current chat activity metrics for a stream
+ * GET /api/chat/activity/:streamerId
+ * FE #3 requirement 5: Expose chat activity metrics for overlay/portal display
+ * Requires: X-Streamer-Key header or authenticated streamer
+ * Returns: {
+ *   activeUsers: number,
+ *   recentMessageCount: number,
+ *   groupBoostActive: boolean,
+ *   groupBoostMultiplier: number,
+ *   lastActivityTimestamp: number
+ * }
+ */
+router.get('/activity/:streamerId', optionalAuth, requireStreamerAccess, async (req, res) => {
+  try {
+    const { streamerId } = req.params;
+    
+    if (!streamerId) {
+      return res.status(400).json({ error: 'Streamer ID required' });
+    }
+    
+    // Get battlefield ID for this streamer
+    const battlefieldId = `twitch:${streamerId}`;
+    
+    // Query all heroes on this battlefield to count active participants
+    const heroesSnapshot = await db.collection('heroes')
+      .where('currentBattlefieldId', '==', battlefieldId)
+      .get();
+    
+    // Filter heroes by rate-limiting: only count heroes active in last 5 minutes
+    const ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const recentlyActiveHeroes = heroesSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      const lastActive = data.lastActiveAt?.toMillis?.() || data.updatedAt?.toMillis?.() || 0;
+      return (now - lastActive) < ACTIVITY_WINDOW_MS;
+    });
+    
+    const activeHeroes = recentlyActiveHeroes.length;
+    
+    // Calculate group boost with smooth diminishing returns curve
+    // Formula: bonus = maxBonus * (users / (users + halfPoint))
+    // This creates a smooth curve that approaches maxBonus asymptotically
+    const MAX_BOOST = 0.50; // 50% max bonus
+    const HALF_POINT = 20; // Point at which we reach half of max boost
+    
+    let groupBoostActive = false;
+    let groupBoostMultiplier = 0;
+    
+    if (activeHeroes >= 3) {
+      // Smooth diminishing returns: bonus = 0.5 * (users / (users + 20))
+      groupBoostMultiplier = MAX_BOOST * (activeHeroes / (activeHeroes + HALF_POINT));
+      groupBoostActive = groupBoostMultiplier >= 0.05; // Active if at least 5% boost
+    }
+    
+    // Get last activity timestamp from most recent hero update
+    let lastActivityTimestamp = Date.now();
+    if (!heroesSnapshot.empty) {
+      const timestamps = heroesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return data.lastActiveAt?.toMillis?.() || data.updatedAt?.toMillis?.() || 0;
+      });
+      lastActivityTimestamp = Math.max(...timestamps, lastActivityTimestamp);
+    }
+    
+    res.json({
+      success: true,
+      streamerId,
+      battlefieldId,
+      activeUsers: activeHeroes,
+      groupBoostActive,
+      groupBoostMultiplier,
+      groupBoostPercentage: Math.round(groupBoostMultiplier * 100), // e.g., 10, 25, 50
+      lastActivityTimestamp,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('[Chat Activity] Error fetching activity metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch chat activity metrics', details: error.message });
   }
 });
 

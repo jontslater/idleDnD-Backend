@@ -244,6 +244,7 @@ import purchasesRoutes from './routes/purchases.js';
 import mailRoutes from './routes/mail.js';
 import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
+import overlayRoutes from './routes/overlay.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -273,6 +274,7 @@ app.use('/api/loot-tokens', lootTokenRoutes);
 app.use('/api/mail', mailRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/stream/settings', streamSettingsRoutes);
+app.use('/api/overlay', overlayRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -283,10 +285,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Populate test data (for UI testing)
-// Clean up test data
+// Clean up test data - ADMIN ONLY
+// Requires admin key in environment variable for security
 app.post('/api/test/cleanup', async (req, res) => {
   try {
+    // Require admin key for destructive operations
+    const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+    const expectedAdminKey = process.env.ADMIN_KEY;
+    
+    if (!expectedAdminKey) {
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+      });
+    }
+    
+    if (!adminKey || adminKey !== expectedAdminKey) {
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'Invalid or missing admin key'
+      });
+    }
+    
     console.log('🧹 Cleaning up test data...');
     
     // Delete all test raid instances
@@ -318,7 +338,26 @@ app.post('/api/test/cleanup', async (req, res) => {
   }
 });
 
+// Populate test data - ADMIN ONLY  
 app.post('/api/test/populate', async (req, res) => {
+  // Require admin key for test data creation
+  const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+  const expectedAdminKey = process.env.ADMIN_KEY;
+  
+  if (!expectedAdminKey) {
+    return res.status(503).json({ 
+      error: 'Service unavailable',
+      message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+    });
+  }
+  
+  if (!adminKey || adminKey !== expectedAdminKey) {
+    return res.status(403).json({ 
+      error: 'Forbidden',
+      message: 'Invalid or missing admin key'
+    });
+  }
+  
   try {
     console.log('🎮 Creating test data...');
     
@@ -479,7 +518,9 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('');
 }
 
-const server = app.listen(PORT, async () => {
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗
 ║   The Never Ending War - Backend API      ║
@@ -582,7 +623,8 @@ Press Ctrl+C to stop
   } catch (error) {
     console.error('❌ Failed to initialize XP accumulator service:', error);
   }
-});
+  });
+}
 
-// Export for Firebase Functions (optional)
+// Export for Firebase Functions and testing
 export { app, db };

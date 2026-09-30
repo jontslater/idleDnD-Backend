@@ -4,6 +4,8 @@ import { db } from '../index.js';
 import { getAllSkills, getSkillsForClass, calculateSkillPoints } from '../data/skills.js';
 import { getHeroSkills, allocateSkillPoint, resetSkills } from '../services/skillService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get all skills (for reference)
@@ -19,7 +21,7 @@ router.get('/', (req, res) => {
 
 // Retroactively calculate and add skill points for a specific hero
 // MUST be before /:userId route to avoid matching "retroactive-points" as a userId
-router.post('/retroactive-points/:userId', async (req, res) => {
+router.post('/retroactive-points/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);
@@ -105,7 +107,7 @@ router.get('/class/:className', (req, res) => {
 });
 
 // Get hero's skills
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const skills = await getHeroSkills(req.params.userId);
     if (!skills) {
@@ -119,7 +121,7 @@ router.get('/:userId', async (req, res) => {
 });
 
 // Allocate skill point
-router.post('/:userId/allocate', async (req, res) => {
+router.post('/:userId/allocate', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { skillId } = req.body;
     if (!skillId) {
@@ -135,7 +137,7 @@ router.post('/:userId/allocate', async (req, res) => {
 });
 
 // Reset all skills
-router.post('/:userId/reset', async (req, res) => {
+router.post('/:userId/reset', requireAdmin, async (req, res) => {
   try {
     const { cost } = req.body;
     const resetCost = cost || 500;
