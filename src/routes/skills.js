@@ -4,6 +4,8 @@ import { db } from '../index.js';
 import { getAllSkills, getSkillsForClass, calculateSkillPoints } from '../data/skills.js';
 import { getHeroSkills, allocateSkillPoint, resetSkills } from '../services/skillService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get all skills (for reference)

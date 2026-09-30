@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import Stripe from 'stripe';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 

@@ -6,14 +6,23 @@
 import express from 'express';
 import { db } from '../index.js';
 import admin from 'firebase-admin';
+import { requireStreamerAccess } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Maximum gains per batch per hero to prevent exploits
+const MAX_XP_PER_BATCH = 10000;
+const MAX_GOLD_PER_BATCH = 5000;
 
 /**
  * Sync overlay pending deltas (idempotent with batch ID)
  * POST /api/overlay/sync
  * FE #3 requirement 6: Accept acknowledged pending deltas with client-supplied batch ID
  * Ensures retries don't double-apply XP/gold by tracking processed batch IDs
+ * 
+ * Requires: X-Streamer-Key header or authenticated streamer
+ * Validates: All heroes must be on the streamer's battlefield
+ * Clamps: XP/gold per hero to prevent exploits
  * 
  * Body: {
  *   streamerId: string,
@@ -26,7 +35,7 @@ const router = express.Router();
  *   }]
  * }
  */
-router.post('/sync', async (req, res) => {
+router.post('/sync', requireStreamerAccess, async (req, res) => {
   try {
     const { streamerId, batchId, deltas } = req.body;
     
@@ -59,6 +68,9 @@ router.post('/sync', async (req, res) => {
       });
     }
     
+    // Battlefield ID for this streamer
+    const battlefieldId = `twitch:${streamerId}`;
+    
     // Process each delta
     const results = [];
     let successCount = 0;
@@ -74,9 +86,20 @@ router.post('/sync', async (req, res) => {
           continue;
         }
         
-        // Validate gains are positive numbers
-        const validXp = Math.max(0, Math.floor(Number(xpGained) || 0));
-        const validGold = Math.max(0, Math.floor(Number(goldGained) || 0));
+        // Validate gains are positive numbers and clamp to max per batch
+        let validXp = Math.max(0, Math.floor(Number(xpGained) || 0));
+        let validGold = Math.max(0, Math.floor(Number(goldGained) || 0));
+        
+        // Clamp to prevent exploits
+        const xpClamped = validXp > MAX_XP_PER_BATCH;
+        const goldClamped = validGold > MAX_GOLD_PER_BATCH;
+        
+        validXp = Math.min(validXp, MAX_XP_PER_BATCH);
+        validGold = Math.min(validGold, MAX_GOLD_PER_BATCH);
+        
+        if (xpClamped || goldClamped) {
+          console.warn(`[Overlay Sync] Clamped gains for hero ${heroId}: XP ${xpGained}->${validXp}, Gold ${goldGained}->${validGold}`);
+        }
         
         if (validXp === 0 && validGold === 0) {
           // Skip no-op deltas
@@ -94,6 +117,17 @@ router.post('/sync', async (req, res) => {
         }
         
         const hero = heroDoc.data();
+        
+        // Verify hero is on this streamer's battlefield
+        if (hero.currentBattlefieldId !== battlefieldId) {
+          errorCount++;
+          results.push({
+            heroId,
+            success: false,
+            error: `Hero not on battlefield ${battlefieldId} (current: ${hero.currentBattlefieldId || 'none'})`
+          });
+          continue;
+        }
         
         // Apply deltas with level-up handling
         const newXp = (hero.xp || 0) + validXp;

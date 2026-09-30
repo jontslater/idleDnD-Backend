@@ -3,6 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getBattlefieldCache } from '../utils/battlefieldCache.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get all heroes in a specific battlefield

@@ -2,6 +2,8 @@ import express from 'express';
 import { db } from '../index.js';
 import { getLeaderboard, getUserRankings, updateLeaderboards } from '../services/leaderboardService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get user's rankings (MUST be before /:type/:category route to avoid route conflict)

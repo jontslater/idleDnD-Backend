@@ -4,6 +4,8 @@ import { db } from '../index.js';
 import { ACHIEVEMENTS, getAchievementsByCategory } from '../data/achievements.js';
 import { getHeroAchievements, setActiveTitle, checkAchievements } from '../services/achievementService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get all achievements

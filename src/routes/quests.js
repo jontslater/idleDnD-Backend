@@ -3,6 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getActiveQuests } from '../services/questService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Get active daily quests

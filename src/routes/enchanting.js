@@ -3,6 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getEnchantmentById, getEnchantmentsForSlot } from '../data/enchantments.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Apply enchantment to item
