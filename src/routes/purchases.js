@@ -98,8 +98,20 @@ router.post('/founders-pack', async (req, res) => {
 /**
  * Complete a founders pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
+ * This endpoint remains for backward compatibility but should be removed in production.
  */
 router.post('/complete', async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
+  
+  // Original implementation commented out - webhook handles everything
+  /*
   try {
     const { purchaseId } = req.body;
 
@@ -117,6 +129,7 @@ router.post('/complete', async (req, res) => {
       return res.status(404).json({ error: 'Purchase not found' });
     }
 
+    return; // Early return - never execute
     const purchase = purchaseDoc.data();
 
     if (purchase.status === 'completed') {
@@ -879,8 +892,19 @@ router.post('/token-pack', async (req, res) => {
 /**
  * Complete a token pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete-token-pack
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
  */
 router.post('/complete-token-pack', async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
+  
+  // Original implementation commented out - webhook handles everything
+  /*
   try {
     const { purchaseId } = req.body;
 
@@ -955,6 +979,7 @@ router.post('/complete-token-pack', async (req, res) => {
     console.error('[Token Pack] Error completing purchase:', error);
     res.status(500).json({ error: 'Failed to complete purchase' });
   }
+  */
 });
 
 /**

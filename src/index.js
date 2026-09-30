@@ -283,10 +283,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Populate test data (for UI testing)
-// Clean up test data
+// Clean up test data - ADMIN ONLY
+// Requires admin key in environment variable for security
 app.post('/api/test/cleanup', async (req, res) => {
   try {
+    // Require admin key for destructive operations
+    const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+    const expectedAdminKey = process.env.ADMIN_KEY;
+    
+    if (!expectedAdminKey) {
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+      });
+    }
+    
+    if (!adminKey || adminKey !== expectedAdminKey) {
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'Invalid or missing admin key'
+      });
+    }
+    
     console.log('🧹 Cleaning up test data...');
     
     // Delete all test raid instances
@@ -318,7 +336,26 @@ app.post('/api/test/cleanup', async (req, res) => {
   }
 });
 
+// Populate test data - ADMIN ONLY  
 app.post('/api/test/populate', async (req, res) => {
+  // Require admin key for test data creation
+  const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+  const expectedAdminKey = process.env.ADMIN_KEY;
+  
+  if (!expectedAdminKey) {
+    return res.status(503).json({ 
+      error: 'Service unavailable',
+      message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+    });
+  }
+  
+  if (!adminKey || adminKey !== expectedAdminKey) {
+    return res.status(403).json({ 
+      error: 'Forbidden',
+      message: 'Invalid or missing admin key'
+    });
+  }
+  
   try {
     console.log('🎮 Creating test data...');
     

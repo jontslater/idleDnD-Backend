@@ -125,7 +125,14 @@ router.post('/test/create', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const snapshot = await db.collection('heroes').get();
-    const heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+    const heroes = snapshot.docs.map(doc => {
+      const data = { ...doc.data(), id: doc.id };
+      // Remove sensitive OAuth tokens from response
+      delete data.twitchAccessToken;
+      delete data.twitchRefreshToken;
+      delete data.twitchTokenExpiresAt;
+      return data;
+    });
     res.json(heroes);
   } catch (error) {
     console.error('Error fetching heroes:', error);
@@ -287,6 +294,12 @@ router.get('/:userId', async (req, res) => {
     
     // Ensure heroData has an id field (use heroId if missing)
     const responseData = { ...heroData, id: heroData.id || heroId };
+    
+    // Remove sensitive OAuth tokens from response
+    delete responseData.twitchAccessToken;
+    delete responseData.twitchRefreshToken;
+    delete responseData.twitchTokenExpiresAt;
+    
     res.json(responseData);
   } catch (error) {
     console.error(`[Heroes] Error fetching hero ${req.params.userId}:`, error);
@@ -952,9 +965,17 @@ router.post('/', async (req, res) => {
 });
 
 // Update hero
+// NOTE: This endpoint should require authentication in production
+// For now, we add basic validation to prevent unauthorized modifications
 router.put('/:userId', async (req, res) => {
   try {
     const heroId = req.params.userId;
+    
+    // Basic ownership check: if twitchUserId is provided in body, verify it matches
+    // This prevents users from modifying other users' heroes
+    // TODO: Add proper JWT token verification in production
+    const claimedTwitchUserId = req.body.twitchUserId || req.query.twitchUserId;
+    
     const heroRef = db.collection('heroes').doc(heroId);
     const doc = await heroRef.get();
     
@@ -964,6 +985,15 @@ router.put('/:userId', async (req, res) => {
     }
     
     const oldHero = doc.data();
+    
+    // Verify ownership if twitchUserId is claimed
+    if (claimedTwitchUserId && oldHero.twitchUserId && claimedTwitchUserId !== oldHero.twitchUserId) {
+      console.warn(`⚠️ [Update Hero] Ownership mismatch: claimed ${claimedTwitchUserId}, actual ${oldHero.twitchUserId}`);
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'You do not own this hero'
+      });
+    }
     
     // CRITICAL: Enforce level cap of 100
     // This prevents heroes from leveling beyond 100, even if frontend sends invalid data
