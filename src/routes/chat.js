@@ -94,7 +94,9 @@ router.post('/join', async (req, res) => {
       // CRITICAL: Remove ALL other heroes of this user from ALL battlefields (including the same battlefield)
       // Users can have multiple heroes, but only ONE hero can be on battlefields at a time
       // When joining with hero B, remove hero A/C/D from their battlefields (even if on the same battlefield)
+      // Use transaction to prevent races from simultaneous joins
       try {
+        // First pass: identify other heroes to remove (outside transaction for broadcast prep)
         const allUserHeroesSnapshot = await db.collection('heroes')
           .where('twitchUserId', '==', viewerId)
           .get();
