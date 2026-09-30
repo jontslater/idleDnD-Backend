@@ -518,7 +518,9 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('');
 }
 
-const server = app.listen(PORT, async () => {
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗
 ║   The Never Ending War - Backend API      ║
@@ -621,7 +623,8 @@ Press Ctrl+C to stop
   } catch (error) {
     console.error('❌ Failed to initialize XP accumulator service:', error);
   }
-});
+  });
+}
 
-// Export for Firebase Functions (optional)
+// Export for Firebase Functions and testing
 export { app, db };

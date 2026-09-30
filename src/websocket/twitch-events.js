@@ -301,34 +301,20 @@ export function handleTwitchEvents() {
           classKey
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/chat/join`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            viewerUsername: username,
-            viewerId: userId,
-            streamerUsername: channelName,
-            streamerId: tags['room-id'], // Channel ID
-            class: classKey, // Optional class name (only if not a number)
-            heroIndex: heroIndex // Optional hero index (1-based)
-          })
+        // Call join service directly (internal call, no HTTP)
+        const { handleJoinCommand } = await import('../services/chatJoinService.js');
+        const result = await handleJoinCommand({
+          viewerUsername: username,
+          viewerId: userId,
+          streamerUsername: channelName,
+          streamerId: tags['room-id'],
+          class: classKey,
+          heroIndex: heroIndex
         });
         
-        console.log(`📥 [Join] Response status: ${response.status}`);
+        console.log(`📥 [Join] Result:`, result);
         
-        let result;
-        try {
-          result = await response.json();
-        } catch (parseError) {
-          console.error(`❌ Failed to parse response:`, parseError);
-          const text = await response.text();
-          console.error(`Response text:`, text);
-          throw new Error(`Invalid response from server: ${text}`);
-        }
-        
-        console.log(`📥 [Join] Response data:`, result);
-        
-        if (response.ok) {
+        if (result.success) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
           // Send response to chat as TNEWBOT
@@ -649,34 +635,20 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           classKey
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/chat/join`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            viewerUsername: username,
-            viewerId: userId,
-            streamerUsername: channelName,
-            streamerId: tags['room-id'],
-            class: classKey, // Optional class name (only if not a number)
-            heroIndex: heroIndex // Optional hero index (1-based)
-          })
+        // Call join service directly (internal call, no HTTP)
+        const { handleJoinCommand } = await import('../services/chatJoinService.js');
+        const result = await handleJoinCommand({
+          viewerUsername: username,
+          viewerId: userId,
+          streamerUsername: channelName,
+          streamerId: tags['room-id'],
+          class: classKey,
+          heroIndex: heroIndex
         });
         
-        console.log(`📥 [Join] Response status: ${response.status}`);
+        console.log(`📥 [Join] Result:`, result);
         
-        let result;
-        try {
-          result = await response.json();
-        } catch (parseError) {
-          console.error(`❌ Failed to parse response:`, parseError);
-          const text = await response.text();
-          console.error(`Response text:`, text);
-          throw new Error(`Invalid response from server: ${text}`);
-        }
-        
-        console.log(`📥 [Join] Response data:`, result);
-        
-        if (response.ok) {
+        if (result.success) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
           // Send response to chat as TNEWBOT

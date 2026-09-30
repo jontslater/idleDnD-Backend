@@ -129,8 +129,8 @@ router.get('/:battlefieldId/state', async (req, res) => {
 
 // Register browser source association
 // This also attempts to initialize chat listener if not already active
-// Internal route - requires internal API key
-router.post('/register', requireInternal, async (req, res) => {
+// Register hero to battlefield (browser source calls this with user JWT)
+router.post('/register', requireAuth, async (req, res) => {
   try {
     const { battlefieldId, userId, token } = req.body;
     

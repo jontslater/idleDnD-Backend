@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-09-30T21:47:24.183Z
+**Generated**: 2026-09-30T21:55:13.603Z
 
 ## Summary
 
@@ -56,7 +56,7 @@ All routes are properly protected!
 | GET | /:battlefieldId/heroes | ✅ PUBLIC | 12 |
 | GET | /active | ✅ PUBLIC | 40 |
 | GET | /:battlefieldId/state | ✅ PUBLIC | 73 |
-| POST | /register | requireInternal | 133 |
+| POST | /register | requireAuth | 133 |
 | POST | /preferences/sprite-facing | requireAuth | 304 |
 | GET | /preferences/sprite-facing/:userId | requireAuth, requireOwnership | 389 |
 | POST | /preferences/sprite-facing/bulk | requireAuth | 456 |
