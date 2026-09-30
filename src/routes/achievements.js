@@ -5,6 +5,7 @@ import { ACHIEVEMENTS, getAchievementsByCategory } from '../data/achievements.js
 import { getHeroAchievements, setActiveTitle, checkAchievements } from '../services/achievementService.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 
@@ -40,8 +41,8 @@ router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
 });
 
 // Check and unlock achievements (called after actions)
-// Internal route - called by backend services, not HTTP clients
-router.post('/check', async (req, res) => {
+// Internal route - called by backend services (requires internal key)
+router.post('/check', requireInternal, async (req, res) => {
   try {
     const { userId, actionType, actionValue } = req.body;
     

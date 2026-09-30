@@ -13,19 +13,17 @@ const __dirname = path.dirname(__filename);
 
 const ROUTES_DIR = path.join(__dirname, '../src/routes');
 
-// Public routes whitelist (intentionally unprotected)
+// Public routes whitelist (genuinely read-only, no private data)
 const PUBLIC_ROUTES = new Set([
   // Auth endpoints
   'POST /api/auth/twitch',
   'POST /api/auth/tiktok',
   'POST /api/auth/logout',
   
-  // Public browsing
-  'GET /api/leaderboards/user/:userId',
+  // Public browsing (read-only, no private data)
   'GET /api/leaderboards/:type/:category',
   'GET /api/guilds/',
   'GET /api/guilds/:guildId',
-  'GET /api/guilds/member/:userId',
   'GET /api/guilds/invite/:inviteId',
   'GET /api/heroes/',
   'GET /api/heroes/create/cost-info',
@@ -55,23 +53,21 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/purchases/success',
   'GET /api/purchases/cancel',
   'GET /api/purchases/founders',
+  'GET /api/raids/upcoming',
+  'GET /api/raids/instance/:instanceId',
+  'GET /api/raids/instance/:instanceId/status',
+  'GET /api/raids/queue/:raidId',
+  'GET /api/raids/:raidId/guild-signup/:guildId',
+  'GET /api/dungeon/instance/:instanceId',
+  'GET /api/worldboss/active',
+  'GET /api/worldboss/:bossId',
+  'GET /api/worldboss/:bossId/leaderboard',
+  'GET /api/skills/',
+  'GET /api/skills/class/:className',
   
-  // Stripe webhooks (verified separately)
+  // Stripe webhooks (verified separately by Stripe signature)
   'POST /api/purchases/complete',
   'POST /api/purchases/complete-token-pack',
-]);
-
-// Internal service routes (called by backend, not HTTP clients)
-const INTERNAL_ROUTES = new Set([
-  'POST /api/battlefields/register',
-  'POST /api/battlefields/:battlefieldId/combat/xp/accumulate',
-  'POST /api/battlefields/:battlefieldId/combat/xp/flush',
-  'POST /api/leaderboards/update',
-  'POST /api/lootTokens/award',
-  'POST /api/achievements/check',
-  'POST /api/quests/update-batch-all',
-  'POST /api/chat/join', // Called by Twitch bot internally
-  'POST /api/streamSettings/:twitchId/test', // Called internally
 ]);
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -100,6 +96,7 @@ function parseRouteFile(filename) {
       if (line.includes('requireStreamerAccess')) middlewares.push('requireStreamerAccess');
       if (line.includes('requireGuildMembership')) middlewares.push('requireGuildMembership');
       if (line.includes('requireGuildOfficer')) middlewares.push('requireGuildOfficer');
+      if (line.includes('requireInternal')) middlewares.push('requireInternal');
       if (line.includes('optionalAuth')) middlewares.push('optionalAuth');
       if (line.includes('verifyToken')) middlewares.push('verifyToken');
       if (line.includes('verifyTwitchToken')) middlewares.push('verifyTwitchToken');
@@ -131,9 +128,7 @@ function generateReport() {
   let totalRoutes = allRoutes.length;
   let protectedRoutes = 0;
   let publicRoutes = 0;
-  let internalRoutes = 0;
-  let unprotectedMutating = 0;
-  let unprotectedPrivateData = 0;
+  let unprotected = 0;
   
   const violations = [];
   
@@ -141,38 +136,20 @@ function generateReport() {
   for (const route of allRoutes) {
     const fullRoute = `${route.method} /api/${route.file.replace('.js', '')}${route.route}`;
     const isPublic = PUBLIC_ROUTES.has(fullRoute);
-    const isInternal = INTERNAL_ROUTES.has(fullRoute);
-    const isMutating = MUTATING_METHODS.has(route.method);
     const hasAuth = route.middlewares.length > 0;
-    const isPrivateData = route.route.includes(':userId') || route.route.includes(':heroId') || 
-                          route.route.includes('my-') || route.route.includes('/history/') ||
-                          route.route.includes('/progress') || route.route.includes('/balance') ||
-                          route.route.includes('/inventory');
     
     if (isPublic) {
       publicRoutes++;
-    } else if (isInternal) {
-      internalRoutes++;
     } else if (hasAuth) {
       protectedRoutes++;
     } else {
-      // Unprotected route - is this a violation?
-      if (isMutating && !isPublic && !isInternal) {
-        unprotectedMutating++;
-        violations.push({
-          ...route,
-          reason: 'Mutating route without auth',
-          fullRoute
-        });
-      }
-      if (isPrivateData && !isPublic && !isInternal) {
-        unprotectedPrivateData++;
-        violations.push({
-          ...route,
-          reason: 'Private data route without auth',
-          fullRoute
-        });
-      }
+      // Unprotected and not in PUBLIC whitelist = violation
+      unprotected++;
+      violations.push({
+        ...route,
+        reason: 'No auth middleware and not in PUBLIC whitelist',
+        fullRoute
+      });
     }
   }
   
@@ -183,9 +160,7 @@ function generateReport() {
   report += `- **Total Routes**: ${totalRoutes}\n`;
   report += `- **Protected**: ${protectedRoutes}\n`;
   report += `- **Public (whitelisted)**: ${publicRoutes}\n`;
-  report += `- **Internal (backend services)**: ${internalRoutes}\n`;
-  report += `- **Unprotected Mutating**: ${unprotectedMutating} ❌\n`;
-  report += `- **Unprotected Private Data**: ${unprotectedPrivateData} ❌\n\n`;
+  report += `- **Unprotected**: ${unprotected} ${unprotected > 0 ? '❌' : '✅'}\n\n`;
   
   if (violations.length > 0) {
     report += '## ❌ VIOLATIONS\n\n';
@@ -218,11 +193,9 @@ function generateReport() {
       const middleware = route.middlewares.length > 0 ? route.middlewares.join(', ') : '❌ **NONE**';
       const fullRoute = `${route.method} /api/${basename}${route.route}`;
       const isPublic = PUBLIC_ROUTES.has(fullRoute);
-      const isInternal = INTERNAL_ROUTES.has(fullRoute);
       
       let display = middleware;
       if (isPublic) display = '✅ PUBLIC';
-      if (isInternal) display = '🔧 INTERNAL';
       
       report += `| ${route.method} | ${route.route} | ${display} | ${route.line} |\n`;
     }
@@ -230,7 +203,7 @@ function generateReport() {
     report += '\n';
   }
   
-  return { report, violations, stats: { totalRoutes, protectedRoutes, publicRoutes, internalRoutes, unprotectedMutating, unprotectedPrivateData } };
+  return { report, violations, stats: { totalRoutes, protectedRoutes, publicRoutes, unprotected } };
 }
 
 // Run audit
@@ -242,12 +215,10 @@ fs.writeFileSync(reportPath, report);
 
 console.log('Route Protection Audit');
 console.log('='.repeat(60));
-console.log(`Total Routes: ${stats.totalRoutes}`);
-console.log(`Protected: ${stats.protectedRoutes}`);
-console.log(`Public (whitelisted): ${stats.publicRoutes}`);
-console.log(`Internal: ${stats.internalRoutes}`);
-console.log(`Unprotected Mutating: ${stats.unprotectedMutating} ${stats.unprotectedMutating > 0 ? '❌' : '✅'}`);
-console.log(`Unprotected Private Data: ${stats.unprotectedPrivateData} ${stats.unprotectedPrivateData > 0 ? '❌' : '✅'}`);
+  console.log(`Total Routes: ${stats.totalRoutes}`);
+  console.log(`Protected: ${stats.protectedRoutes}`);
+  console.log(`Public (whitelisted): ${stats.publicRoutes}`);
+  console.log(`Unprotected: ${stats.unprotected} ${stats.unprotected > 0 ? '❌' : '✅'}`);
 console.log('='.repeat(60));
 
 if (violations.length > 0) {

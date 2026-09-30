@@ -200,7 +200,7 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
  * Get sync status for a batch ID
  * GET /api/overlay/sync/:batchId
  */
-router.get('/sync/:batchId', async (req, res) => {
+router.get('/sync/:batchId', requireStreamerAccess, async (req, res) => {
   try {
     const { batchId } = req.params;
     

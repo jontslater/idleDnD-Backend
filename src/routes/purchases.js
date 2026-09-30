@@ -210,7 +210,7 @@ router.post('/complete', requireAuth, async (req, res) => {
  * Get purchase status
  * GET /api/purchases/status/:purchaseId
  */
-router.get('/status/:purchaseId', async (req, res) => {
+router.get('/status/:purchaseId', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 
@@ -1225,7 +1225,7 @@ router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) =
  * Get purchase details with hero information
  * GET /api/purchases/:purchaseId/details
  */
-router.get('/:purchaseId/details', async (req, res) => {
+router.get('/:purchaseId/details', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 

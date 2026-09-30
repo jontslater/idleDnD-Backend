@@ -9,6 +9,7 @@ import { db } from '../index.js';
 import admin from 'firebase-admin';
 import { joinChannelAsBot, leaveChannelAsBot, sendChatMessageAsBot } from '../websocket/twitch-events.js';
 import { requireAuth, requireStreamerAccess } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 

@@ -3,6 +3,7 @@ import { db } from '../index.js';
 import { getLeaderboard, getUserRankings, updateLeaderboards } from '../services/leaderboardService.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 
@@ -55,8 +56,8 @@ router.get('/:type/:category', async (req, res) => {
   }
 });
 
-// Update leaderboards (admin endpoint)
-router.post('/update', requireAuth, async (req, res) => {
+// Update leaderboards (internal service route)
+router.post('/update', requireInternal, async (req, res) => {
   try {
     await updateLeaderboards();
     res.json({ success: true, message: 'Leaderboards updated' });

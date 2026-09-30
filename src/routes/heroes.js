@@ -544,7 +544,7 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
 });
 
 // Get ALL heroes for a Twitch user ID (string/number safe, no Firestore index needed)
-router.get('/twitch/:twitchUserId/all', async (req, res) => {
+router.get('/twitch/:twitchUserId/all', requireAuth, async (req, res) => {
   try {
     const { twitchUserId } = req.params; // always a string in URL params
     const dbRef = db.collection('heroes');

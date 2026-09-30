@@ -460,7 +460,7 @@ router.post('/:guildId/loot/assign', requireAuth, async (req, res) => {
 });
 
 // Get unassigned loot
-router.get('/:guildId/loot', async (req, res) => {
+router.get('/:guildId/loot', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     const doc = await db.collection('guilds').doc(guildId).get();
@@ -480,7 +480,7 @@ router.get('/:guildId/loot', async (req, res) => {
 });
 
 // Get loot history
-router.get('/:guildId/loot/history', async (req, res) => {
+router.get('/:guildId/loot/history', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     const doc = await db.collection('guilds').doc(guildId).get();
@@ -523,7 +523,7 @@ router.post('/:guildId/leave', requireAuth, async (req, res) => {
 });
 
 // Get guild members with their heroes
-router.get('/:guildId/members-with-heroes', async (req, res) => {
+router.get('/:guildId/members-with-heroes', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     
@@ -886,7 +886,7 @@ router.get('/invites/pending/:heroId', requireAuth, requireOwnership, async (req
 
 // Get all invites for a guild (admin/leader view)
 // GET /api/guilds/:guildId/invites
-router.get('/:guildId/invites', async (req, res) => {
+router.get('/:guildId/invites', requireAuth, requireGuildMembership, async (req, res) => {
   try {
     const { guildId } = req.params;
     

@@ -378,7 +378,7 @@ router.post('/send', requireAuth, async (req, res) => {
  *   heroId?: string (required for whisper - current user's hero ID)
  *   limit?: number (default: 50)
  */
-router.get('/history', async (req, res) => {
+router.get('/history', requireAuth, async (req, res) => {
   try {
     const { channel, partyId, guildId, recipientId, heroId, limit = 50 } = req.query;
 
@@ -806,7 +806,7 @@ router.post('/report', requireAuth, async (req, res) => {
  * GET /api/web-chat/reports
  * Query params: status?: 'pending' | 'reviewed' | 'resolved' | 'dismissed'
  */
-router.get('/reports', async (req, res) => {
+router.get('/reports', requireAuth, async (req, res) => {
   try {
     const { status } = req.query;
     // TODO: Add admin check

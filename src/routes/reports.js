@@ -85,7 +85,7 @@ router.post('/', requireAuth, async (req, res) => {
  *   - orderBy: field to order by (default: createdAt)
  *   - order: asc or desc (default: desc)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAdmin, async (req, res) => {
   try {
     const {
       userId,
@@ -152,7 +152,7 @@ router.get('/', async (req, res) => {
  * Get a single report by ID
  * GET /api/reports/:reportId
  */
-router.get('/:reportId', async (req, res) => {
+router.get('/:reportId', requireAdmin, async (req, res) => {
   try {
     const { reportId } = req.params;
 

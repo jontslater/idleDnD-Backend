@@ -3,7 +3,8 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getBattlefieldCache } from '../utils/battlefieldCache.js';
 
-import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer, optionalAuth } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 
@@ -128,8 +129,8 @@ router.get('/:battlefieldId/state', async (req, res) => {
 
 // Register browser source association
 // This also attempts to initialize chat listener if not already active
-// Internal route - called by backend on hero join
-router.post('/register', async (req, res) => {
+// Internal route - requires internal API key
+router.post('/register', requireInternal, async (req, res) => {
   try {
     const { battlefieldId, userId, token } = req.body;
     
@@ -487,28 +488,46 @@ router.post('/preferences/sprite-facing/bulk', requireAuth, async (req, res) => 
 // Accumulate enemy kill (stores in memory, awards XP periodically)
 // This is the RECOMMENDED endpoint for high-frequency enemy kills
 // Reduces API calls by 80-90% compared to immediate awarding
-// Internal route - XP accumulation service
-router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
+// Internal route - XP accumulation service (requires internal key)
+router.post('/:battlefieldId/combat/xp/accumulate', requireInternal, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     const { baseXP, enemyLevel, enemyName, enemies } = req.body;
     
+    // Clamping limits for XP accumulation
+    const MAX_BASE_XP = 1000;
+    const MAX_ENEMY_LEVEL = 200;
+    const MAX_BATCH_SIZE = 100;
+    
     // Support both single enemy and batch
     if (enemies && Array.isArray(enemies)) {
       // Batch mode: array of enemies
+      if (enemies.length > MAX_BATCH_SIZE) {
+        return res.status(400).json({ 
+          error: `Maximum batch size is ${MAX_BATCH_SIZE} enemies` 
+        });
+      }
+      
       if (enemies.some(e => !e.baseXP || !e.level)) {
         return res.status(400).json({ 
           error: 'Each enemy must have baseXP and level' 
         });
       }
       
+      // Validate and clamp each enemy
+      const clampedEnemies = enemies.map(e => ({
+        baseXP: Math.min(Math.max(0, Math.floor(e.baseXP)), MAX_BASE_XP),
+        level: Math.min(Math.max(1, Math.floor(e.level)), MAX_ENEMY_LEVEL),
+        name: e.name || 'Unknown Enemy'
+      }));
+      
       const { accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
-      accumulateEnemyKills(battlefieldId, enemies);
+      accumulateEnemyKills(battlefieldId, clampedEnemies);
       
       res.json({
         success: true,
-        message: `Accumulated ${enemies.length} enemy/enemies`,
-        accumulated: enemies.length
+        message: `Accumulated ${clampedEnemies.length} enemy/enemies`,
+        accumulated: clampedEnemies.length
       });
     } else {
       // Single enemy mode
@@ -518,14 +537,18 @@ router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
         });
       }
       
-      if (baseXP <= 0 || enemyLevel <= 0) {
+      // Validate and clamp
+      const clampedXP = Math.min(Math.max(0, Math.floor(baseXP)), MAX_BASE_XP);
+      const clampedLevel = Math.min(Math.max(1, Math.floor(enemyLevel)), MAX_ENEMY_LEVEL);
+      
+      if (clampedXP <= 0 || clampedLevel <= 0) {
         return res.status(400).json({ 
           error: 'baseXP and enemyLevel must be positive numbers' 
         });
       }
       
       const { accumulateEnemyKill } = await import('../services/xpAccumulatorService.js');
-      accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+      accumulateEnemyKill(battlefieldId, clampedXP, clampedLevel, enemyName || 'Unknown Enemy');
       
       res.json({
         success: true,
@@ -618,8 +641,8 @@ router.post('/:battlefieldId/combat/xp', requireAuth, async (req, res) => {
 
 // Flush accumulated XP immediately for a battlefield
 // Useful for important events (wave completion, level-ups, etc.)
-// Internal route - XP flush service
-router.post('/:battlefieldId/combat/xp/flush', async (req, res) => {
+// Internal route - XP flush service (requires internal key)
+router.post('/:battlefieldId/combat/xp/flush', requireInternal, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     

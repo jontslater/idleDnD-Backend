@@ -4,6 +4,7 @@ import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import fetch from 'node-fetch';
 import { requireStreamerAccess, optionalAuth } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
 
@@ -19,8 +20,8 @@ const router = express.Router();
  *   heroIndex: number         // Optional hero index (1-based) from !heroes list
  * }
  */
-// Internal route - called by Twitch bot
-router.post('/join', async (req, res) => {
+// Internal route - called by Twitch bot (requires internal key)
+router.post('/join', requireInternal, async (req, res) => {
   try {
     const { viewerUsername, viewerId, streamerUsername, streamerId, class: classKey, heroIndex } = req.body;
 
@@ -517,7 +518,7 @@ router.post('/initialize', requireAuth, async (req, res) => {
  * GET /api/chat/status
  * Query params: streamerUsername (optional - uses token if not provided)
  */
-router.get('/status', async (req, res) => {
+router.get('/status', requireAuth, async (req, res) => {
   try {
     const { streamerUsername } = req.query;
     
