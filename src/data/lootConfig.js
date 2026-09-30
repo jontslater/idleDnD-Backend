@@ -281,3 +281,5 @@ export const RAID_RARITY_CHANCES = {
     legendary: 0.15
   }
 };
+
+export { ELITE_LOOT_CONFIG, getRarityWeights, getItemName };

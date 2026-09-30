@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-09-30T21:55:13.603Z
+**Generated**: 2026-09-30T22:02:16.741Z
 
 ## Summary
 
@@ -231,14 +231,14 @@ All routes are properly protected!
 |--------|-------|------------|------|
 | POST | /:userId/profession | requireAuth, requireOwnership | 99 |
 | POST | /:userId/craft | requireAuth, requireOwnership | 177 |
-| POST | /:userId/gather | requireAuth, requireOwnership | 546 |
-| POST | /:userId/apply | requireAuth, requireOwnership | 756 |
-| POST | /:userId/use | requireAuth, requireOwnership | 1001 |
-| POST | /:userId/equip | requireAuth, requireOwnership | 1187 |
-| POST | /:userId/unequip | requireAuth, requireOwnership | 1316 |
-| POST | /:userId/apply-socket | requireAuth, requireOwnership | 1565 |
-| POST | /:userId/gem | requireAuth, requireOwnership | 1703 |
-| POST | /:userId/remove-gem | requireAuth, requireOwnership | 1849 |
+| POST | /:userId/gather | requireAuth, requireOwnership | 537 |
+| POST | /:userId/apply | requireAuth, requireOwnership | 747 |
+| POST | /:userId/use | requireAuth, requireOwnership | 992 |
+| POST | /:userId/equip | requireAuth, requireOwnership | 1169 |
+| POST | /:userId/unequip | requireAuth, requireOwnership | 1298 |
+| POST | /:userId/apply-socket | requireAuth, requireOwnership | 1547 |
+| POST | /:userId/gem | requireAuth, requireOwnership | 1685 |
+| POST | /:userId/remove-gem | requireAuth, requireOwnership | 1831 |
 
 ### purchases.js (13 routes)
 

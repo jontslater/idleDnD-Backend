@@ -476,32 +476,23 @@ router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) =>
       // Get user's Twitch ID for quest tracking
       const twitchUserId = hero.twitchUserId || hero.twitchId || userId;
       
-      // Call quest update endpoint to track crafting
-      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          updates: [{
-            trackingKey: 'craft',
-            type: 'daily',
-            increment: quantity
-          }, {
-            trackingKey: 'craft',
-            type: 'weekly',
-            increment: quantity
-          }, {
-            trackingKey: 'craft',
-            type: 'monthly',
-            increment: quantity
-          }]
-        })
-      });
+      // Track crafting for quest progress (direct service call)
+      const { batchUpdateQuestProgress } = await import('../services/questUpdateService.js');
+      await batchUpdateQuestProgress(twitchUserId, [{
+        trackingKey: 'craft',
+        type: 'daily',
+        increment: quantity
+      }, {
+        trackingKey: 'craft',
+        type: 'weekly',
+        increment: quantity
+      }, {
+        trackingKey: 'craft',
+        type: 'monthly',
+        increment: quantity
+      }]);
       
-      if (!questUpdateResponse.ok) {
-        console.log(`⚠️ Quest tracking failed (non-critical):`, await questUpdateResponse.text());
-      } else {
-        console.log(`✅ Quest tracking updated for crafting`);
-      }
+      console.log(`✅ Quest tracking updated for crafting`);
     } catch (questError) {
       // Non-critical - don't fail the craft if quest tracking fails
       console.log(`⚠️ Quest tracking error (non-critical):`, questError.message);
@@ -1131,32 +1122,23 @@ router.post('/:userId/use', requireAuth, requireOwnership, async (req, res) => {
       
       // Only track if it's actually a consumable (potion or buff)
       if (itemType === 'potion' || itemType === 'buff' || item.itemKey) {
-        // Call quest update endpoint to track consumable usage
-        const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            updates: [{
-              trackingKey: 'use',
-              type: 'daily',
-              increment: 1
-            }, {
-              trackingKey: 'use',
-              type: 'weekly',
-              increment: 1
-            }, {
-              trackingKey: 'use',
-              type: 'monthly',
-              increment: 1
-            }]
-          })
-        });
+        // Track consumable usage for quest progress (direct service call)
+        const { batchUpdateQuestProgress } = await import('../services/questUpdateService.js');
+        await batchUpdateQuestProgress(twitchUserId, [{
+          trackingKey: 'use',
+          type: 'daily',
+          increment: 1
+        }, {
+          trackingKey: 'use',
+          type: 'weekly',
+          increment: 1
+        }, {
+          trackingKey: 'use',
+          type: 'monthly',
+          increment: 1
+        }]);
         
-        if (!questUpdateResponse.ok) {
-          console.log(`⚠️ Quest tracking failed (non-critical):`, await questUpdateResponse.text());
-        } else {
-          console.log(`✅ Quest tracking updated for consumable usage`);
-        }
+        console.log(`✅ Quest tracking updated for consumable usage`);
       }
     } catch (questError) {
       // Non-critical - don't fail the use if quest tracking fails

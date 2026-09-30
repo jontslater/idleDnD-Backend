@@ -442,3 +442,5 @@ export {
   generateRaidProcs,
   calculateRaidItemScore
 };
+
+export { RAID_LOOT, generateRaidLoot, generateRaidProcs, calculateRaidItemScore };
