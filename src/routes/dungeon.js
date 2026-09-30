@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get queue status (must be before /queue route)
-router.get('/queue/status', async (req, res) => {
+router.get('/queue/status', requireAuth, async (req, res) => {
   try {
     const { userId } = req.query;
     
@@ -91,7 +91,7 @@ router.get('/queue/status', async (req, res) => {
 });
 
 // Join queue
-router.post('/queue', async (req, res) => {
+router.post('/queue', requireAuth, async (req, res) => {
   try {
     const { userId, heroId, role, itemScore, dungeonType = 'normal' } = req.body;
     
@@ -141,7 +141,7 @@ router.post('/queue', async (req, res) => {
 });
 
 // Leave queue
-router.delete('/queue', async (req, res) => {
+router.delete('/queue', requireAuth, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -174,7 +174,7 @@ router.delete('/queue', async (req, res) => {
 });
 
 // Accept group invite
-router.post('/group/accept', async (req, res) => {
+router.post('/group/accept', requireAuth, async (req, res) => {
   try {
     const { userId, groupId } = req.body;
     
@@ -415,7 +415,7 @@ function estimateWaitTime(roleCounts, userRole) {
 // ==================== DUNGEON INSTANCE ENDPOINTS ====================
 
 // Start a new dungeon instance
-router.post('/:dungeonId/start', async (req, res) => {
+router.post('/:dungeonId/start', requireAuth, async (req, res) => {
   try {
     const { dungeonId } = req.params;
     const { participants, organizerId } = req.body; // Array of userId strings
@@ -532,7 +532,7 @@ router.get('/instance/:instanceId', async (req, res) => {
 });
 
 // Update dungeon progress (room completed)
-router.post('/instance/:instanceId/progress', async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { room, participants, combatLogEntries } = req.body;
@@ -590,7 +590,7 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
 });
 
 // Complete dungeon and distribute loot
-router.post('/instance/:instanceId/complete', async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuth, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, participants, finalCombatLog, combatLog } = req.body;
@@ -817,7 +817,7 @@ router.get('/:dungeonId', async (req, res) => {
 });
 
 // Get available dungeons for a user
-router.get('/available/:userId', async (req, res) => {
+router.get('/available/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     

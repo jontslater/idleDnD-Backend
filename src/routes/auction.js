@@ -94,7 +94,7 @@ function getVendorSellPrice(item) {
 }
 
 // Create listing
-router.post('/list', async (req, res) => {
+router.post('/list', requireAuth, async (req, res) => {
   try {
     const { sellerId, sellerUsername, item, startingPrice, buyoutPrice, currency = 'gold', quantity = 1, duration = '24' } = req.body;
     
@@ -258,7 +258,7 @@ router.post('/list', async (req, res) => {
 });
 
 // Place bid
-router.post('/:listingId/bid', async (req, res) => {
+router.post('/:listingId/bid', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId, username, amount } = req.body;
@@ -389,7 +389,7 @@ router.post('/:listingId/bid', async (req, res) => {
 });
 
 // Buyout
-router.post('/:listingId/buyout', async (req, res) => {
+router.post('/:listingId/buyout', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId, username } = req.body;
@@ -549,7 +549,7 @@ router.post('/:listingId/buyout', async (req, res) => {
 });
 
 // Cancel listing
-router.post('/:listingId/cancel', async (req, res) => {
+router.post('/:listingId/cancel', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId } = req.body;
@@ -635,7 +635,7 @@ router.post('/:listingId/cancel', async (req, res) => {
 });
 
 // Get user's listings
-router.get('/my-listings/:userId', async (req, res) => {
+router.get('/my-listings/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -720,7 +720,7 @@ router.get('/my-listings/:userId', async (req, res) => {
 });
 
 // Get user's active bids
-router.get('/my-bids/:userId', async (req, res) => {
+router.get('/my-bids/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -740,7 +740,7 @@ router.get('/my-bids/:userId', async (req, res) => {
 });
 
 // Get transaction history
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     

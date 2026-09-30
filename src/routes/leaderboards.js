@@ -7,7 +7,7 @@ import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, re
 const router = express.Router();
 
 // Get user's rankings (MUST be before /:type/:category route to avoid route conflict)
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -56,7 +56,7 @@ router.get('/:type/:category', async (req, res) => {
 });
 
 // Update leaderboards (admin endpoint)
-router.post('/update', async (req, res) => {
+router.post('/update', requireAuth, async (req, res) => {
   try {
     await updateLeaderboards();
     res.json({ success: true, message: 'Leaderboards updated' });

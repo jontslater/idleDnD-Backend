@@ -3,12 +3,9 @@ import admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 import fetch from 'node-fetch';
 import { db } from '../index.js';
+import { JWT_SECRET, JWT_EXPIRES_IN } from '../config/jwt.js';
 
 const router = express.Router();
-
-// JWT secret for generating tokens (should be in .env in production)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRES_IN = '30d';
 
 /**
  * Middleware to verify JWT token

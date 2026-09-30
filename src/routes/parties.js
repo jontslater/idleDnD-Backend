@@ -24,7 +24,7 @@ const PARTY_LIMITS = {
  * Create a new party
  * POST /api/parties/create
  */
-router.post('/create', async (req, res) => {
+router.post('/create', requireAuth, async (req, res) => {
   try {
     const { leaderId, leaderName, heroId, heroName, heroRole, heroLevel } = req.body;
 
@@ -217,7 +217,7 @@ router.get('/search', async (req, res) => {
  * Get user's current party
  * GET /api/parties/:userId
  */
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -257,7 +257,7 @@ router.get('/:userId', async (req, res) => {
  * Invite player to party
  * POST /api/parties/:partyId/invite
  */
-router.post('/:partyId/invite', async (req, res) => {
+router.post('/:partyId/invite', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { inviterId, inviteeId, inviteeName, heroId, heroName, heroRole, heroLevel } = req.body;
@@ -443,7 +443,7 @@ router.post('/:partyId/invite', async (req, res) => {
  * Accept party invite
  * POST /api/parties/invites/:inviteId/accept
  */
-router.post('/invites/:inviteId/accept', async (req, res) => {
+router.post('/invites/:inviteId/accept', requireAuth, async (req, res) => {
   try {
     const { inviteId } = req.params;
     const { userId } = req.body;
@@ -538,7 +538,7 @@ router.post('/invites/:inviteId/accept', async (req, res) => {
  * Decline party invite
  * POST /api/parties/invites/:inviteId/decline
  */
-router.post('/invites/:inviteId/decline', async (req, res) => {
+router.post('/invites/:inviteId/decline', requireAuth, async (req, res) => {
   try {
     const { inviteId } = req.params;
     const { userId } = req.body;
@@ -580,7 +580,7 @@ router.post('/invites/:inviteId/decline', async (req, res) => {
  * Leave party
  * POST /api/parties/:partyId/leave
  */
-router.post('/:partyId/leave', async (req, res) => {
+router.post('/:partyId/leave', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { userId } = req.body;
@@ -656,7 +656,7 @@ router.post('/:partyId/leave', async (req, res) => {
  * Kick member from party (leader only)
  * POST /api/parties/:partyId/kick
  */
-router.post('/:partyId/kick', async (req, res) => {
+router.post('/:partyId/kick', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { leaderId, memberId } = req.body;
@@ -711,7 +711,7 @@ router.post('/:partyId/kick', async (req, res) => {
  * Transfer leadership
  * POST /api/parties/:partyId/transfer
  */
-router.post('/:partyId/transfer', async (req, res) => {
+router.post('/:partyId/transfer', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { currentLeaderId, newLeaderId } = req.body;
@@ -761,7 +761,7 @@ router.post('/:partyId/transfer', async (req, res) => {
  * Body: { userId: string } (must be party leader)
  * NOTE: This must be defined BEFORE /:partyId/queue to avoid route conflicts
  */
-router.post('/:partyId/cancel-queue', async (req, res) => {
+router.post('/:partyId/cancel-queue', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { userId } = req.body;
@@ -855,7 +855,7 @@ router.post('/:partyId/cancel-queue', async (req, res) => {
  * Queue entire party for dungeon or raid
  * POST /api/parties/:partyId/queue
  */
-router.post('/:partyId/queue', async (req, res) => {
+router.post('/:partyId/queue', requireAuth, async (req, res) => {
   try {
     const { partyId } = req.params;
     const { queueType, raidId, dungeonType, dungeonId, fillParty } = req.body;
@@ -1490,7 +1490,7 @@ function calculateItemScore(equipment) {
  * Get pending invites for a user
  * GET /api/parties/invites/:userId
  */
-router.get('/invites/:userId', async (req, res) => {
+router.get('/invites/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 

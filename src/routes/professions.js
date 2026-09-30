@@ -96,7 +96,7 @@ function calculateCraftingXP(professionType, recipeKey, tier, quantity) {
  * Choose a profession
  * POST /api/heroes/:userId/profession
  */
-router.post('/:userId/profession', async (req, res) => {
+router.post('/:userId/profession', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { type } = req.body;
     const { userId } = req.params;
@@ -174,7 +174,7 @@ router.post('/:userId/profession', async (req, res) => {
  * Craft an item
  * POST /api/professions/:userId/craft
  */
-router.post('/:userId/craft', async (req, res) => {
+router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { recipeKey } = req.body;
     const { userId } = req.params;
@@ -543,7 +543,7 @@ router.post('/:userId/craft', async (req, res) => {
  * SERVER-SIDE CALCULATION (FE #3 requirement 4): All gathering amounts calculated server-side
  * Client cannot manipulate drop rates or quantities - all RNG happens here
  */
-router.post('/:userId/gather', async (req, res) => {
+router.post('/:userId/gather', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -753,7 +753,7 @@ router.post('/:userId/gather', async (req, res) => {
  * Apply upgrade/enchantment to gear
  * POST /api/professions/:userId/apply
  */
-router.post('/:userId/apply', async (req, res) => {
+router.post('/:userId/apply', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemId, equipmentSlot } = req.body;
     const { userId } = req.params;
@@ -998,7 +998,7 @@ router.post('/:userId/apply', async (req, res) => {
  * Use a consumable
  * POST /api/professions/:userId/use
  */
-router.post('/:userId/use', async (req, res) => {
+router.post('/:userId/use', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemKey, itemId } = req.body;
     const { userId } = req.params;
@@ -1184,7 +1184,7 @@ router.post('/:userId/use', async (req, res) => {
  * Equip an item
  * POST /api/heroes/:userId/equip
  */
-router.post('/:userId/equip', async (req, res) => {
+router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { slot, item } = req.body;
     const { userId } = req.params;
@@ -1313,7 +1313,7 @@ router.post('/:userId/equip', async (req, res) => {
  * Unequip an item
  * POST /api/heroes/:userId/unequip
  */
-router.post('/:userId/unequip', async (req, res) => {
+router.post('/:userId/unequip', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { slot } = req.body;
     const { userId } = req.params;
@@ -1562,7 +1562,7 @@ function calculateSocketBonuses(sockets) {
  * Apply socket item to gear
  * POST /api/professions/:userId/apply-socket
  */
-router.post('/:userId/apply-socket', async (req, res) => {
+router.post('/:userId/apply-socket', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketItemId, slot } = req.body;
     const { userId } = req.params;
@@ -1700,7 +1700,7 @@ router.post('/:userId/apply-socket', async (req, res) => {
  * Insert gem into socket
  * POST /api/professions/:userId/gem
  */
-router.post('/:userId/gem', async (req, res) => {
+router.post('/:userId/gem', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketId, gemId } = req.body;
     const { userId } = req.params;
@@ -1846,7 +1846,7 @@ router.post('/:userId/gem', async (req, res) => {
  * Remove gem from socket
  * POST /api/professions/:userId/remove-gem
  */
-router.post('/:userId/remove-gem', async (req, res) => {
+router.post('/:userId/remove-gem', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId, itemId, socketId } = req.body;
     const { userId } = req.params;

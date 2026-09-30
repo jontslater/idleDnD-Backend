@@ -24,7 +24,7 @@ const MAX_MAIL_PER_USER = 50;
  *   codAmount?: number (required if items are attached and COD)
  * }
  */
-router.post('/send', async (req, res) => {
+router.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderId, senderHeroId, recipientId, subject, message, items, gold, tokens, codAmount } = req.body;
 
@@ -269,7 +269,7 @@ router.post('/send', async (req, res) => {
  * GET /api/mail/:userId
  * Query params: unreadOnly?: boolean
  */
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { unreadOnly } = req.query;
@@ -383,7 +383,7 @@ router.get('/:userId', async (req, res) => {
  * POST /api/mail/:mailId/read
  * Body: { userId: string }
  */
-router.post('/:mailId/read', async (req, res) => {
+router.post('/:mailId/read', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId } = req.body;
@@ -423,7 +423,7 @@ router.post('/:mailId/read', async (req, res) => {
  * POST /api/mail/:mailId/claim
  * Body: { userId: string, heroId: string }
  */
-router.post('/:mailId/claim', async (req, res) => {
+router.post('/:mailId/claim', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId, heroId } = req.body;
@@ -587,7 +587,7 @@ router.post('/:mailId/claim', async (req, res) => {
  * DELETE /api/mail/:mailId
  * Body: { userId: string }
  */
-router.delete('/:mailId', async (req, res) => {
+router.delete('/:mailId', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId } = req.body;

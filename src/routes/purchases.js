@@ -37,7 +37,7 @@ const TIER_LEVELS = {
  * Initiate a founders pack purchase
  * POST /api/purchases/founders-pack
  */
-router.post('/founders-pack', async (req, res) => {
+router.post('/founders-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packTier } = req.body;
 
@@ -104,7 +104,7 @@ router.post('/founders-pack', async (req, res) => {
  * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
  * This endpoint remains for backward compatibility but should be removed in production.
  */
-router.post('/complete', async (req, res) => {
+router.post('/complete', requireAuth, async (req, res) => {
   // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
   return res.status(403).json({ 
     error: 'Forbidden',
@@ -573,7 +573,7 @@ router.get('/founders', async (req, res) => {
  * Set founder status for a user (admin/manual grant)
  * POST /api/purchases/set-founder
  */
-router.post('/set-founder', async (req, res) => {
+router.post('/set-founder', requireAdmin, async (req, res) => {
   try {
     const { userId, username, tier } = req.body;
 
@@ -748,7 +748,7 @@ router.post('/set-founder', async (req, res) => {
  * Remove founder pack status from a user (admin only)
  * POST /api/purchases/remove-founder
  */
-router.post('/remove-founder', async (req, res) => {
+router.post('/remove-founder', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.body;
 
@@ -831,7 +831,7 @@ router.post('/remove-founder', async (req, res) => {
  * Initiate a token pack purchase
  * POST /api/purchases/token-pack
  */
-router.post('/token-pack', async (req, res) => {
+router.post('/token-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packType, heroId } = req.body;
 
@@ -897,7 +897,7 @@ router.post('/token-pack', async (req, res) => {
  * DEPRECATED: This endpoint should NOT be called directly by clients.
  * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
  */
-router.post('/complete-token-pack', async (req, res) => {
+router.post('/complete-token-pack', requireAuth, async (req, res) => {
   // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
   return res.status(403).json({ 
     error: 'Forbidden',
@@ -987,7 +987,7 @@ router.post('/complete-token-pack', async (req, res) => {
  * Create Stripe checkout session endpoint
  * POST /api/purchases/create-checkout-session
  */
-router.post('/create-checkout-session', async (req, res) => {
+router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.body;
 
@@ -1113,7 +1113,7 @@ router.get('/cancel', async (req, res) => {
  * Get user's purchase history
  * GET /api/purchases/history/:userId
  */
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 

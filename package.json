@@ -10,7 +10,8 @@
     "deploy": "firebase deploy --only functions",
     "deploy-indexes": "firebase deploy --only firestore:indexes",
     "serve": "firebase emulators:start",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node scripts/audit-routes.js && node tests/route-protection.test.js",
+    "audit-routes": "node scripts/audit-routes.js",
     "sync-heroes": "node scripts/sync-heroes.js",
     "test-hero": "node scripts/sync-heroes.js --test",
     "test-dungeon-queue": "node scripts/test-dungeon-queue.js",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "firebase-tools": "^13.0.0",
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "supertest": "^7.3.0"
   }
 }

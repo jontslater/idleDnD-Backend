@@ -68,7 +68,7 @@ router.get('/monthly', async (req, res) => {
 });
 
 // Get player's quest progress
-router.get('/:userId/progress', async (req, res) => {
+router.get('/:userId/progress', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -133,7 +133,7 @@ router.get('/:userId/progress', async (req, res) => {
 // questId is now a "tracking key" like "kill", "dealDamage", etc.
 // SERVER-SIDE VALIDATION (FE #3 requirement 3): Calculate progress server-side
 // The increment value is validated and clamped to prevent client manipulation
-router.post('/:userId/update/:trackingKey', async (req, res) => {
+router.post('/:userId/update/:trackingKey', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, trackingKey } = req.params;
     let { type, increment = 1 } = req.body; // type: 'daily', 'weekly', 'monthly'
@@ -255,7 +255,7 @@ router.post('/:userId/update/:trackingKey', async (req, res) => {
 });
 
 // Batch update quest progress (accepts multiple tracking keys at once)
-router.post('/:userId/update-batch', async (req, res) => {
+router.post('/:userId/update-batch', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { updates } = req.body; // Array of { trackingKey, type, increment }
@@ -388,7 +388,7 @@ router.post('/:userId/update-batch', async (req, res) => {
 });
 
 // Super-batch update: Update quest progress for multiple users at once
-router.post('/update-batch-all', async (req, res) => {
+router.post('/update-batch-all', requireAuth, async (req, res) => {
   try {
     const { updates } = req.body; // Array of { userId, updates: [{ trackingKey, type, increment }] }
     
@@ -559,7 +559,7 @@ router.post('/update-batch-all', async (req, res) => {
 });
 
 // Claim individual quest reward
-router.post('/:userId/claim/:questId', async (req, res) => {
+router.post('/:userId/claim/:questId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, questId } = req.params;
     const { type } = req.body; // 'daily', 'weekly', 'monthly'
@@ -685,7 +685,7 @@ router.post('/:userId/claim/:questId', async (req, res) => {
 });
 
 // Claim completion bonus (all quests of a type done)
-router.post('/:userId/claim-bonus/:type', async (req, res) => {
+router.post('/:userId/claim-bonus/:type', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, type } = req.params;
     
@@ -801,7 +801,7 @@ router.post('/:userId/claim-bonus/:type', async (req, res) => {
 });
 
 // Auto-claim all completed quests
-router.post('/auto-claim-all', async (req, res) => {
+router.post('/auto-claim-all', requireAuth, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -935,7 +935,7 @@ router.post('/auto-claim-all', async (req, res) => {
 });
 
 // Claim all completed quests for a specific type (daily/weekly/monthly)
-router.post('/claim-all/:userId', async (req, res) => {
+router.post('/claim-all/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { type } = req.body; // Optional: 'daily', 'weekly', or 'monthly'

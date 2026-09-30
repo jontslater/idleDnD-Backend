@@ -6,23 +6,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../index.js';
-
-// JWT_SECRET must be set - fail closed, no defaults
-let JWT_SECRET;
-
-if (process.env.JWT_SECRET) {
-  JWT_SECRET = process.env.JWT_SECRET;
-} else if (process.env.NODE_ENV === 'production') {
-  console.error('❌ FATAL: JWT_SECRET is not set in production!');
-  console.error('The server cannot start without JWT_SECRET configured.');
-  process.exit(1);
-} else {
-  // Development: generate random per-process secret with loud warning
-  JWT_SECRET = crypto.randomBytes(32).toString('hex');
-  console.warn('⚠️  WARNING: JWT_SECRET not set! Generated random per-process secret.');
-  console.warn('⚠️  This is INSECURE and sessions will break on restart.');
-  console.warn('⚠️  Set JWT_SECRET environment variable before production deployment.');
-}
+import { JWT_SECRET } from '../config/jwt.js';
 
 /**
  * Verify JWT token and attach user identity to request

@@ -62,7 +62,7 @@ router.get('/:bossId', async (req, res) => {
 });
 
 // Join world boss fight
-router.post('/:bossId/join', async (req, res) => {
+router.post('/:bossId/join', requireAuth, async (req, res) => {
   try {
     const { bossId } = req.params;
     const { userId, username, heroLevel, heroRole } = req.body;
@@ -118,7 +118,7 @@ router.post('/:bossId/join', async (req, res) => {
 });
 
 // Submit damage/healing to world boss
-router.post('/:bossId/damage', async (req, res) => {
+router.post('/:bossId/damage', requireAuth, async (req, res) => {
   try {
     const { bossId } = req.params;
     const { userId, damageDealt, healingDone, damageBlocked, newHp } = req.body;
@@ -240,7 +240,7 @@ router.get('/:bossId/leaderboard', async (req, res) => {
 });
 
 // Complete world boss and distribute rewards
-router.post('/:bossId/complete', async (req, res) => {
+router.post('/:bossId/complete', requireAuth, async (req, res) => {
   try {
     const { bossId } = req.params;
     
@@ -367,7 +367,7 @@ router.post('/:bossId/complete', async (req, res) => {
 });
 
 // Create a new world boss event (admin only - for testing)
-router.post('/create', async (req, res) => {
+router.post('/create', requireAuth, async (req, res) => {
   try {
     const { name, hp, attack, level, mechanics, duration, rewards } = req.body;
     

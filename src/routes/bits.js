@@ -37,6 +37,7 @@ const verifyTwitchToken = (req, res, next) => {
 };
 
 // Process Bits purchase
+// Twitch Extension JWT verification (separate from user JWT)
 router.post('/purchase', verifyTwitchToken, async (req, res) => {
   try {
     const { type, rarity, slot, item, bits, transactionId, userId, channelId } = req.body;

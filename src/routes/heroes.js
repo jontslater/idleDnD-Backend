@@ -143,7 +143,7 @@ router.get('/', async (req, res) => {
 
 // Login reward routes - MUST be before /:userId route to ensure proper matching
 // Route: GET /api/heroes/login-reward/:userId/status
-router.get('/login-reward/:userId/status', async (req, res) => {
+router.get('/login-reward/:userId/status', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     console.log(`[Login Reward] GET /api/heroes/login-reward/${userId}/status - userId: ${userId}`);
@@ -166,7 +166,7 @@ router.get('/login-reward/:userId/status', async (req, res) => {
   }
 });
 
-router.post('/login-reward/:userId', async (req, res) => {
+router.post('/login-reward/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     const provider = req.body.provider || 'twitch'; // Default to twitch, can be 'tiktok'
@@ -184,7 +184,7 @@ router.post('/login-reward/:userId', async (req, res) => {
  * GET /api/heroes/:userId/prestige-store
  * MUST come before /:userId route to ensure proper matching
  */
-router.get('/:userId/prestige-store', async (req, res) => {
+router.get('/:userId/prestige-store', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);
@@ -235,7 +235,7 @@ router.get('/:userId/prestige-store', async (req, res) => {
 });
 
 // Get hero by user ID
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
     const heroCache = getHeroCache();
@@ -310,7 +310,7 @@ router.get('/:userId', async (req, res) => {
 });
 
 // Unlock hero slot endpoint
-router.post('/:userId/unlock-slot', async (req, res) => {
+router.post('/:userId/unlock-slot', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     const { twitchUserId, tiktokUserId } = req.body;
@@ -401,7 +401,7 @@ router.post('/:userId/unlock-slot', async (req, res) => {
 });
 
 // Get user's slot information
-router.get('/:userId/slots', async (req, res) => {
+router.get('/:userId/slots', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     const { twitchUserId, tiktokUserId } = req.query;
@@ -651,7 +651,7 @@ async function getUserSlotsUnlocked(userId, isTwitch = true) {
 }
 
 // Create new hero with class selection
-router.post('/create', async (req, res) => {
+router.post('/create', requireAuth, async (req, res) => {
   try {
     const { class: classKey, twitchUserId, tiktokUserId, battlefieldId } = req.body;
 
@@ -826,7 +826,7 @@ router.post('/create', async (req, res) => {
 });
 
 // Rename hero endpoint
-router.patch('/:heroId/rename', async (req, res) => {
+router.patch('/:heroId/rename', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
     const { newName } = req.body;
@@ -947,7 +947,7 @@ router.get('/create/cost-info', async (req, res) => {
 });
 
 // Create new hero (legacy endpoint)
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const heroData = {
       ...req.body,
@@ -1128,7 +1128,7 @@ router.put('/:userId', requireAuth, requireOwnership, async (req, res) => {
 });
 
 // Toggle hero pin status
-router.post('/:userId/pin', async (req, res) => {
+router.post('/:userId/pin', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroRef = db.collection('heroes').doc(req.params.userId);
     const doc = await heroRef.get();
@@ -1469,7 +1469,7 @@ router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (re
 
 // Gold Sinks - Balanced, not gacha
 // Upgrade equipment with custom stat selection (2 of 4 random stats)
-router.post('/:userId/upgrade-item', async (req, res) => {
+router.post('/:userId/upgrade-item', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { itemId, selectedStats, upgradeLevel } = req.body; // upgradeLevel is optional - which level to upgrade/replace
@@ -1611,7 +1611,7 @@ router.post('/:userId/upgrade-item', async (req, res) => {
 });
 
 // Reforge secondary stats (reroll secondary stats, keep primary stats)
-router.post('/:userId/reforge-item', async (req, res) => {
+router.post('/:userId/reforge-item', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { itemId } = req.body;
@@ -1740,7 +1740,7 @@ router.post('/:userId/reforge-item', async (req, res) => {
 });
 
 // Lock/unlock equipment item
-router.post('/:userId/equipment/:slot/lock', async (req, res) => {
+router.post('/:userId/equipment/:slot/lock', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, slot } = req.params;
     
@@ -1783,7 +1783,7 @@ router.post('/:userId/equipment/:slot/lock', async (req, res) => {
   }
 });
 
-router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
+router.post('/:userId/equipment/:slot/unlock', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, slot } = req.params;
     
@@ -1827,7 +1827,7 @@ router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
 });
 
 // Expand bank storage (add bank slots)
-router.post('/:userId/expand-storage', async (req, res) => {
+router.post('/:userId/expand-storage', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { slots = 15, currency = 'gold' } = req.body; // Default 15 slots, currency: 'gold' or 'tokens'
@@ -1917,7 +1917,7 @@ router.post('/:userId/expand-storage', async (req, res) => {
 
 
 // Port hero to new battlefield
-router.post('/:userId/port', async (req, res) => {
+router.post('/:userId/port', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { battlefieldId, battlefieldType } = req.body;
@@ -2024,7 +2024,7 @@ router.post('/:userId/port', async (req, res) => {
  * heroId is the hero document ID (from hero.id in frontend)
  * This essentially triggers the !claim command for the hero
  */
-router.post('/:heroId/claim-idle-rewards', async (req, res) => {
+router.post('/:heroId/claim-idle-rewards', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
 
@@ -2112,7 +2112,7 @@ router.post('/:userId/admin/give-item', requireAdmin, async (req, res) => {
  * Prestige endpoint - Reset hero to level 1 and apply permanent boosts
  * POST /api/heroes/:userId/prestige
  */
-router.post('/:userId/prestige', async (req, res) => {
+router.post('/:userId/prestige', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);
@@ -2262,7 +2262,7 @@ router.post('/:userId/prestige', async (req, res) => {
  * Purchase prestige core
  * POST /api/heroes/:userId/prestige-store/purchase
  */
-router.post('/:userId/prestige-store/purchase', async (req, res) => {
+router.post('/:userId/prestige-store/purchase', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { tier } = req.body;
     const { userId } = req.params;
@@ -2362,7 +2362,7 @@ router.post('/:userId/prestige-store/purchase', async (req, res) => {
  * Apply prestige core to equipment slot (not item - persists when gear is replaced)
  * POST /api/heroes/:userId/prestige-store/apply
  */
-router.post('/:userId/prestige-store/apply', async (req, res) => {
+router.post('/:userId/prestige-store/apply', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { coreId, slot } = req.body;
     const { userId } = req.params;

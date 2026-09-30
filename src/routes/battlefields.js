@@ -128,6 +128,7 @@ router.get('/:battlefieldId/state', async (req, res) => {
 
 // Register browser source association
 // This also attempts to initialize chat listener if not already active
+// Internal route - called by backend on hero join
 router.post('/register', async (req, res) => {
   try {
     const { battlefieldId, userId, token } = req.body;
@@ -299,7 +300,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Save sprite facing preferences
-router.post('/preferences/sprite-facing', async (req, res) => {
+router.post('/preferences/sprite-facing', requireAuth, async (req, res) => {
   try {
     const { userId, spriteName, facing } = req.body;
     
@@ -384,7 +385,7 @@ function getDefaultFacingForRole(roleOrEnemyType) {
 }
 
 // Get sprite facing preferences for a user (with defaults for roles)
-router.get('/preferences/sprite-facing/:userId', async (req, res) => {
+router.get('/preferences/sprite-facing/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -451,7 +452,7 @@ router.get('/preferences/sprite-facing/:userId', async (req, res) => {
 });
 
 // Save all sprite facing preferences at once
-router.post('/preferences/sprite-facing/bulk', async (req, res) => {
+router.post('/preferences/sprite-facing/bulk', requireAuth, async (req, res) => {
   try {
     const { userId, preferences } = req.body;
     
@@ -486,6 +487,7 @@ router.post('/preferences/sprite-facing/bulk', async (req, res) => {
 // Accumulate enemy kill (stores in memory, awards XP periodically)
 // This is the RECOMMENDED endpoint for high-frequency enemy kills
 // Reduces API calls by 80-90% compared to immediate awarding
+// Internal route - XP accumulation service
 router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
   try {
     const { battlefieldId } = req.params;
@@ -540,7 +542,7 @@ router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
 // Award XP to heroes when enemies are killed (supports single or batch)
 // This is the IMMEDIATE award endpoint - use for important events (level-ups, etc.)
 // For regular enemy kills, use /accumulate instead to reduce API calls
-router.post('/:battlefieldId/combat/xp', async (req, res) => {
+router.post('/:battlefieldId/combat/xp', requireAuth, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     const { baseXP, enemyLevel, enemyName, heroIds, immediate = false } = req.body;
@@ -616,6 +618,7 @@ router.post('/:battlefieldId/combat/xp', async (req, res) => {
 
 // Flush accumulated XP immediately for a battlefield
 // Useful for important events (wave completion, level-ups, etc.)
+// Internal route - XP flush service
 router.post('/:battlefieldId/combat/xp/flush', async (req, res) => {
   try {
     const { battlefieldId } = req.params;
@@ -676,7 +679,7 @@ router.get('/:battlefieldId/combat/xp/status', async (req, res) => {
 });
 
 // Preview XP distribution without awarding (for UI display)
-router.post('/:battlefieldId/combat/xp/preview', async (req, res) => {
+router.post('/:battlefieldId/combat/xp/preview', requireAuth, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     const { baseXP, enemyLevel } = req.body;

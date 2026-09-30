@@ -22,7 +22,7 @@ const LOOT_TOKEN_REWARDS = {
  * GET /api/loot-tokens/:userId
  * Get user's loot token balance
  */
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -51,7 +51,7 @@ router.get('/:userId', async (req, res) => {
  * POST /api/loot-tokens/award
  * Award loot tokens to a user (called after raid/dungeon completion)
  */
-router.post('/award', async (req, res) => {
+router.post('/award', requireAuth, async (req, res) => {
   try {
     const { userId, raidId, difficulty, amount } = req.body;
 
@@ -112,7 +112,7 @@ router.post('/award', async (req, res) => {
  * POST /api/loot-tokens/spend
  * Spend loot tokens (for purchasing items)
  */
-router.post('/spend', async (req, res) => {
+router.post('/spend', requireAuth, async (req, res) => {
   try {
     const { userId, amount, itemId, itemName } = req.body;
 
@@ -173,7 +173,7 @@ router.post('/spend', async (req, res) => {
  * GET /api/loot-tokens/history/:userId
  * Get user's loot token transaction history
  */
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const limit = parseInt(req.query.limit) || 50;

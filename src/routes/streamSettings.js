@@ -72,7 +72,7 @@ function getDefaultSettings() {
  * POST /api/stream/settings/:twitchId/test
  * Must be before /:twitchId route to avoid route conflicts
  */
-router.post('/:twitchId/test', async (req, res) => {
+router.post('/:twitchId/test', requireAuth, async (req, res) => {
   try {
     const { twitchId } = req.params;
 

@@ -26,7 +26,7 @@ router.get('/', (req, res) => {
 });
 
 // Get hero's achievements
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const achievements = await getHeroAchievements(req.params.userId);
     if (!achievements) {
@@ -40,6 +40,7 @@ router.get('/:userId', async (req, res) => {
 });
 
 // Check and unlock achievements (called after actions)
+// Internal route - called by backend services, not HTTP clients
 router.post('/check', async (req, res) => {
   try {
     const { userId, actionType, actionValue } = req.body;
@@ -62,7 +63,7 @@ router.post('/check', async (req, res) => {
 });
 
 // Set active title
-router.put('/:userId/title', async (req, res) => {
+router.put('/:userId/title', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { title } = req.body;
@@ -81,7 +82,7 @@ router.put('/:userId/title', async (req, res) => {
 
 // Sync achievement titles for a hero (check all achievements and add missing titles)
 // This re-evaluates all achievements based on current hero stats/progress
-router.post('/:userId/sync-titles', async (req, res) => {
+router.post('/:userId/sync-titles', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { checkAchievements } = await import('../services/achievementService.js');
@@ -108,7 +109,7 @@ router.post('/:userId/sync-titles', async (req, res) => {
 });
 
 // Unlock all achievements for a specific user (admin/dev only)
-router.post('/:userId/unlock-all', async (req, res) => {
+router.post('/:userId/unlock-all', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);

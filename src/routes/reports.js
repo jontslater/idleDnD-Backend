@@ -21,7 +21,7 @@ const router = express.Router();
  *   actualBehavior: string (optional)
  * }
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const {
       userId,
@@ -192,7 +192,7 @@ router.get('/:reportId', async (req, res) => {
  *   username: string (required - must be 'theneverendingwar')
  * }
  */
-router.patch('/:reportId', async (req, res) => {
+router.patch('/:reportId', requireAuth, async (req, res) => {
   try {
     const { reportId } = req.params;
     const { status, adminNotes, username } = req.body;

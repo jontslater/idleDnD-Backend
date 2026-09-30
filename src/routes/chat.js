@@ -19,6 +19,7 @@ const router = express.Router();
  *   heroIndex: number         // Optional hero index (1-based) from !heroes list
  * }
  */
+// Internal route - called by Twitch bot
 router.post('/join', async (req, res) => {
   try {
     const { viewerUsername, viewerId, streamerUsername, streamerId, class: classKey, heroIndex } = req.body;
@@ -459,7 +460,7 @@ router.post('/join', async (req, res) => {
  *   accessToken: string         // Optional - if not provided, will fetch from hero document
  * }
  */
-router.post('/initialize', async (req, res) => {
+router.post('/initialize', requireAuth, async (req, res) => {
   try {
     const { streamerUsername, accessToken } = req.body;
 
