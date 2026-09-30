@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import fetch from 'node-fetch';
+import { requireStreamerAccess, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -587,6 +588,7 @@ router.get('/status', async (req, res) => {
  * Get current chat activity metrics for a stream
  * GET /api/chat/activity/:streamerId
  * FE #3 requirement 5: Expose chat activity metrics for overlay/portal display
+ * Requires: X-Streamer-Key header or authenticated streamer
  * Returns: {
  *   activeUsers: number,
  *   recentMessageCount: number,
@@ -595,7 +597,7 @@ router.get('/status', async (req, res) => {
  *   lastActivityTimestamp: number
  * }
  */
-router.get('/activity/:streamerId', async (req, res) => {
+router.get('/activity/:streamerId', optionalAuth, requireStreamerAccess, async (req, res) => {
   try {
     const { streamerId } = req.params;
     
@@ -611,26 +613,30 @@ router.get('/activity/:streamerId', async (req, res) => {
       .where('currentBattlefieldId', '==', battlefieldId)
       .get();
     
-    const activeHeroes = heroesSnapshot.size;
+    // Filter heroes by rate-limiting: only count heroes active in last 5 minutes
+    const ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const recentlyActiveHeroes = heroesSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      const lastActive = data.lastActiveAt?.toMillis?.() || data.updatedAt?.toMillis?.() || 0;
+      return (now - lastActive) < ACTIVITY_WINDOW_MS;
+    });
     
-    // Calculate group boost based on active participants
-    // Design: More active players = higher boost (up to a cap)
-    // Tier 1 (1-5 players): No boost
-    // Tier 2 (6-15 players): +10% XP/Gold
-    // Tier 3 (16-30 players): +25% XP/Gold
-    // Tier 4 (31+ players): +50% XP/Gold
+    const activeHeroes = recentlyActiveHeroes.length;
+    
+    // Calculate group boost with smooth diminishing returns curve
+    // Formula: bonus = maxBonus * (users / (users + halfPoint))
+    // This creates a smooth curve that approaches maxBonus asymptotically
+    const MAX_BOOST = 0.50; // 50% max bonus
+    const HALF_POINT = 20; // Point at which we reach half of max boost
+    
     let groupBoostActive = false;
     let groupBoostMultiplier = 0;
     
-    if (activeHeroes >= 6 && activeHeroes <= 15) {
-      groupBoostActive = true;
-      groupBoostMultiplier = 0.10; // +10%
-    } else if (activeHeroes >= 16 && activeHeroes <= 30) {
-      groupBoostActive = true;
-      groupBoostMultiplier = 0.25; // +25%
-    } else if (activeHeroes >= 31) {
-      groupBoostActive = true;
-      groupBoostMultiplier = 0.50; // +50%
+    if (activeHeroes >= 3) {
+      // Smooth diminishing returns: bonus = 0.5 * (users / (users + 20))
+      groupBoostMultiplier = MAX_BOOST * (activeHeroes / (activeHeroes + HALF_POINT));
+      groupBoostActive = groupBoostMultiplier >= 0.05; // Active if at least 5% boost
     }
     
     // Get last activity timestamp from most recent hero update

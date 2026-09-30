@@ -4,11 +4,12 @@ import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
 import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
+import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Track wave completion for periodic chat updates
-router.post('/:userId/track-wave', async (req, res) => {
+router.post('/:userId/track-wave', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
     const heroRef = db.collection('heroes').doc(heroId);
@@ -35,7 +36,7 @@ router.post('/:userId/track-wave', async (req, res) => {
 });
 
 // Create test hero for testing (dev only)
-router.post('/test/create', async (req, res) => {
+router.post('/test/create', requireAdmin, async (req, res) => {
   try {
     const { userId, username, heroName, role, level } = req.body;
     
@@ -965,9 +966,8 @@ router.post('/', async (req, res) => {
 });
 
 // Update hero
-// NOTE: This endpoint should require authentication in production
-// For now, we add basic validation to prevent unauthorized modifications
-router.put('/:userId', async (req, res) => {
+// Update hero - now requires authentication and ownership
+router.put('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
     
@@ -1154,7 +1154,7 @@ router.post('/:userId/pin', async (req, res) => {
 });
 
 // Delete hero
-router.delete('/:heroId', async (req, res) => {
+router.delete('/:heroId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
     const { userId } = req.body; // User ID for authorization check
@@ -1189,7 +1189,7 @@ router.delete('/:heroId', async (req, res) => {
 });
 
 // Purchase gold shop item
-router.post('/:userId/purchase/gold', async (req, res) => {
+router.post('/:userId/purchase/gold', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemKey } = req.body;
     const { userId } = req.params;
@@ -1305,7 +1305,7 @@ router.post('/:userId/purchase/gold', async (req, res) => {
 });
 
 // Purchase token shop gear
-router.post('/:userId/purchase/tokens', async (req, res) => {
+router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { rarity, slot, quantity } = req.body;
     const { userId } = req.params;
@@ -1314,11 +1314,11 @@ router.post('/:userId/purchase/tokens', async (req, res) => {
     const purchaseQuantity = quantity || 1;
 
     const TOKEN_SHOP_PRICES = {
-      common: 50, // Balanced: 50t (was 25t) - 2x increase for monetization
-      rare: 200, // Balanced: 200t (was 100t) - 2x increase
-      epic: 600, // Balanced: 600t (was 300t) - 2x increase
-      legendary: 2500, // Balanced: 2500t (was 1000t) - 2.5x increase
-      mythic: 10000 // NEW - ultra-rare tier
+      common: 100, // Fixed: 100t (was 50t) - higher prices so shop items don't beat drops
+      rare: 400, // Fixed: 400t (was 200t)
+      epic: 1200, // Fixed: 1200t (was 600t)
+      legendary: 5000, // Fixed: 5000t (was 2500t) - expensive so dropped legendaries are valuable
+      mythic: 20000 // Fixed: 20000t (was 10000t) - ultra-rare tier premium
     };
 
     if (!TOKEN_SHOP_PRICES[rarity]) {
@@ -2067,7 +2067,7 @@ router.post('/:heroId/claim-idle-rewards', async (req, res) => {
  * Admin: Give item to hero
  * POST /api/heroes/:userId/admin/give-item
  */
-router.post('/:userId/admin/give-item', async (req, res) => {
+router.post('/:userId/admin/give-item', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { item } = req.body;
