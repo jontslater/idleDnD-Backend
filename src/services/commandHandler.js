@@ -83,7 +83,7 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
   try {
     // Use numeric streamerId if available (for queues), otherwise use username (legacy)
     const battlefieldId = streamerId ? `twitch:${streamerId}` : `twitch:${streamerUsername.toLowerCase()}`;
-    const commandLower = command.toLowerCase();
+    let commandLower = command.toLowerCase();
     
     console.log(`[Command] Processing !${command} - BattlefieldId: ${battlefieldId}, StreamerId: ${streamerId}`);
     
@@ -964,6 +964,15 @@ async function handleBuyCommand(hero, args, username) {
     };
   }
 
+  // Validate cost is positive
+  if (shopItem.cost <= 0 || !isFinite(shopItem.cost) || isNaN(shopItem.cost)) {
+    console.error(`[Shop] Invalid item cost: ${shopItem.cost} for ${shopItem.name}`);
+    return {
+      success: false,
+      message: `@${username} Item price error. Contact an admin.`
+    };
+  }
+
   // Check if hero has enough gold
   const heroGold = hero.gold || 0;
   if (shopItem.type === 'gold' && heroGold < shopItem.cost) {
@@ -973,9 +982,19 @@ async function handleBuyCommand(hero, args, username) {
     };
   }
 
-  // Deduct cost
+  // Validate hero's gold is non-negative (prevent exploits)
+  if (heroGold < 0) {
+    console.error(`[Shop] Hero ${hero.id} has negative gold: ${heroGold}`);
+    return {
+      success: false,
+      message: `@${username} Account error. Contact an admin.`
+    };
+  }
+
+  // Deduct cost (ensure result is non-negative)
+  const newGold = Math.max(0, heroGold - shopItem.cost);
   const updateData = {
-    gold: heroGold - shopItem.cost,
+    gold: newGold,
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   };
 
@@ -986,12 +1005,12 @@ async function handleBuyCommand(hero, args, username) {
 
   await db.collection('heroes').doc(hero.id).update(updateData);
 
-  const message = `@${username} bought ${shopItem.name} for ${shopItem.cost}g! (${heroGold - shopItem.cost}g remaining)`;
+  const message = `@${username} bought ${shopItem.name} for ${shopItem.cost}g! (${newGold}g remaining)`;
 
   return {
     success: true,
     message,
-    data: { item: shopItem.name, cost: shopItem.cost, remainingGold: heroGold - shopItem.cost }
+    data: { item: shopItem.name, cost: shopItem.cost, remainingGold: newGold }
   };
 }
 

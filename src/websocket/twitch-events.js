@@ -32,20 +32,14 @@ const VALID_GAME_COMMANDS = new Set([
   // Combat commands
   'stats', 'gear', 'shop', 'attack', 'heal', 'cast', 'defend',
   'buy', 'use', 'rest', 'claim', 'tokens', 'leave', 'rejoin',
-  'switch', 'switchhero', 'auto',
+  'switch', 'auto',
   // Profession commands
   'profession', 'gather', 'herbs', 'recipes', 'craft', 'elixirs',
-  // Equipment commands
-  'equip', 'unequip', 'upgrade', 'reforge', 'lock', 'unlock',
   // Skill/Quest commands
-  'skills', 'skill', 'quest', 'quests', 'potion', 'dispel',
-  // Social commands
-  'party', 'invite', 'accept', 'decline',
+  'skills', 'quest', 'quests', 'potion', 'dispel',
   // Raid/Dungeon commands
-  'raid', 'raids', 'dungeon', 'dungeons', 'queue',
+  'raid', 'raids', 'dungeon', 'dungeons',
   'qdungeon', 'qraid', 'qstatus', 'qstart', 'qcancel', 'qleave',
-  // Guild commands
-  'guild', 'create',
   // Leaderboard commands
   'leaderboard', 'rank',
   // Command aliases (shortcuts)
