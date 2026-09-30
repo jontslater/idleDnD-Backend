@@ -538,6 +538,8 @@ router.post('/:userId/craft', async (req, res) => {
 /**
  * Gather materials (ore, herbs, gems)
  * POST /api/professions/:userId/gather
+ * SERVER-SIDE CALCULATION (FE #3 requirement 4): All gathering amounts calculated server-side
+ * Client cannot manipulate drop rates or quantities - all RNG happens here
  */
 router.post('/:userId/gather', async (req, res) => {
   try {

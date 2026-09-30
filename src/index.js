@@ -244,6 +244,7 @@ import purchasesRoutes from './routes/purchases.js';
 import mailRoutes from './routes/mail.js';
 import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
+import overlayRoutes from './routes/overlay.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -273,6 +274,7 @@ app.use('/api/loot-tokens', lootTokenRoutes);
 app.use('/api/mail', mailRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/stream/settings', streamSettingsRoutes);
+app.use('/api/overlay', overlayRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

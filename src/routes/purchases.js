@@ -988,10 +988,10 @@ router.post('/complete-token-pack', async (req, res) => {
  */
 router.post('/create-checkout-session', async (req, res) => {
   try {
-    const { purchaseId, price } = req.body;
+    const { purchaseId } = req.body;
 
-    if (!purchaseId || !price) {
-      return res.status(400).json({ error: 'purchaseId and price are required' });
+    if (!purchaseId) {
+      return res.status(400).json({ error: 'purchaseId is required' });
     }
 
     // In development/localhost, allow mock checkout for testing
@@ -1021,23 +1021,36 @@ router.post('/create-checkout-session', async (req, res) => {
     }
 
     const purchase = purchaseDoc.data();
-    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
-    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
-    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
-    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
-
+    
+    // SERVER-SIDE PRICE LOOKUP (FE #3 requirement 1): Never trust client prices
+    // Look up price from server-side configs or purchase record
+    let serverPrice = null;
     let productName = 'Purchase';
     let productDescription = 'Game purchase';
 
     if (purchase.packTier) {
       const packConfig = PACK_TIERS[purchase.packTier];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = `${packConfig.name} Pack`;
       productDescription = `Founder's Pack - ${packConfig.premiumCurrency} Tokens`;
     } else if (purchase.packType) {
       const packConfig = TOKEN_PACKS[purchase.packType];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = packConfig.name;
       productDescription = `${packConfig.tokens} Tokens + ${packConfig.gold} Gold`;
+    } else if (purchase.price) {
+      // Fallback: use price from purchase record (created server-side)
+      serverPrice = purchase.price;
     }
+    
+    if (!serverPrice) {
+      return res.status(400).json({ error: 'Cannot determine purchase price' });
+    }
+    
+    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
+    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
+    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
+    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -1049,7 +1062,7 @@ router.post('/create-checkout-session', async (req, res) => {
               name: productName,
               description: productDescription,
             },
-            unit_amount: Math.round(price * 100), // Convert to cents
+            unit_amount: Math.round(serverPrice * 100), // Convert to cents, using SERVER price
           },
           quantity: 1,
         },

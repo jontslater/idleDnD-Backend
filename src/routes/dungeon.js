@@ -613,7 +613,32 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     const { getDungeonById } = await import('../data/dungeons.js');
     const dungeonData = getDungeonById(instance.dungeonId);
     
-    if (!success) {
+    // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
+    // Verify dungeon was actually completed (all rooms cleared, at least one survivor)
+    let serverValidatedSuccess = success;
+    
+    if (success) {
+      // Validate success criteria:
+      // 1. All rooms must be completed (currentRoom >= maxRooms)
+      // 2. At least one participant must be alive
+      const currentRoom = instance.currentRoom || 0;
+      const maxRooms = instance.maxRooms || dungeonData.rooms?.length || 0;
+      const aliveParticipants = participantsData.filter(p => p.isAlive);
+      
+      if (currentRoom < maxRooms) {
+        console.warn(`[Dungeon Complete] Not all rooms cleared (${currentRoom}/${maxRooms}), marking as failed`);
+        serverValidatedSuccess = false;
+      }
+      
+      if (aliveParticipants.length === 0) {
+        console.warn(`[Dungeon Complete] No survivors, marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      console.log(`[Dungeon Complete] Server validation: clientSuccess=${success}, serverValidated=${serverValidatedSuccess}, rooms=${currentRoom}/${maxRooms}, aliveCount=${aliveParticipants.length}`);
+    }
+    
+    if (!serverValidatedSuccess) {
       // Dungeon failed
       // Maintain participantIds using twitchUserId if available, fallback to userId
       const updatedParticipantIds = participantsData.map(p => p.twitchUserId || p.userId).filter(Boolean);

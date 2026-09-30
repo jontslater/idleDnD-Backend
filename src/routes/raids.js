@@ -837,7 +837,31 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     const { generateRaidLoot } = await import('../data/raidLoot.js');
     const raidData = getRaidById(instance.raidId);
     
-    if (!success) {
+    // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
+    // Don't blindly trust client's success flag - verify boss defeated and team survived
+    let serverValidatedSuccess = success;
+    
+    if (success) {
+      // Validate success criteria:
+      // 1. Boss must be defeated (bossHp <= 0)
+      // 2. At least one participant must be alive
+      const bossHp = instance.bossHp || instance.boss?.hp || raidData.boss.hp;
+      const aliveParticipants = (finalParticipants || instance.participants || []).filter(p => p.isAlive);
+      
+      if (bossHp > 0) {
+        console.warn(`[Raid Complete] Boss not defeated (HP: ${bossHp}), marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      if (aliveParticipants.length === 0) {
+        console.warn(`[Raid Complete] No survivors, marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      console.log(`[Raid Complete] Server validation: clientSuccess=${success}, serverValidated=${serverValidatedSuccess}, bossHp=${bossHp}, aliveCount=${aliveParticipants.length}`);
+    }
+    
+    if (!serverValidatedSuccess) {
       // Raid failed
       // Use twitchUserId for participantIds (for querying), fallback to userId
       const failedParticipantIds = (finalParticipants || instance.participants || []).map(p => p.twitchUserId || p.userId).filter(Boolean);

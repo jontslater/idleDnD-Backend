@@ -129,10 +129,19 @@ router.get('/:userId/progress', async (req, res) => {
 
 // Update quest progress (called by Electron during gameplay)
 // questId is now a "tracking key" like "kill", "dealDamage", etc.
+// SERVER-SIDE VALIDATION (FE #3 requirement 3): Calculate progress server-side
+// The increment value is validated and clamped to prevent client manipulation
 router.post('/:userId/update/:trackingKey', async (req, res) => {
   try {
     const { userId, trackingKey } = req.params;
-    const { type, increment = 1 } = req.body; // type: 'daily', 'weekly', 'monthly'
+    let { type, increment = 1 } = req.body; // type: 'daily', 'weekly', 'monthly'
+    
+    // SECURITY: Validate and cap increment to prevent client abuse
+    // Max reasonable increment per call: 100 (e.g., 100 kills in one battle)
+    increment = Math.min(Math.max(1, Math.floor(Number(increment) || 1)), 100);
+    if (increment !== req.body.increment) {
+      console.warn(`[Quest Update] Clamped increment from ${req.body.increment} to ${increment} for ${userId}/${trackingKey}`);
+    }
     
     // Find hero by twitchUserId or twitchId field (not document ID)
     const heroesSnapshot = await db.collection('heroes')

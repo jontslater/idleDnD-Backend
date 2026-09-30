@@ -583,4 +583,81 @@ router.get('/status', async (req, res) => {
   }
 });
 
+/**
+ * Get current chat activity metrics for a stream
+ * GET /api/chat/activity/:streamerId
+ * FE #3 requirement 5: Expose chat activity metrics for overlay/portal display
+ * Returns: {
+ *   activeUsers: number,
+ *   recentMessageCount: number,
+ *   groupBoostActive: boolean,
+ *   groupBoostMultiplier: number,
+ *   lastActivityTimestamp: number
+ * }
+ */
+router.get('/activity/:streamerId', async (req, res) => {
+  try {
+    const { streamerId } = req.params;
+    
+    if (!streamerId) {
+      return res.status(400).json({ error: 'Streamer ID required' });
+    }
+    
+    // Get battlefield ID for this streamer
+    const battlefieldId = `twitch:${streamerId}`;
+    
+    // Query all heroes on this battlefield to count active participants
+    const heroesSnapshot = await db.collection('heroes')
+      .where('currentBattlefieldId', '==', battlefieldId)
+      .get();
+    
+    const activeHeroes = heroesSnapshot.size;
+    
+    // Calculate group boost based on active participants
+    // Design: More active players = higher boost (up to a cap)
+    // Tier 1 (1-5 players): No boost
+    // Tier 2 (6-15 players): +10% XP/Gold
+    // Tier 3 (16-30 players): +25% XP/Gold
+    // Tier 4 (31+ players): +50% XP/Gold
+    let groupBoostActive = false;
+    let groupBoostMultiplier = 0;
+    
+    if (activeHeroes >= 6 && activeHeroes <= 15) {
+      groupBoostActive = true;
+      groupBoostMultiplier = 0.10; // +10%
+    } else if (activeHeroes >= 16 && activeHeroes <= 30) {
+      groupBoostActive = true;
+      groupBoostMultiplier = 0.25; // +25%
+    } else if (activeHeroes >= 31) {
+      groupBoostActive = true;
+      groupBoostMultiplier = 0.50; // +50%
+    }
+    
+    // Get last activity timestamp from most recent hero update
+    let lastActivityTimestamp = Date.now();
+    if (!heroesSnapshot.empty) {
+      const timestamps = heroesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return data.lastActiveAt?.toMillis?.() || data.updatedAt?.toMillis?.() || 0;
+      });
+      lastActivityTimestamp = Math.max(...timestamps, lastActivityTimestamp);
+    }
+    
+    res.json({
+      success: true,
+      streamerId,
+      battlefieldId,
+      activeUsers: activeHeroes,
+      groupBoostActive,
+      groupBoostMultiplier,
+      groupBoostPercentage: Math.round(groupBoostMultiplier * 100), // e.g., 10, 25, 50
+      lastActivityTimestamp,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('[Chat Activity] Error fetching activity metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch chat activity metrics', details: error.message });
+  }
+});
+
 export default router;
