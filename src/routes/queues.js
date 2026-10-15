@@ -9,6 +9,7 @@ import {
   leaveQueue,
   resolveQueueDocument
 } from '../services/queueService.js';
+import { resolveStreamerChatChannel } from '../services/streamerChannelResolver.js';
 import { listKnownDungeonQueueKeys, listKnownRaidQueueKeys } from '../data/queueKeyMapping.js';
 
 const router = express.Router();
@@ -65,10 +66,14 @@ router.post('/', requireAuthOrStreamerKey, async (req, res) => {
     let streamerName;
     if (req.authType === 'streamer-key') {
       twitchId = req.streamer.twitchId;
-      streamerName = req.streamer.twitchUsername;
+      streamerName = await resolveStreamerChatChannel(twitchId, req.streamer.twitchUsername) ||
+        req.streamer.twitchUsername;
     } else {
       twitchId = req.body.twitchId || req.user?.twitchUserId;
-      streamerName = req.user?.twitchUsername || twitchId;
+      streamerName = await resolveStreamerChatChannel(
+        twitchId,
+        req.user?.twitchUsername
+      ) || req.user?.twitchUsername || twitchId;
       if (!twitchId) {
         return res.status(400).json({ error: 'twitchId required for JWT create' });
       }

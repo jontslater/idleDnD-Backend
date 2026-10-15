@@ -680,7 +680,7 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       });
 
       const { clearActiveInstanceForParticipants } = await import('../services/heroInstanceService.js');
-      await clearActiveInstanceForParticipants(participantsData);
+      await clearActiveInstanceForParticipants(instance.participants || participantsData);
       
       return res.json({
         success: false,

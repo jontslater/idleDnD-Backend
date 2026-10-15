@@ -2652,7 +2652,8 @@ async function handleQStartCommand(battlefieldId, username, streamerName) {
   
   return {
     success: true,
-    message: `⚡ ${username} is force-starting ${queue.name}! Launching NOW! ⚔️`
+    suppressChatMessage: true,
+    message: outcome.result?.message || `⚔️ ${queue.name} started! Good luck heroes! 🗡️`
   };
 }
 

@@ -351,12 +351,13 @@ async function runTests() {
     let threw = false;
     try {
       assertNoServerTimestampInsideArrays([
-        { joinedAt: { _methodName: 'serverTimestamp' } }
+        { joinedAt: admin.firestore.FieldValue.serverTimestamp() }
       ]);
     } catch {
       threw = true;
     }
     assert.equal(threw, true);
+    assert.equal(isServerTimestampSentinel(admin.firestore.FieldValue.serverTimestamp()), true);
 
     await cancelQueue(BATTLEFIELD_ID);
     const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');

@@ -3,6 +3,7 @@
  */
 
 import { sweepDueQueues } from './queueService.js';
+import { sweepStaleInstances } from './instanceTimeoutService.js';
 
 const DEFAULT_INTERVAL_MS = 5000;
 
@@ -18,6 +19,7 @@ export function startQueueSweeper(intervalMs = DEFAULT_INTERVAL_MS) {
 
   const tick = async () => {
     try {
+      await sweepStaleInstances();
       await sweepDueQueues();
     } catch (err) {
       console.error('[QueueSweeper] tick error:', err);
@@ -38,5 +40,6 @@ export function stopQueueSweeper() {
 
 /** @visibleForTesting */
 export async function runQueueSweeperOnce() {
+  await sweepStaleInstances();
   return sweepDueQueues();
 }

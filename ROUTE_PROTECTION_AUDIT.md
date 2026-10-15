@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-15T16:41:11.393Z
+**Generated**: 2026-10-15T16:48:54.529Z
 
 ## Summary
 
@@ -278,12 +278,12 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | /keys/dungeons | ✅ PUBLIC | 29 |
-| GET | /keys/raids | ✅ PUBLIC | 33 |
-| GET | /:twitchId | ✅ PUBLIC | 40 |
-| POST | / | requireAuthOrStreamerKey, requireAuth | 54 |
-| POST | /:queueId/join | requireAuth | 101 |
-| POST | /:queueId/leave | requireAuth | 157 |
+| GET | /keys/dungeons | ✅ PUBLIC | 30 |
+| GET | /keys/raids | ✅ PUBLIC | 34 |
+| GET | /:twitchId | ✅ PUBLIC | 41 |
+| POST | / | requireAuthOrStreamerKey, requireAuth | 55 |
+| POST | /:queueId/join | requireAuth | 106 |
+| POST | /:queueId/leave | requireAuth | 162 |
 
 ### raids.js (22 routes)
 

@@ -618,7 +618,14 @@ export async function claimQueueForLaunch(battlefieldId, options = {}) {
 }
 
 async function announceQueueLaunchInChat(queue, launchResult) {
-  const channel = queue.streamerName || queue.streamerId;
+  const { resolveStreamerChatChannel } = await import('./streamerChannelResolver.js');
+  const channel = await resolveStreamerChatChannel(queue.streamerId, queue.streamerName);
+  if (!channel) {
+    console.warn(
+      `[Queue] Skipping launch chat announce — could not resolve channel login for streamer ${queue.streamerId}`
+    );
+    return;
+  }
   const text = launchResult?.message || `⚔️ ${queue.name} started! Good luck heroes! 🗡️`;
   try {
     const { sendChatMessageAsBot } = await import('../websocket/twitch-events.js');
@@ -629,7 +636,14 @@ async function announceQueueLaunchInChat(queue, launchResult) {
 }
 
 async function announceQueueCancelledInChat(queue, reason) {
-  const channel = queue.streamerName || queue.streamerId;
+  const { resolveStreamerChatChannel } = await import('./streamerChannelResolver.js');
+  const channel = await resolveStreamerChatChannel(queue.streamerId, queue.streamerName);
+  if (!channel) {
+    console.warn(
+      `[Queue] Skipping cancel chat announce — could not resolve channel login for streamer ${queue.streamerId}`
+    );
+    return;
+  }
   const text = `❌ ${queue.name} queue cancelled: ${reason}`;
   try {
     const { sendChatMessageAsBot } = await import('../websocket/twitch-events.js');

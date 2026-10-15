@@ -136,6 +136,15 @@ export function createInMemoryFirestore(initialData = {}) {
         doc(id) {
           return makeDocRef(name, id);
         },
+        get: async () => {
+          const coll = ensureCollection(name);
+          const docs = [...coll.entries()].map(([id, data]) => ({
+            id,
+            data: () => cloneData(data),
+            ref: makeDocRef(name, id)
+          }));
+          return { empty: docs.length === 0, docs };
+        },
         where(field, op, value) {
           return makeQuery(name, [{ field, op, value }]);
         },

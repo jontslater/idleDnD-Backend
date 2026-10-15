@@ -381,7 +381,7 @@ export function handleTwitchEvents() {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
           // Send response to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
@@ -401,7 +401,7 @@ export function handleTwitchEvents() {
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
           // Send error message to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });
@@ -715,7 +715,7 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
           // Send response to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
@@ -735,7 +735,7 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
           // Send error message to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });
