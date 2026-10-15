@@ -10,6 +10,7 @@ import {
   assertParticipantsOnStreamerBattlefield,
   assertActorOnStreamerBattlefield
 } from '../middleware/requireAuthOrStreamerKey.js';
+import { isInstanceInProgress, INSTANCE_STATUS } from '../constants/instanceStatus.js';
 
 const router = express.Router();
 
@@ -108,7 +109,7 @@ router.post('/test-instance', requireAuth, async (req, res) => {
     const raidInstance = {
       raidId: raidData.id,
       difficulty: raidData.difficulty,
-      status: 'active', // Start as active for testing
+      status: INSTANCE_STATUS.IN_PROGRESS,
       organizerId: organizerId,
       currentWave: 1,
       maxWaves: raidData.waves,
@@ -166,16 +167,16 @@ router.get('/upcoming', async (req, res) => {
     const scheduledRaids = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
       .filter(raid => {
-        const startedAt = raid.startedAt?.toDate ? raid.startedAt.toDate() : 
-                         raid.startedAt ? new Date(raid.startedAt) : null;
-        if (!startedAt) return false;
-        return startedAt >= now && startedAt <= next24Hours;
+        const scheduledTime = raid.scheduledTime?.toDate ? raid.scheduledTime.toDate() :
+          raid.scheduledTime ? new Date(raid.scheduledTime) : null;
+        if (!scheduledTime) return false;
+        return scheduledTime >= now && scheduledTime <= next24Hours;
       })
       .sort((a, b) => {
-        const aTime = a.startedAt?.toDate ? a.startedAt.toDate().getTime() : 
-                     a.startedAt ? new Date(a.startedAt).getTime() : 0;
-        const bTime = b.startedAt?.toDate ? b.startedAt.toDate().getTime() : 
-                     b.startedAt ? new Date(b.startedAt).getTime() : 0;
+        const aTime = a.scheduledTime?.toDate ? a.scheduledTime.toDate().getTime() :
+          a.scheduledTime ? new Date(a.scheduledTime).getTime() : 0;
+        const bTime = b.scheduledTime?.toDate ? b.scheduledTime.toDate().getTime() :
+          b.scheduledTime ? new Date(b.scheduledTime).getTime() : 0;
         return aTime - bTime;
       });
     
@@ -214,6 +215,50 @@ router.get('/:raidId', async (req, res) => {
   } catch (error) {
     console.error('Error fetching raid:', error);
     res.status(500).json({ error: 'Failed to fetch raid' });
+  }
+});
+
+// Sign up for world boss (must be before /:raidId/signup so "worldboss" is not captured as raidId)
+router.post('/worldboss/signup', requireAuth, async (req, res) => {
+  try {
+    const { userId, username, heroLevel, heroRole } = req.body;
+    
+    const snapshot = await db.collection('worldBoss')
+      .where('status', '==', 'upcoming')
+      .orderBy('scheduledTime', 'asc')
+      .limit(1)
+      .get();
+    
+    if (snapshot.empty) {
+      return res.status(404).json({ error: 'No upcoming world boss' });
+    }
+    
+    const doc = snapshot.docs[0];
+    const participant = {
+      userId,
+      username,
+      heroLevel,
+      heroRole,
+      damageDealt: 0,
+      healingDone: 0
+    };
+    
+    const currentData = doc.data();
+    const currentParticipantIds = currentData.participantIds || [];
+    const updatedParticipantIds = currentParticipantIds.includes(userId) 
+      ? currentParticipantIds 
+      : [...currentParticipantIds, userId];
+    
+    await doc.ref.update({
+      participants: admin.firestore.FieldValue.arrayUnion(participant),
+      participantIds: updatedParticipantIds,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    res.json({ success: true, message: 'Signed up for world boss successfully' });
+  } catch (error) {
+    console.error('Error signing up for world boss:', error);
+    res.status(500).json({ error: 'Failed to sign up for world boss' });
   }
 });
 
@@ -259,51 +304,6 @@ router.post('/:raidId/signup', requireAuth, async (req, res) => {
 // Get current world boss - mount on main router, not nested
 // This will be accessible at /api/raids/worldboss/current
 
-// Sign up for world boss
-router.post('/worldboss/signup', requireAuth, async (req, res) => {
-  try {
-    const { userId, username, heroLevel, heroRole } = req.body;
-    
-    // Get current world boss
-    const snapshot = await db.collection('worldBoss')
-      .where('status', '==', 'upcoming')
-      .orderBy('scheduledTime', 'asc')
-      .limit(1)
-      .get();
-    
-    if (snapshot.empty) {
-      return res.status(404).json({ error: 'No upcoming world boss' });
-    }
-    
-    const doc = snapshot.docs[0];
-    const participant = {
-      userId,
-      username,
-      heroLevel,
-      heroRole,
-      damageDealt: 0,
-      healingDone: 0
-    };
-    
-    // Get current participantIds to update
-    const currentData = doc.data();
-    const currentParticipantIds = currentData.participantIds || [];
-    const updatedParticipantIds = currentParticipantIds.includes(userId) 
-      ? currentParticipantIds 
-      : [...currentParticipantIds, userId];
-    
-    await doc.ref.update({
-      participants: admin.firestore.FieldValue.arrayUnion(participant),
-      participantIds: updatedParticipantIds, // Maintain participantIds array
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    res.json({ success: true, message: 'Signed up for world boss successfully' });
-  } catch (error) {
-    console.error('Error signing up for world boss:', error);
-    res.status(500).json({ error: 'Failed to sign up for world boss' });
-  }
-});
 
 // ==================== RAID INSTANCE ENDPOINTS ====================
 
@@ -571,7 +571,7 @@ router.post('/:raidId/start', requireAuth, async (req, res) => {
     const raidInstance = {
       raidId: raidData.id,
       difficulty: raidData.difficulty,
-      status: 'starting',
+      status: INSTANCE_STATUS.IN_PROGRESS,
       organizerId: organizerId, // Instance owner/organizer
       currentWave: 0,
       maxWaves: raidData.waves,
@@ -1968,7 +1968,7 @@ router.post('/instance/:instanceId/command', requireAuthOrStreamerKey, async (re
     }
     
     // Check if instance is active
-    if (instance.status !== 'active' && instance.status !== 'starting') {
+    if (!isInstanceInProgress(instance.status)) {
       return res.status(400).json({ error: 'Instance is not active' });
     }
     

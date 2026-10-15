@@ -4,7 +4,17 @@
  */
 
 function cloneData(data) {
-  return data ? JSON.parse(JSON.stringify(data)) : data;
+  if (data == null) return data;
+  if (typeof data.toMillis === 'function') return data;
+  if (Array.isArray(data)) return data.map(cloneData);
+  if (typeof data === 'object') {
+    const out = {};
+    for (const [key, value] of Object.entries(data)) {
+      out[key] = cloneData(value);
+    }
+    return out;
+  }
+  return data;
 }
 
 export function createInMemoryFirestore(initialData = {}) {
@@ -90,7 +100,27 @@ export function createInMemoryFirestore(initialData = {}) {
     return query;
   }
 
+  async function runTransaction(updateFn) {
+    // Naive single-threaded transaction for tests
+    const tx = {
+      async get(ref) {
+        return ref.get();
+      },
+      update(ref, data) {
+        return ref.update(data);
+      },
+      set(ref, data) {
+        return ref.set(data);
+      },
+      delete(ref) {
+        return ref.delete();
+      }
+    };
+    return updateFn(tx);
+  }
+
   return {
+    runTransaction,
     collection(name) {
       return {
         doc(id) {

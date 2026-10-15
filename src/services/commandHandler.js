@@ -2416,8 +2416,8 @@ async function handleDungeonQueueCommand(args, username, userId, streamerUsernam
 👥 Roles: ${queue.requirements.roles.tank.required} Tank, ${queue.requirements.roles.healer.required} Healer, ${queue.requirements.roles.dps.required} DPS
 ⏰ Expires in 30 minutes
 
-📋 Check the Player Portal for the room code!
-Type !qdungeon [CODE] to join!`;
+🔑 Room code: ${queue.code}
+Type !qdungeon ${queue.code} to join!`;
   
   return {
     success: true,
@@ -2494,8 +2494,8 @@ async function handleRaidQueueCommand(args, username, userId, streamerUsername, 
 ⚠️ Minimum ${queue.requirements.minHealers} healer${queue.requirements.minHealers > 1 ? 's' : ''} required!
 ⏰ Expires in 30 minutes
 
-📋 Check the Player Portal for the room code!
-Type !qraid [CODE] to join!`;
+🔑 Room code: ${queue.code}
+Type !qraid ${queue.code} to join!`;
   
   return {
     success: true,
@@ -2520,7 +2520,10 @@ async function handleQDungeonJoinCommand(args, hero, username, userId, battlefie
   const code = args[0].toUpperCase();
   
   // Join queue
-  const result = await joinQueue(code, hero, username, userId);
+  const result = await joinQueue(code, hero, username, userId, {
+    expectedType: 'dungeon',
+    expectedBattlefieldId: battlefieldId
+  });
   
   if (!result.success) {
     return result;
@@ -2532,27 +2535,6 @@ async function handleQDungeonJoinCommand(args, hero, username, userId, battlefie
     type: 'queue_updated',
     queue: result.queue
   });
-  
-  // If ready, schedule auto-launch
-  if (result.isReady) {
-    setTimeout(async () => {
-      const { launchInstance, getActiveQueue } = await import('./queueService.js');
-      
-      // Check if queue still exists and is ready
-      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
-      if (currentQueue && currentQueue.isReady) {
-        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
-        
-        if (launchResult.success) {
-          broadcastToRoom(currentQueue.streamerId, {
-            type: 'instance_launched',
-            instanceId: launchResult.instanceId,
-            instance: launchResult.instance
-          });
-        }
-      }
-    }, 10000); // 10 second countdown
-  }
   
   return result;
 }
@@ -2573,7 +2555,10 @@ async function handleQRaidJoinCommand(args, hero, username, userId, battlefieldI
   const code = args[0].toUpperCase();
   
   // Join queue
-  const result = await joinQueue(code, hero, username, userId);
+  const result = await joinQueue(code, hero, username, userId, {
+    expectedType: 'raid',
+    expectedBattlefieldId: battlefieldId
+  });
   
   if (!result.success) {
     return result;
@@ -2585,26 +2570,6 @@ async function handleQRaidJoinCommand(args, hero, username, userId, battlefieldI
     type: 'queue_updated',
     queue: result.queue
   });
-  
-  // If ready, schedule auto-launch
-  if (result.isReady) {
-    setTimeout(async () => {
-      const { launchInstance, getActiveQueue } = await import('./queueService.js');
-      
-      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
-      if (currentQueue && currentQueue.isReady) {
-        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
-        
-        if (launchResult.success) {
-          broadcastToRoom(currentQueue.streamerId, {
-            type: 'instance_launched',
-            instanceId: launchResult.instanceId,
-            instance: launchResult.instance
-          });
-        }
-      }
-    }, 10000);
-  }
   
   return result;
 }

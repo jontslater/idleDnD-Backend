@@ -1,12 +1,12 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-15T15:30:58.128Z
+**Generated**: 2026-10-15T16:16:26.093Z
 
 ## Summary
 
-- **Total Routes**: 220
-- **Protected**: 176
-- **Public (whitelisted)**: 44
+- **Total Routes**: 226
+- **Protected**: 179
+- **Public (whitelisted)**: 47
 - **Unprotected**: 0 ✅
 
 ## ✅ NO VIOLATIONS
@@ -85,17 +85,17 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | / | ✅ PUBLIC | 46 |
-| GET | /queue/status | requireAuth | 58 |
-| POST | /queue | requireAuth | 95 |
-| DELETE | /queue | requireAuth | 145 |
-| POST | /group/accept | requireAuth | 178 |
-| POST | /:dungeonId/start | requireAuth | 419 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 517 |
-| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 536 |
-| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 594 |
-| GET | /:dungeonId | ✅ PUBLIC | 803 |
-| GET | /available/:userId | requireAuth, requireOwnership | 821 |
+| GET | / | ✅ PUBLIC | 51 |
+| GET | /queue/status | requireAuth | 63 |
+| POST | /queue | requireAuth | 100 |
+| DELETE | /queue | requireAuth | 150 |
+| POST | /group/accept | requireAuth | 183 |
+| POST | /:dungeonId/start | requireAuth | 424 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 522 |
+| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 541 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 608 |
+| GET | /:dungeonId | ✅ PUBLIC | 830 |
+| GET | /available/:userId | requireAuth, requireOwnership | 848 |
 
 ### enchanting.js (4 routes)
 
@@ -246,17 +246,17 @@ All routes are properly protected!
 |--------|-------|------------|------|
 | POST | /founders-pack | requireAuth | 40 |
 | POST | /complete | ✅ PUBLIC | 107 |
-| GET | /status/:purchaseId | requireAuth | 213 |
-| GET | /founders | ✅ PUBLIC | 243 |
-| POST | /set-founder | requireAdmin | 576 |
-| POST | /remove-founder | requireAdmin | 751 |
-| POST | /token-pack | requireAuth | 834 |
-| POST | /complete-token-pack | ✅ PUBLIC | 900 |
-| POST | /create-checkout-session | requireAuth | 990 |
-| GET | /success | ✅ PUBLIC | 1092 |
-| GET | /cancel | ✅ PUBLIC | 1104 |
-| GET | /history/:userId | requireAuth, requireOwnership | 1116 |
-| GET | /:purchaseId/details | requireAuth | 1228 |
+| GET | /status/:purchaseId | requireAuth | 119 |
+| GET | /founders | ✅ PUBLIC | 149 |
+| POST | /set-founder | requireAdmin | 482 |
+| POST | /remove-founder | requireAdmin | 657 |
+| POST | /token-pack | requireAuth | 740 |
+| POST | /complete-token-pack | ✅ PUBLIC | 806 |
+| POST | /create-checkout-session | requireAuth | 896 |
+| GET | /success | ✅ PUBLIC | 998 |
+| GET | /cancel | ✅ PUBLIC | 1010 |
+| GET | /history/:userId | requireAuth, requireOwnership | 1022 |
+| GET | /:purchaseId/details | requireAuth | 1134 |
 
 ### quests.js (11 routes)
 
@@ -274,32 +274,43 @@ All routes are properly protected!
 | POST | /auto-claim-all | requireAuth | 819 |
 | POST | /claim-all/:userId | requireAuth, requireOwnership | 953 |
 
+### queues.js (6 routes)
+
+| Method | Route | Middleware | Line |
+|--------|-------|------------|------|
+| GET | /keys/dungeons | ✅ PUBLIC | 26 |
+| GET | /keys/raids | ✅ PUBLIC | 30 |
+| GET | /:twitchId | ✅ PUBLIC | 37 |
+| POST | / | requireAuthOrStreamerKey, requireAuth | 55 |
+| POST | /:queueId/join | requireAuth | 102 |
+| POST | /:queueId/leave | requireAuth | 157 |
+
 ### raids.js (22 routes)
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | / | ✅ PUBLIC | 11 |
-| POST | /test-instance | requireAuth | 72 |
-| GET | /upcoming | ✅ PUBLIC | 148 |
-| GET | /:raidId | ✅ PUBLIC | 189 |
-| POST | /:raidId/signup | requireAuth | 215 |
-| POST | /worldboss/signup | requireAuth | 257 |
-| GET | /available/:userId | requireAuth, requireOwnership | 305 |
-| POST | /:raidId/start | requireAuth | 391 |
-| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 603 |
-| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 740 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 778 |
-| GET | /instance/:instanceId/status | ✅ PUBLIC | 802 |
-| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 820 |
-| POST | /schedule | requireAuth | 1004 |
-| POST | /queue/:raidId/join | requireAuth | 1051 |
-| GET | /queue/:raidId | ✅ PUBLIC | 1153 |
-| POST | /queue/:raidId/leave | requireAuth | 1198 |
-| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1683 |
-| POST | /:raidId/guild-signup | requireAuth | 1715 |
-| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1810 |
-| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1885 |
-| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 1940 |
+| GET | / | ✅ PUBLIC | 18 |
+| POST | /test-instance | requireAuth | 79 |
+| GET | /upcoming | ✅ PUBLIC | 155 |
+| GET | /:raidId | ✅ PUBLIC | 196 |
+| POST | /worldboss/signup | requireAuth | 222 |
+| POST | /:raidId/signup | requireAuth | 266 |
+| GET | /available/:userId | requireAuth, requireOwnership | 311 |
+| POST | /:raidId/start | requireAuth | 397 |
+| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 609 |
+| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 754 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 800 |
+| GET | /instance/:instanceId/status | ✅ PUBLIC | 824 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 842 |
+| POST | /schedule | requireAuth | 1059 |
+| POST | /queue/:raidId/join | requireAuth | 1106 |
+| GET | /queue/:raidId | ✅ PUBLIC | 1208 |
+| POST | /queue/:raidId/leave | requireAuth | 1253 |
+| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1738 |
+| POST | /:raidId/guild-signup | requireAuth | 1770 |
+| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1865 |
+| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1940 |
+| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2002 |
 
 ### reports.js (4 routes)
 

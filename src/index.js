@@ -257,6 +257,7 @@ import mailRoutes from './routes/mail.js';
 import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
 import overlayRoutes from './routes/overlay.js';
+import queueRoutes from './routes/queues.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -287,6 +288,7 @@ app.use('/api/mail', mailRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/stream/settings', streamSettingsRoutes);
 app.use('/api/overlay', overlayRoutes);
+app.use('/api/queues', queueRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -634,6 +636,13 @@ Press Ctrl+C to stop
     console.log('✅ XP accumulator service initialized (reduces API calls for enemy kills)');
   } catch (error) {
     console.error('❌ Failed to initialize XP accumulator service:', error);
+  }
+
+  try {
+    const { startQueueSweeper } = await import('./services/queueSweeperService.js');
+    startQueueSweeper();
+  } catch (error) {
+    console.error('❌ Failed to initialize queue sweeper:', error);
   }
   });
 }

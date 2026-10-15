@@ -363,7 +363,7 @@ async function createDungeonInstanceForGroup(group, dungeonDataOverride = null) 
     const dungeonInstance = {
       dungeonId: selectedDungeon.id,
       difficulty: selectedDungeon.difficulty || 'normal',
-      status: 'active',
+      status: 'in-progress',
       organizerId,
       participants: participantData,
       participantIds: participantIds,
@@ -487,7 +487,7 @@ router.post('/:dungeonId/start', requireAuth, async (req, res) => {
     const dungeonInstance = {
       dungeonId: dungeonData.id,
       difficulty: dungeonData.difficulty || 'normal',
-      status: 'active',
+      status: 'in-progress',
       organizerId,
       participants: participantData,
       participantIds: participantIds, // For efficient querying
@@ -577,7 +577,7 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     // Only update room if provided
     if (room !== undefined) {
       updateData.currentRoom = room;
-      updateData.status = room >= instance.maxRooms ? 'in-progress' : 'active';
+      updateData.status = 'in-progress';
     }
     
     // Only update participants if provided
