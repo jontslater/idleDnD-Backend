@@ -53,6 +53,23 @@ export async function requireAuthOrStreamerKey(req, res, next) {
     
     const settingsDoc = settingsSnapshot.docs[0];
     const settings = settingsDoc.data();
+    const storedKey = settings.overlayKey;
+    
+    // Timing-safe comparison (even though query already matched)
+    try {
+      const isValid = crypto.timingSafeEqual(
+        Buffer.from(streamerKey),
+        Buffer.from(storedKey)
+      );
+      
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid streamer key' });
+      }
+    } catch (compareError) {
+      // Length mismatch or other error
+      return res.status(401).json({ error: 'Invalid streamer key' });
+    }
+    
     const twitchId = settingsDoc.id; // Use doc id as twitchId
     
     // Attach streamer info to request
