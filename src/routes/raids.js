@@ -908,6 +908,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
+
+      const { clearActiveInstanceForParticipants } = await import('../services/heroInstanceService.js');
+      await clearActiveInstanceForParticipants(finalParticipants || instance.participants || []);
       
       return res.json({
         success: false,
@@ -1024,6 +1027,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     });
     
     await Promise.all(rewardPromises);
+
+    const { clearActiveInstanceForParticipants } = await import('../services/heroInstanceService.js');
+    await clearActiveInstanceForParticipants(finalParticipants || instance.participants || []);
     
     let responseRewards = {
       gold: raidData.rewards.gold,

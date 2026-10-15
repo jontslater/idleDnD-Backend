@@ -65,8 +65,7 @@ async function isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername) {
     return true;
   }
   
-  // TODO: Check if viewer is in streamer's mod list (future feature)
-  // For now, only streamer is authorized
+  // MOD_HOOK: allow mods to run streamer queue commands when mod list / roles are wired up
   return false;
 }
 

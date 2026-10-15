@@ -344,6 +344,73 @@ async function runTests() {
     failed++;
   }
 
+  console.log('\nTest 11: joinedAt must not use serverTimestamp inside array');
+  try {
+    const { assertNoServerTimestampInsideArrays, isServerTimestampSentinel } =
+      await import('../src/testSupport/firestoreFieldGuards.js');
+    let threw = false;
+    try {
+      assertNoServerTimestampInsideArrays([
+        { joinedAt: { _methodName: 'serverTimestamp' } }
+      ]);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true);
+
+    await cancelQueue(BATTLEFIELD_ID);
+    const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');
+    const doc = await db.collection('heroes').doc('hero-tank').get();
+    const hero = { id: doc.id, ...doc.data() };
+    await joinQueue(created.queue.code, hero, hero.name, 't1', {
+      expectedType: 'dungeon',
+      expectedBattlefieldId: BATTLEFIELD_ID
+    });
+    const qDoc = await db.collection('battlefieldQueues').doc(BATTLEFIELD_ID).get();
+    const joinedAt = qDoc.data().participants[0].joinedAt;
+    assert.equal(isServerTimestampSentinel(joinedAt), false);
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 12: stale activeInstance cleared when instance finished');
+  try {
+    await cancelQueue(BATTLEFIELD_ID);
+    const instRef = await db.collection('dungeonInstances').add({
+      dungeonId: 'ancient_catacombs',
+      status: 'completed',
+      battlefieldId: BATTLEFIELD_ID,
+      participantIds: ['t1']
+    });
+    await db.collection('heroes').doc('hero-tank').set({
+      twitchUserId: 't1',
+      name: 'hero-tank',
+      role: 'guardian',
+      level: 20,
+      equipment: legendaryGear(),
+      currentBattlefieldId: BATTLEFIELD_ID,
+      activeInstance: { type: 'dungeon', instanceId: instRef.id }
+    });
+    const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');
+    const heroDoc = await db.collection('heroes').doc('hero-tank').get();
+    const hero = { id: heroDoc.id, ...heroDoc.data() };
+    const joinResult = await joinQueue(created.queue.code, hero, hero.name, 't1', {
+      expectedType: 'dungeon',
+      expectedBattlefieldId: BATTLEFIELD_ID
+    });
+    assert.equal(joinResult.success, true);
+    const afterHero = await db.collection('heroes').doc('hero-tank').get();
+    assert.ok(!afterHero.data().activeInstance?.instanceId);
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
   console.log('\n' + '='.repeat(60));
   console.log(`Results: ${passed} passed, ${failed} failed`);
   if (failed > 0) {

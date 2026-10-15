@@ -72,6 +72,7 @@ router.post('/', requireAuthOrStreamerKey, async (req, res) => {
       if (!twitchId) {
         return res.status(400).json({ error: 'twitchId required for JWT create' });
       }
+      // MOD_HOOK: allow channel mods to create queues when mod role is available on req.user
       if (String(twitchId) !== String(req.user?.twitchUserId)) {
         return res.status(403).json({ error: 'Only the streamer can create a queue for this channel' });
       }

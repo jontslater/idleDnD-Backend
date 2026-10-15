@@ -20,6 +20,7 @@ Unknown keys are rejected at create time.
 | Field | Type | Notes |
 |-------|------|--------|
 | `code` | string | 4-letter join code |
+| `name` | string | Display name for UI/chat (e.g. `Elder Dragon's Lair (Normal)`, `Normal Dungeon`) |
 | `type` | `'dungeon' \| 'raid'` | |
 | `queueKey` | string | e.g. `normal`, `elder_dragon_normal` |
 | `contentId` | string | Real `dungeonId` / `raidId` |

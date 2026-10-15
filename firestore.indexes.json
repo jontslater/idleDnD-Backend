@@ -6,7 +6,6 @@
       "fields": [
         {
           "fieldPath": "participantIds",
-          "order": "ASCENDING",
           "arrayConfig": "CONTAINS"
         },
         {
@@ -21,7 +20,6 @@
       "fields": [
         {
           "fieldPath": "participantIds",
-          "order": "ASCENDING",
           "arrayConfig": "CONTAINS"
         },
         {

@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-15T16:33:07.041Z
+**Generated**: 2026-10-15T16:41:11.393Z
 
 ## Summary
 
@@ -94,8 +94,8 @@ All routes are properly protected!
 | GET | /instance/:instanceId | ✅ PUBLIC | 522 |
 | POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 541 |
 | POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 610 |
-| GET | /:dungeonId | ✅ PUBLIC | 832 |
-| GET | /available/:userId | requireAuth, requireOwnership | 850 |
+| GET | /:dungeonId | ✅ PUBLIC | 835 |
+| GET | /available/:userId | requireAuth, requireOwnership | 853 |
 
 ### enchanting.js (4 routes)
 
@@ -282,8 +282,8 @@ All routes are properly protected!
 | GET | /keys/raids | ✅ PUBLIC | 33 |
 | GET | /:twitchId | ✅ PUBLIC | 40 |
 | POST | / | requireAuthOrStreamerKey, requireAuth | 54 |
-| POST | /:queueId/join | requireAuth | 100 |
-| POST | /:queueId/leave | requireAuth | 156 |
+| POST | /:queueId/join | requireAuth | 101 |
+| POST | /:queueId/leave | requireAuth | 157 |
 
 ### raids.js (22 routes)
 
@@ -302,15 +302,15 @@ All routes are properly protected!
 | GET | /instance/:instanceId | ✅ PUBLIC | 800 |
 | GET | /instance/:instanceId/status | ✅ PUBLIC | 824 |
 | POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 842 |
-| POST | /schedule | requireAuth | 1059 |
-| POST | /queue/:raidId/join | requireAuth | 1106 |
-| GET | /queue/:raidId | ✅ PUBLIC | 1208 |
-| POST | /queue/:raidId/leave | requireAuth | 1253 |
-| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1738 |
-| POST | /:raidId/guild-signup | requireAuth | 1770 |
-| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1865 |
-| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1940 |
-| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2002 |
+| POST | /schedule | requireAuth | 1065 |
+| POST | /queue/:raidId/join | requireAuth | 1112 |
+| GET | /queue/:raidId | ✅ PUBLIC | 1214 |
+| POST | /queue/:raidId/leave | requireAuth | 1259 |
+| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1744 |
+| POST | /:raidId/guild-signup | requireAuth | 1776 |
+| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1871 |
+| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1946 |
+| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2008 |
 
 ### reports.js (4 routes)
 

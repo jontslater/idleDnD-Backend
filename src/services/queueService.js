@@ -17,9 +17,11 @@ import {
 import { resolveQueueContentId } from '../data/queueKeyMapping.js';
 import { getDungeonById } from '../data/dungeons.js';
 import { getRaidById } from '../data/raids.js';
-import { INSTANCE_STATUS, QUEUE_STATUS } from '../constants/instanceStatus.js';
+import { INSTANCE_STATUS, QUEUE_STATUS, isInstanceInProgress } from '../constants/instanceStatus.js';
+import { validateActiveInstanceForQueueJoin } from './heroInstanceService.js';
 
 const LAUNCH_COUNTDOWN_MS = 10000;
+const MAX_LAUNCH_FAILURES = 3;
 
 function timestampToMillis(ts) {
   if (!ts) return null;
@@ -196,20 +198,19 @@ async function findParticipantQueueDocRefs(viewerId, heroId, excludeBattlefieldI
   return refs;
 }
 
+function buildQueueLaunchInstanceId(battlefieldId, launchAttemptId, type) {
+  const safe = String(battlefieldId).replace(/[^a-zA-Z0-9]/g, '');
+  return `ql_${type === 'raid' ? 'r' : 'd'}_${safe}_${launchAttemptId}`;
+}
+
 async function assertHeroMayJoinQueue(hero, targetBattlefieldId, viewerUsername) {
-  if (hero.activeInstance?.instanceId) {
-    const type = hero.activeInstance.type === 'raid' ? 'raid' : 'dungeon';
-    const coll = type === 'raid' ? 'raidInstances' : 'dungeonInstances';
-    const instDoc = await db.collection(coll).doc(hero.activeInstance.instanceId).get();
-    if (instDoc.exists) {
-      const inst = instDoc.data();
-      if (inst.battlefieldId && inst.battlefieldId !== targetBattlefieldId) {
-        return {
-          ok: false,
-          message: `@${viewerUsername} You're in an active ${type} on another stream. Finish it before joining this queue.`
-        };
-      }
-    }
+  const instanceCheck = await validateActiveInstanceForQueueJoin(
+    hero,
+    targetBattlefieldId,
+    viewerUsername
+  );
+  if (!instanceCheck.ok) {
+    return instanceCheck;
   }
 
   if (!hero.currentBattlefieldId) {
@@ -298,7 +299,7 @@ export async function joinQueue(code, hero, viewerUsername, viewerId, options = 
     class: hero.role,
     level: hero.level,
     gearScore,
-    joinedAt: admin.firestore.FieldValue.serverTimestamp()
+    joinedAt: admin.firestore.Timestamp.now()
   };
 
   const applyJoin = async (tx) => {
@@ -599,8 +600,12 @@ export async function claimQueueForLaunch(battlefieldId, options = {}) {
       }
     }
 
-    tx.update(ref, { status: QUEUE_STATUS.LAUNCHING });
-    return { claimed: true, queue };
+    const launchAttemptId = `${Date.now()}`;
+    tx.update(ref, {
+      status: QUEUE_STATUS.LAUNCHING,
+      launchAttemptId
+    });
+    return { claimed: true, queue: { ...queue, launchAttemptId } };
   };
 
   if (typeof db.runTransaction === 'function') {
@@ -612,19 +617,56 @@ export async function claimQueueForLaunch(battlefieldId, options = {}) {
   });
 }
 
+async function announceQueueLaunchInChat(queue, launchResult) {
+  const channel = queue.streamerName || queue.streamerId;
+  const text = launchResult?.message || `⚔️ ${queue.name} started! Good luck heroes! 🗡️`;
+  try {
+    const { sendChatMessageAsBot } = await import('../websocket/twitch-events.js');
+    await sendChatMessageAsBot(channel, text);
+  } catch (err) {
+    console.error('[Queue] Failed to send launch chat message:', err);
+  }
+}
+
+async function announceQueueCancelledInChat(queue, reason) {
+  const channel = queue.streamerName || queue.streamerId;
+  const text = `❌ ${queue.name} queue cancelled: ${reason}`;
+  try {
+    const { sendChatMessageAsBot } = await import('../websocket/twitch-events.js');
+    await sendChatMessageAsBot(channel, text);
+  } catch (err) {
+    console.error('[Queue] Failed to send queue cancel chat message:', err);
+  }
+}
+
 async function recoverQueueAfterFailedLaunch(battlefieldId, queue, error) {
   console.error('[Queue] Launch failed — recovering queue', battlefieldId, error?.message || error);
   const ref = db.collection('battlefieldQueues').doc(battlefieldId);
-  const stillReady = areRolesFilled(queue);
+  const snap = await ref.get();
+  const current = snap.exists ? snap.data() : queue;
+  const failureCount = (current.launchFailureCount || 0) + 1;
+
+  if (failureCount >= MAX_LAUNCH_FAILURES) {
+    await ref.delete();
+    await announceQueueCancelledInChat(
+      { ...queue, ...current },
+      'too many launch failures'
+    );
+    return { cancelled: true, failureCount };
+  }
+
+  const stillReady = areRolesFilled({ ...queue, ...current });
   await ref.update({
     status: stillReady ? QUEUE_STATUS.READY : QUEUE_STATUS.OPEN,
     isReady: stillReady,
     launchAt: stillReady
       ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + LAUNCH_COUNTDOWN_MS))
       : null,
+    launchFailureCount: failureCount,
     lastLaunchError: error?.message || String(error || 'launch_failed'),
     lastLaunchErrorAt: admin.firestore.FieldValue.serverTimestamp()
   });
+  return { cancelled: false, failureCount };
 }
 
 export async function notifyInstanceLaunched(queue, launchResult) {
@@ -641,6 +683,7 @@ export async function notifyInstanceLaunched(queue, launchResult) {
   } catch (err) {
     console.error('[Queue] Failed to broadcast instance_launched:', err);
   }
+  await announceQueueLaunchInChat(queue, launchResult);
 }
 
 export async function launchInstance(battlefieldId, queue) {
@@ -659,8 +702,27 @@ export async function launchInstance(battlefieldId, queue) {
 
   const participantIds = participantData.map(p => p.twitchUserId).filter(Boolean);
   const organizerId = queue.streamerId;
+  const launchAttemptId = queue.launchAttemptId || `${Date.now()}`;
+  const collectionName = queue.type === 'dungeon' ? 'dungeonInstances' : 'raidInstances';
+  const instanceId = buildQueueLaunchInstanceId(battlefieldId, launchAttemptId, queue.type);
+  const instanceRef = db.collection(collectionName).doc(instanceId);
+  const queueRef = db.collection('battlefieldQueues').doc(battlefieldId);
 
-  let instanceRef;
+  const existing = await instanceRef.get();
+  if (existing.exists) {
+    const existingData = existing.data();
+    if (isInstanceInProgress(existingData.status)) {
+      await queueRef.delete();
+      return {
+        success: true,
+        instanceId,
+        instance: { id: instanceId, ...existingData },
+        message: `⚔️ ${queue.name} started! Good luck heroes! 🗡️`,
+        idempotent: true
+      };
+    }
+  }
+
   let instancePayload;
 
   if (queue.type === 'dungeon') {
@@ -682,11 +744,10 @@ export async function launchInstance(battlefieldId, queue) {
       combatLog: [],
       battlefieldId: queue.battlefieldId,
       streamerId: queue.streamerId,
+      queueLaunchAttemptId: launchAttemptId,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-
-    instanceRef = await db.collection('dungeonInstances').add(instancePayload);
   } else {
     const raidData = getRaidById(contentId);
     if (!raidData) {
@@ -718,18 +779,16 @@ export async function launchInstance(battlefieldId, queue) {
       lootDrops: [],
       battlefieldId: queue.battlefieldId,
       streamerId: queue.streamerId,
+      queueLaunchAttemptId: launchAttemptId,
       startedAt: admin.firestore.FieldValue.serverTimestamp(),
       completedAt: null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-
-    instanceRef = await db.collection('raidInstances').add(instancePayload);
   }
 
-  const instanceId = instanceRef.id;
-
   const batch = db.batch();
+  batch.set(instanceRef, instancePayload);
   for (const p of participantData) {
     const heroRef = db.collection('heroes').doc(p.heroId);
     batch.update(heroRef, {
@@ -741,9 +800,8 @@ export async function launchInstance(battlefieldId, queue) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
   }
+  batch.delete(queueRef);
   await batch.commit();
-
-  await db.collection('battlefieldQueues').doc(battlefieldId).delete();
 
   console.log(`[Queue] ✅ Launched ${queue.type} ${instanceId} with ${participantData.length} participants`);
 

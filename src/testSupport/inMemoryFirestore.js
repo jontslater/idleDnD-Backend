@@ -3,6 +3,8 @@
  * Supports collection/doc/where/limit/get/set/update used by auth middleware.
  */
 
+import { assertNoServerTimestampInsideArrays } from './firestoreFieldGuards.js';
+
 function cloneData(data) {
   if (data == null) return data;
   if (typeof data.toMillis === 'function') return data;
@@ -50,12 +52,20 @@ export function createInMemoryFirestore(initialData = {}) {
     return {
       get: async () => docSnapshot(collName, id),
       set: async (data) => {
+        assertNoServerTimestampInsideArrays(data);
         ensureCollection(collName).set(id, cloneData(data));
       },
       update: async (updates) => {
+        assertNoServerTimestampInsideArrays(updates);
         const coll = ensureCollection(collName);
         const existing = coll.get(id) || {};
-        coll.set(id, { ...existing, ...cloneData(updates) });
+        const merged = { ...existing, ...cloneData(updates) };
+        for (const [key, val] of Object.entries(updates)) {
+          if (val && typeof val === 'object' && val._methodName === 'delete') {
+            delete merged[key];
+          }
+        }
+        coll.set(id, merged);
       },
       delete: async () => {
         ensureCollection(collName).delete(id);
@@ -139,8 +149,16 @@ export function createInMemoryFirestore(initialData = {}) {
     batch() {
       const ops = [];
       return {
+        set(ref, data, _options) {
+          ops.push(() => ref.set(data));
+          return this;
+        },
         update(ref, data) {
           ops.push(() => ref.update(data));
+          return this;
+        },
+        delete(ref) {
+          ops.push(() => ref.delete());
           return this;
         },
         commit: async () => {
