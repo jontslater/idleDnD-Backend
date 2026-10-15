@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireAuthOrStreamerKey, validateHeroOnBattlefield, clampRewards } from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
 
@@ -599,7 +600,7 @@ router.post('/:raidId/start', requireAuth, async (req, res) => {
 });
 
 // Update raid progress (wave completed)
-router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { wave, participants, combatLogEntries, bossHpPercent, currentPhase } = req.body;
@@ -736,7 +737,7 @@ router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
 });
 
 // Resume raid from checkpoint
-router.post('/instance/:instanceId/resume', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/resume', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     
@@ -816,7 +817,7 @@ router.get('/instance/:instanceId/status', async (req, res) => {
 });
 
 // Complete raid and distribute loot
-router.post('/instance/:instanceId/complete', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, finalCombatLog } = req.body;
@@ -1881,7 +1882,7 @@ router.put('/:raidId/guild-signup/:guildId', requireAuth, async (req, res) => {
 });
 
 // Send command to raid instance (for participants to control their hero)
-router.post('/instance/:instanceId/command', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/command', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { userId, command } = req.body;
@@ -1936,7 +1937,7 @@ router.post('/instance/:instanceId/command', requireAuth, async (req, res) => {
 });
 
 // Send chat message to raid instance
-router.post('/instance/:instanceId/chat', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/chat', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { userId, message } = req.body;

@@ -4,6 +4,7 @@ import { db } from '../index.js';
 import { calculateTotalItemScore } from '../utils/itemScore.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireAuthOrStreamerKey, validateHeroOnBattlefield, clampRewards } from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
 
@@ -532,7 +533,7 @@ router.get('/instance/:instanceId', async (req, res) => {
 });
 
 // Update dungeon progress (room completed)
-router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { room, participants, combatLogEntries } = req.body;
@@ -590,7 +591,7 @@ router.post('/instance/:instanceId/progress', requireAuth, async (req, res) => {
 });
 
 // Complete dungeon and distribute loot
-router.post('/instance/:instanceId/complete', requireAuth, async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, participants, finalCombatLog, combatLog } = req.body;

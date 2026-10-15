@@ -90,6 +90,7 @@ function parseRouteFile(filename) {
       
       // Extract middleware from the line
       const middlewares = [];
+      if (line.includes('requireAuthOrStreamerKey')) middlewares.push('requireAuthOrStreamerKey');
       if (line.includes('requireAuth')) middlewares.push('requireAuth');
       if (line.includes('requireOwnership')) middlewares.push('requireOwnership');
       if (line.includes('requireAdmin')) middlewares.push('requireAdmin');

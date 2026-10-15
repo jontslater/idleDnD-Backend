@@ -388,7 +388,10 @@ router.post('/:userId/update-batch', requireAuth, requireOwnership, async (req, 
 });
 
 // Super-batch update: Update quest progress for multiple users at once
-router.post('/update-batch-all', requireAuth, async (req, res) => {
+// Accepts JWT (any authenticated user) or X-Streamer-Key (overlay)
+import { requireAuthOrStreamerKey, validateUserOnBattlefield } from '../middleware/requireAuthOrStreamerKey.js';
+
+router.post('/update-batch-all', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { updates } = req.body; // Array of { userId, updates: [{ trackingKey, type, increment }] }
     
@@ -409,6 +412,19 @@ router.post('/update-batch-all', requireAuth, async (req, res) => {
       weekly: weeklyQuests,
       monthly: monthlyQuests
     };
+    
+    // Validate battlefield ownership for streamer-key auth
+    if (req.authType === 'streamer-key') {
+      for (const userUpdate of updates) {
+        const isValid = await validateUserOnBattlefield(req, userUpdate.userId);
+        if (!isValid) {
+          return res.status(403).json({ 
+            error: 'Forbidden: hero not on your battlefield',
+            userId: userUpdate.userId
+          });
+        }
+      }
+    }
     
     // Process all users in parallel
     const results = await Promise.all(updates.map(async (userUpdate) => {
