@@ -42,8 +42,8 @@ export async function requireAuthOrStreamerKey(req, res, next) {
       return res.status(401).json({ error: 'Authentication required: provide JWT or X-Streamer-Key' });
     }
     
-    // Find streamer by overlay key
-    const settingsSnapshot = await db.collection('streamSettings')
+    // Find streamer by overlay key (collection is 'streamerSettings')
+    const settingsSnapshot = await db.collection('streamerSettings')
       .where('overlayKey', '==', streamerKey)
       .limit(1)
       .get();
@@ -54,12 +54,13 @@ export async function requireAuthOrStreamerKey(req, res, next) {
     
     const settingsDoc = settingsSnapshot.docs[0];
     const settings = settingsDoc.data();
+    const twitchId = settingsDoc.id; // Use doc id as twitchId
     
     // Attach streamer info to request
     req.streamer = {
-      twitchId: settings.twitchId,
-      twitchUsername: settings.twitchUsername,
-      battlefieldId: `twitch:${settings.twitchId}`,
+      twitchId: twitchId,
+      twitchUsername: settings.twitchUsername || twitchId,
+      battlefieldId: `twitch:${twitchId}`,
       overlayKey: streamerKey
     };
     req.authType = 'streamer-key';
