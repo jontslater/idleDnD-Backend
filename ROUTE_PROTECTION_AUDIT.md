@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-15T16:16:26.093Z
+**Generated**: 2026-10-15T16:33:07.041Z
 
 ## Summary
 
@@ -93,9 +93,9 @@ All routes are properly protected!
 | POST | /:dungeonId/start | requireAuth | 424 |
 | GET | /instance/:instanceId | ✅ PUBLIC | 522 |
 | POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 541 |
-| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 608 |
-| GET | /:dungeonId | ✅ PUBLIC | 830 |
-| GET | /available/:userId | requireAuth, requireOwnership | 848 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 610 |
+| GET | /:dungeonId | ✅ PUBLIC | 832 |
+| GET | /available/:userId | requireAuth, requireOwnership | 850 |
 
 ### enchanting.js (4 routes)
 
@@ -278,12 +278,12 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | /keys/dungeons | ✅ PUBLIC | 26 |
-| GET | /keys/raids | ✅ PUBLIC | 30 |
-| GET | /:twitchId | ✅ PUBLIC | 37 |
-| POST | / | requireAuthOrStreamerKey, requireAuth | 55 |
-| POST | /:queueId/join | requireAuth | 102 |
-| POST | /:queueId/leave | requireAuth | 157 |
+| GET | /keys/dungeons | ✅ PUBLIC | 29 |
+| GET | /keys/raids | ✅ PUBLIC | 33 |
+| GET | /:twitchId | ✅ PUBLIC | 40 |
+| POST | / | requireAuthOrStreamerKey, requireAuth | 54 |
+| POST | /:queueId/join | requireAuth | 100 |
+| POST | /:queueId/leave | requireAuth | 156 |
 
 ### raids.js (22 routes)
 

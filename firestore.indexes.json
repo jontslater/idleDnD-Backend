@@ -31,6 +31,34 @@
       ]
     },
     {
+      "collectionGroup": "dungeonInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "battlefieldId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "raidInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "battlefieldId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "chatMessages",
       "queryScope": "COLLECTION",
       "fields": [

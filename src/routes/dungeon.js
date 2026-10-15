@@ -566,7 +566,9 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     }
     
     // Extract participant IDs from updated participants
-    const updatedParticipantIds = participants ? participants.map(p => p.userId) : instance.participantIds || [];
+    const updatedParticipantIds = participants
+      ? participants.map(p => p.twitchUserId || p.userId).filter(Boolean)
+      : instance.participantIds || [];
     
     // Build update data
     const updateData = {

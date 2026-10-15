@@ -36,9 +36,18 @@ Unknown keys are rejected at create time.
 
 ```json
 {
-  "queue": { "...serialized queue or null..." }
+  "queue": {
+    "id": "twitch:12345",
+    "queueId": "dungeon_normal_1690000000000",
+    "battlefieldId": "twitch:12345",
+    "code": "ABCD",
+    "...": "..."
+  }
 }
 ```
+
+- **`id`** — Firestore document id (`battlefieldQueues/{id}`), always `twitch:{streamerTwitchId}`. Use this for join/leave URLs.
+- **`queueId`** — Logical id stored on the document (`dungeon_normal_<timestamp>`). Also accepted as `:queueId` on join/leave.
 
 `launchAt` / `expiresAt` are epoch ms in JSON.
 
@@ -80,7 +89,12 @@ Unknown keys are rejected at create time.
 }
 ```
 
-`:queueId` is the battlefield queue doc id (`twitch:{streamerTwitchId}`).
+`:queueId` may be either:
+
+- Firestore doc id: `twitch:{streamerTwitchId}` (same as `queue.id` from GET), or
+- Stored field `queue.queueId` (e.g. `dungeon_normal_1690000000000`).
+
+The authenticated user's Twitch id is taken from the JWT only (never from the body).
 
 **Response `200`**
 
@@ -109,7 +123,11 @@ Unknown keys are rejected at create time.
 
 ## Instance status
 
-Launched instances use `status: "in-progress"` with `battlefieldId`, `participantIds`, and real `dungeonId` / `raidId`. Heroes keep `currentBattlefieldId` on the streamer battlefield and get `activeInstance`.
+Launched instances use `status: "in-progress"` with `battlefieldId`, `participantIds` (Twitch user ids), and real `dungeonId` / `raidId`. Heroes keep `currentBattlefieldId` on the streamer battlefield and get `activeInstance`.
+
+### Firestore indexes (overlay queries)
+
+If the overlay listens with `battlefieldId == X` and `status in [...]`, deploy composite indexes on `dungeonInstances` and `raidInstances` for `(battlefieldId, status)` — see `firestore.indexes.json` in this repo.
 
 ## Scheduled guild raids
 

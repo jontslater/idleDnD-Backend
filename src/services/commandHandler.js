@@ -524,7 +524,7 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
         return await handleQCancelCommand(battlefieldId, viewerUsername);
       
       case 'qleave':
-        return await handleQLeaveCommand(viewerId, viewerUsername);
+        return await handleQLeaveCommand(viewerId, viewerUsername, battlefieldId);
       
       case 'level':
         return await handleLevelCommand(hero, args, viewerUsername, viewerId, streamerUsername, battlefieldId);
@@ -2616,7 +2616,7 @@ async function handleQStatusCommand(battlefieldId, username) {
  * !qstart - Force start queue (streamer only, requires filled roles)
  */
 async function handleQStartCommand(battlefieldId, username, streamerName) {
-  const { getActiveQueue, launchInstance } = await import('./queueService.js');
+  const { getActiveQueue, attemptQueueLaunch } = await import('./queueService.js');
   const { areRolesFilled, getNeededRoles } = await import('../data/queueRequirements.js');
   
   const queue = await getActiveQueue(battlefieldId);
@@ -2628,7 +2628,6 @@ async function handleQStartCommand(battlefieldId, username, streamerName) {
     };
   }
   
-  // Validate all required roles are filled
   if (!areRolesFilled(queue)) {
     const needed = getNeededRoles(queue);
     return {
@@ -2637,20 +2636,20 @@ async function handleQStartCommand(battlefieldId, username, streamerName) {
     };
   }
   
-  // Launch instance
-  const result = await launchInstance(battlefieldId, queue);
+  const outcome = await attemptQueueLaunch(battlefieldId, { force: true });
   
-  if (!result.success) {
-    return result;
+  if (!outcome.launched) {
+    if (outcome.reason === 'launching') {
+      return {
+        success: false,
+        message: `@${username} Queue is already launching — please wait.`
+      };
+    }
+    return {
+      success: false,
+      message: outcome.result?.message || `@${username} Could not start the queue right now.`
+    };
   }
-  
-  // Broadcast launch
-  const { broadcastToRoom } = await import('../websocket/server.js');
-  broadcastToRoom(queue.streamerId, {
-    type: 'instance_launched',
-    instanceId: result.instanceId,
-    instance: result.instance
-  });
   
   return {
     success: true,
@@ -2686,10 +2685,10 @@ async function handleQCancelCommand(battlefieldId, username) {
 /**
  * !qleave - Leave queue
  */
-async function handleQLeaveCommand(userId, username) {
+async function handleQLeaveCommand(userId, username, battlefieldId = null) {
   const { leaveQueue } = await import('./queueService.js');
   
-  const result = await leaveQueue(userId, username);
+  const result = await leaveQueue(userId, username, battlefieldId);
   
   if (!result.success) {
     return result;

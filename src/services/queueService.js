@@ -36,8 +36,51 @@ function isQueueExpired(queue) {
   return expiresMs != null && expiresMs < Date.now();
 }
 
+function removeParticipantFromQueue(queue, viewerId, heroId) {
+  const participant = queue.participants.find(
+    p => p.userId === viewerId || p.heroId === heroId
+  );
+  if (!participant) {
+    return { queue, removed: false };
+  }
+  queue.participants = queue.participants.filter(
+    p => p.userId !== viewerId && p.heroId !== heroId
+  );
+  const role = participant.role;
+  if (queue.requirements?.roles?.[role]) {
+    queue.requirements.roles[role].current--;
+    queue.requirements.roles[role].filled =
+      queue.requirements.roles[role].current >= queue.requirements.roles[role].required;
+  }
+  queue.isReady = areRolesFilled(queue);
+  queue.status = queue.isReady ? QUEUE_STATUS.READY : QUEUE_STATUS.OPEN;
+  queue.launchAt = queue.isReady
+    ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + LAUNCH_COUNTDOWN_MS))
+    : null;
+  return { queue, removed: true };
+}
+
 /**
- * Get active queue for a battlefield (open, ready, or launching).
+ * Resolve battlefieldQueues doc by Firestore doc id or stored queueId field.
+ */
+export async function resolveQueueDocument(queueIdParam) {
+  if (!queueIdParam) return null;
+  const direct = await db.collection('battlefieldQueues').doc(queueIdParam).get();
+  if (direct.exists) {
+    return direct;
+  }
+  const byField = await db.collection('battlefieldQueues')
+    .where('queueId', '==', queueIdParam)
+    .limit(1)
+    .get();
+  if (!byField.empty) {
+    return byField.docs[0];
+  }
+  return null;
+}
+
+/**
+ * Active queue for UI/commands — excludes launching (in-flight) queues.
  */
 export async function getActiveQueue(battlefieldId) {
   const queueDoc = await db.collection('battlefieldQueues').doc(battlefieldId).get();
@@ -54,23 +97,21 @@ export async function getActiveQueue(battlefieldId) {
   }
 
   if (queue.status === QUEUE_STATUS.LAUNCHING) {
-    return { ...queue, id: queueDoc.id };
+    return null;
   }
 
   return { ...queue, id: queueDoc.id };
 }
 
-/**
- * Open queue for a streamer twitch id (battlefield doc id is twitch:{twitchId}).
- */
 export async function getOpenQueueForStreamer(twitchId) {
   const battlefieldId = `twitch:${twitchId}`;
-  return getActiveQueue(battlefieldId);
+  const queue = await getActiveQueue(battlefieldId);
+  if (!queue) {
+    return null;
+  }
+  return queue;
 }
 
-/**
- * Create a new queue (queueKey = normal, heroic, elder_dragon_normal, etc.)
- */
 export async function createQueue(battlefieldId, streamerId, streamerName, type, queueKey) {
   const existing = await getActiveQueue(battlefieldId);
   if (existing) {
@@ -83,10 +124,7 @@ export async function createQueue(battlefieldId, streamerId, streamerName, type,
 
   const mapped = resolveQueueContentId(type, queueKey);
   if (!mapped.ok) {
-    return {
-      success: false,
-      message: mapped.message
-    };
+    return { success: false, message: mapped.message };
   }
 
   const requirements = type === 'dungeon'
@@ -94,10 +132,7 @@ export async function createQueue(battlefieldId, streamerId, streamerName, type,
     : RAID_REQUIREMENTS[queueKey];
 
   if (!requirements) {
-    return {
-      success: false,
-      message: `Invalid ${type} queue key: ${queueKey}`
-    };
+    return { success: false, message: `Invalid ${type} queue key: ${queueKey}` };
   }
 
   const code = generateQueueCode(type, queueKey);
@@ -107,16 +142,13 @@ export async function createQueue(battlefieldId, streamerId, streamerName, type,
     streamerId,
     streamerName,
     battlefieldId,
-
     code,
-
     type,
     queueKey,
     contentId: mapped.contentId,
     instanceId: queueKey,
     name: requirements.name,
     description: requirements.description,
-
     requirements: {
       minLevel: requirements.minLevel,
       maxLevel: requirements.maxLevel,
@@ -129,13 +161,10 @@ export async function createQueue(battlefieldId, streamerId, streamerName, type,
         dps: { current: 0, required: requirements.roles.dps.required, filled: false }
       }
     },
-
     participants: [],
-
     status: QUEUE_STATUS.OPEN,
     isReady: false,
     totalPlayers: requirements.totalPlayers,
-
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000)),
     launchAt: null
@@ -145,37 +174,63 @@ export async function createQueue(battlefieldId, streamerId, streamerName, type,
 
   return {
     success: true,
-    queue,
+    queue: { ...queue, id: battlefieldId },
     message: `🏰 ${requirements.name} queue created! Room Code: ${code}`
   };
 }
 
-async function ensureHeroOnBattlefield(heroId, battlefieldId) {
-  const heroRef = db.collection('heroes').doc(heroId);
-  const heroDoc = await heroRef.get();
-  if (!heroDoc.exists) {
-    return { ok: false, message: 'Hero not found' };
+async function findParticipantQueueDocRefs(viewerId, heroId, excludeBattlefieldId = null) {
+  const refs = [];
+  for (const status of [QUEUE_STATUS.OPEN, QUEUE_STATUS.READY]) {
+    const snap = await db.collection('battlefieldQueues').where('status', '==', status).get();
+    for (const doc of snap.docs) {
+      if (excludeBattlefieldId && doc.id === excludeBattlefieldId) {
+        continue;
+      }
+      const q = doc.data();
+      if (q.participants?.some(p => p.userId === viewerId || p.heroId === heroId)) {
+        refs.push(doc.ref);
+      }
+    }
   }
-  const hero = heroDoc.data();
-  if (hero.currentBattlefieldId && hero.currentBattlefieldId !== battlefieldId) {
-    await heroRef.update({
-      currentBattlefieldId: battlefieldId,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-  } else if (!hero.currentBattlefieldId) {
-    await heroRef.update({
-      currentBattlefieldId: battlefieldId,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+  return refs;
+}
+
+async function assertHeroMayJoinQueue(hero, targetBattlefieldId, viewerUsername) {
+  if (hero.activeInstance?.instanceId) {
+    const type = hero.activeInstance.type === 'raid' ? 'raid' : 'dungeon';
+    const coll = type === 'raid' ? 'raidInstances' : 'dungeonInstances';
+    const instDoc = await db.collection(coll).doc(hero.activeInstance.instanceId).get();
+    if (instDoc.exists) {
+      const inst = instDoc.data();
+      if (inst.battlefieldId && inst.battlefieldId !== targetBattlefieldId) {
+        return {
+          ok: false,
+          message: `@${viewerUsername} You're in an active ${type} on another stream. Finish it before joining this queue.`
+        };
+      }
+    }
   }
+
+  if (!hero.currentBattlefieldId) {
+    return {
+      ok: false,
+      message: `@${viewerUsername} Use !join on this channel before joining the queue.`
+    };
+  }
+
+  if (hero.currentBattlefieldId !== targetBattlefieldId) {
+    return {
+      ok: false,
+      message: `@${viewerUsername} You must be on this streamer's channel (!join) before joining the queue.`
+    };
+  }
+
   return { ok: true };
 }
 
 /**
- * Add player to queue
- * @param {object} [options]
- * @param {'dungeon'|'raid'} [options.expectedType]
- * @param {string} [options.expectedBattlefieldId]
+ * Add player to queue (transactional).
  */
 export async function joinQueue(code, hero, viewerUsername, viewerId, options = {}) {
   const queuesSnapshot = await db.collection('battlefieldQueues')
@@ -191,59 +246,47 @@ export async function joinQueue(code, hero, viewerUsername, viewerId, options = 
     };
   }
 
-  const queueDoc = queuesSnapshot.docs[0];
-  const queue = queueDoc.data();
+  const targetDoc = queuesSnapshot.docs[0];
+  const targetRef = targetDoc.ref;
+  const preview = targetDoc.data();
 
-  if (options.expectedType && queue.type !== options.expectedType) {
+  if (options.expectedType && preview.type !== options.expectedType) {
     return {
       success: false,
-      message: `@${viewerUsername} That code is for a ${queue.type} queue. Use !q${queue.type} ${code.toUpperCase()} instead.`
+      message: `@${viewerUsername} That code is for a ${preview.type} queue. Use !q${preview.type} ${code.toUpperCase()} instead.`
     };
   }
 
-  if (options.expectedBattlefieldId && queue.battlefieldId !== options.expectedBattlefieldId) {
+  if (options.expectedBattlefieldId && preview.battlefieldId !== options.expectedBattlefieldId) {
     return {
       success: false,
-      message: `@${viewerUsername} You can only join this queue from ${queue.streamerName}'s channel.`
+      message: `@${viewerUsername} You can only join this queue from ${preview.streamerName}'s channel.`
     };
   }
 
-  if (queue.participants.some(p => p.userId === viewerId)) {
-    return {
-      success: false,
-      message: `@${viewerUsername} You're already in queue ${code.toUpperCase()}!`
-    };
-  }
-
-  if (hero.level < queue.requirements.minLevel) {
-    return {
-      success: false,
-      message: `@${viewerUsername} Your hero is Lv${hero.level}, but ${queue.name} requires Lv${queue.requirements.minLevel}+!`
-    };
+  const mayJoin = await assertHeroMayJoinQueue(hero, preview.battlefieldId, viewerUsername);
+  if (!mayJoin.ok) {
+    return { success: false, message: mayJoin.message };
   }
 
   const gearScore = calculateGearScore(hero);
-  if (gearScore < queue.requirements.minGearScore) {
-    return {
-      success: false,
-      message: `@${viewerUsername} Your gear score is ${gearScore}, but ${queue.name} requires ${queue.requirements.minGearScore}+! Equip better gear!`
-    };
-  }
-
   const heroRole = getHeroRole(hero.role);
-  const roleReq = queue.requirements.roles[heroRole];
-  if (roleReq.current >= roleReq.required) {
-    const needed = getNeededRoles(queue);
+
+  if (hero.level < preview.requirements.minLevel) {
     return {
       success: false,
-      message: `@${viewerUsername} ${heroRole.toUpperCase()} slots are full! (${roleReq.current}/${roleReq.required} ✅) ${needed.length > 0 ? `Still needed: ${needed.join(', ')}` : ''}`
+      message: `@${viewerUsername} Your hero is Lv${hero.level}, but ${preview.name} requires Lv${preview.requirements.minLevel}+!`
     };
   }
 
-  const onBf = await ensureHeroOnBattlefield(hero.id, queue.battlefieldId);
-  if (!onBf.ok) {
-    return { success: false, message: `@${viewerUsername} ${onBf.message}` };
+  if (gearScore < preview.requirements.minGearScore) {
+    return {
+      success: false,
+      message: `@${viewerUsername} Your gear score is ${gearScore}, but ${preview.name} requires ${preview.requirements.minGearScore}+! Equip better gear!`
+    };
   }
+
+  const otherQueueRefs = await findParticipantQueueDocRefs(viewerId, hero.id, targetDoc.id);
 
   const participant = {
     userId: viewerId,
@@ -258,26 +301,112 @@ export async function joinQueue(code, hero, viewerUsername, viewerId, options = 
     joinedAt: admin.firestore.FieldValue.serverTimestamp()
   };
 
-  queue.participants.push(participant);
-  queue.requirements.roles[heroRole].current++;
-  queue.requirements.roles[heroRole].filled =
-    queue.requirements.roles[heroRole].current >= queue.requirements.roles[heroRole].required;
+  const applyJoin = async (tx) => {
+    const targetSnap = await tx.get(targetRef);
+    if (!targetSnap.exists) {
+      return { error: 'queue_gone' };
+    }
+    const queue = { ...targetSnap.data() };
 
-  queue.isReady = areRolesFilled(queue);
+    if (queue.status === QUEUE_STATUS.LAUNCHING) {
+      return { error: 'launching' };
+    }
+    if (queue.status !== QUEUE_STATUS.OPEN) {
+      return { error: 'not_open' };
+    }
 
-  if (queue.isReady) {
-    queue.launchAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + LAUNCH_COUNTDOWN_MS));
-    queue.status = QUEUE_STATUS.READY;
+    if (queue.participants.some(p => p.userId === viewerId || p.heroId === hero.id)) {
+      return { error: 'already_in' };
+    }
+
+    const roleReq = queue.requirements.roles[heroRole];
+    if (roleReq.current >= roleReq.required) {
+      return { error: 'role_full', queue };
+    }
+
+    for (const otherRef of otherQueueRefs) {
+      const otherSnap = await tx.get(otherRef);
+      if (!otherSnap.exists) continue;
+      const otherQueue = { ...otherSnap.data() };
+      if (otherQueue.status === QUEUE_STATUS.LAUNCHING) {
+        continue;
+      }
+      const { queue: updatedOther, removed } = removeParticipantFromQueue(
+        otherQueue,
+        viewerId,
+        hero.id
+      );
+      if (removed) {
+        tx.update(otherRef, {
+          participants: updatedOther.participants,
+          requirements: updatedOther.requirements,
+          isReady: updatedOther.isReady,
+          status: updatedOther.status,
+          launchAt: updatedOther.launchAt ?? null
+        });
+      }
+    }
+
+    queue.participants = [...queue.participants, participant];
+    queue.requirements.roles[heroRole].current++;
+    queue.requirements.roles[heroRole].filled =
+      queue.requirements.roles[heroRole].current >= queue.requirements.roles[heroRole].required;
+    queue.isReady = areRolesFilled(queue);
+
+    if (queue.isReady) {
+      queue.launchAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + LAUNCH_COUNTDOWN_MS));
+      queue.status = QUEUE_STATUS.READY;
+    }
+
+    tx.update(targetRef, {
+      participants: queue.participants,
+      requirements: queue.requirements,
+      isReady: queue.isReady,
+      status: queue.status,
+      launchAt: queue.launchAt ?? null
+    });
+
+    return { queue: { ...queue, id: targetDoc.id } };
+  };
+
+  let txResult;
+  if (typeof db.runTransaction === 'function') {
+    txResult = await db.runTransaction(applyJoin);
+  } else {
+    txResult = await applyJoin({
+      get: (ref) => ref.get(),
+      update: (ref, data) => ref.update(data)
+    });
   }
 
-  await queueDoc.ref.update({
-    participants: queue.participants,
-    requirements: queue.requirements,
-    isReady: queue.isReady,
-    status: queue.status,
-    launchAt: queue.launchAt ?? null
-  });
+  if (txResult.error === 'queue_gone' || txResult.error === 'not_open') {
+    return {
+      success: false,
+      message: `@${viewerUsername} Invalid or expired queue code: ${code.toUpperCase()}`
+    };
+  }
+  if (txResult.error === 'launching') {
+    return {
+      success: false,
+      message: `@${viewerUsername} This queue is launching — try again in a moment.`
+    };
+  }
+  if (txResult.error === 'already_in') {
+    return {
+      success: false,
+      message: `@${viewerUsername} You're already in queue ${code.toUpperCase()}!`
+    };
+  }
+  if (txResult.error === 'role_full') {
+    const needed = getNeededRoles(txResult.queue);
+    const roleReq = txResult.queue.requirements.roles[heroRole];
+    return {
+      success: false,
+      message: `@${viewerUsername} ${heroRole.toUpperCase()} slots are full! (${roleReq.current}/${roleReq.required} ✅) ${needed.length > 0 ? `Still needed: ${needed.join(', ')}` : ''}`
+    };
+  }
 
+  const queue = txResult.queue;
   const statusStr = formatQueueStatus(queue);
   let message = `✅ ${viewerUsername} (${hero.role.charAt(0).toUpperCase() + hero.role.slice(1)} ${heroRole.toUpperCase()} Lv${hero.level}, GS ${gearScore}) joined ${code.toUpperCase()}!\n${statusStr}`;
 
@@ -299,59 +428,90 @@ export async function joinQueue(code, hero, viewerUsername, viewerId, options = 
 }
 
 /**
- * Remove player from queue (open or countdown/ready).
+ * Leave a specific battlefield queue (transactional). Chat may omit battlefieldId to search.
  */
-export async function leaveQueue(viewerId, viewerUsername) {
-  const openSnap = await db.collection('battlefieldQueues')
-    .where('status', '==', QUEUE_STATUS.OPEN)
-    .get();
-  const readySnap = await db.collection('battlefieldQueues')
-    .where('status', '==', QUEUE_STATUS.READY)
-    .get();
+export async function leaveQueue(viewerId, viewerUsername, battlefieldId = null) {
+  let queueRef;
+  let queueDocId;
 
-  const allDocs = [...openSnap.docs, ...readySnap.docs];
-
-  let foundQueue = null;
-  let queueDoc = null;
-
-  for (const doc of allDocs) {
-    const queue = doc.data();
-    if (queue.participants.some(p => p.userId === viewerId)) {
-      foundQueue = queue;
-      queueDoc = doc;
-      break;
+  if (battlefieldId) {
+    queueRef = db.collection('battlefieldQueues').doc(battlefieldId);
+    queueDocId = battlefieldId;
+  } else {
+    const openSnap = await db.collection('battlefieldQueues').where('status', '==', QUEUE_STATUS.OPEN).get();
+    const readySnap = await db.collection('battlefieldQueues').where('status', '==', QUEUE_STATUS.READY).get();
+    for (const doc of [...openSnap.docs, ...readySnap.docs]) {
+      const queue = doc.data();
+      if (queue.participants?.some(p => p.userId === viewerId)) {
+        queueRef = doc.ref;
+        queueDocId = doc.id;
+        break;
+      }
     }
   }
 
-  if (!foundQueue) {
+  if (!queueRef) {
     return {
       success: false,
       message: `@${viewerUsername} You're not in any active queue!`
     };
   }
 
-  const participant = foundQueue.participants.find(p => p.userId === viewerId);
-  foundQueue.participants = foundQueue.participants.filter(p => p.userId !== viewerId);
+  const applyLeave = async (tx) => {
+    const snap = await tx.get(queueRef);
+    if (!snap.exists) {
+      return { error: 'not_found' };
+    }
+    const queue = { ...snap.data() };
 
-  if (participant) {
-    const role = participant.role;
-    foundQueue.requirements.roles[role].current--;
-    foundQueue.requirements.roles[role].filled =
-      foundQueue.requirements.roles[role].current >= foundQueue.requirements.roles[role].required;
+    if (queue.status === QUEUE_STATUS.LAUNCHING) {
+      return { error: 'launching' };
+    }
+
+    const { queue: updated, removed } = removeParticipantFromQueue(queue, viewerId, null);
+    if (!removed) {
+      return { error: 'not_in_queue' };
+    }
+
+    updated.status = QUEUE_STATUS.OPEN;
+    updated.isReady = false;
+    updated.launchAt = null;
+
+    tx.update(queueRef, {
+      participants: updated.participants,
+      requirements: updated.requirements,
+      isReady: updated.isReady,
+      status: updated.status,
+      launchAt: null
+    });
+
+    return { queue: { ...updated, id: queueDocId } };
+  };
+
+  let txResult;
+  if (typeof db.runTransaction === 'function') {
+    txResult = await db.runTransaction(applyLeave);
+  } else {
+    txResult = await applyLeave({
+      get: (ref) => ref.get(),
+      update: (ref, data) => ref.update(data)
+    });
   }
 
-  foundQueue.isReady = false;
-  foundQueue.status = QUEUE_STATUS.OPEN;
-  foundQueue.launchAt = null;
+  if (txResult.error === 'launching') {
+    return {
+      success: false,
+      message: `@${viewerUsername} Cannot leave — the queue is launching right now.`
+    };
+  }
+  if (txResult.error === 'not_in_queue' || txResult.error === 'not_found') {
+    return {
+      success: false,
+      message: `@${viewerUsername} You're not in that queue!`
+    };
+  }
 
-  await queueDoc.ref.update({
-    participants: foundQueue.participants,
-    requirements: foundQueue.requirements,
-    isReady: foundQueue.isReady,
-    status: foundQueue.status,
-    launchAt: null
-  });
-
+  const foundQueue = txResult.queue;
   const statusStr = formatQueueStatus(foundQueue);
 
   return {
@@ -363,21 +523,16 @@ export async function leaveQueue(viewerId, viewerUsername) {
 }
 
 export async function cancelQueue(battlefieldId) {
-  const queue = await getActiveQueue(battlefieldId);
-
-  if (!queue) {
-    return {
-      success: false,
-      message: 'No active queue to cancel!'
-    };
+  const queueDoc = await db.collection('battlefieldQueues').doc(battlefieldId).get();
+  if (!queueDoc.exists) {
+    return { success: false, message: 'No active queue to cancel!' };
   }
-
-  await db.collection('battlefieldQueues').doc(battlefieldId).delete();
-
+  const queue = queueDoc.data();
+  await queueDoc.ref.delete();
   return {
     success: true,
     message: `❌ ${queue.name} queue (code: ${queue.code}) has been cancelled!`,
-    queue
+    queue: { ...queue, id: battlefieldId }
   };
 }
 
@@ -409,58 +564,99 @@ async function loadParticipantRows(queue) {
 }
 
 /**
- * Claim queue for launch (prevents double launch).
+ * @param {{ force?: boolean }} options
  */
-async function claimQueueForLaunch(battlefieldId) {
+export async function claimQueueForLaunch(battlefieldId, options = {}) {
+  const { force = false } = options;
   const ref = db.collection('battlefieldQueues').doc(battlefieldId);
 
-  if (typeof db.runTransaction === 'function') {
-    return db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) {
-        return { claimed: false };
-      }
-      const queue = snap.data();
-      if (queue.status !== QUEUE_STATUS.READY || !queue.isReady) {
-        return { claimed: false };
+  const tryClaim = async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return { claimed: false, reason: 'missing' };
+    }
+    const queue = snap.data();
+
+    if (queue.status === QUEUE_STATUS.LAUNCHING) {
+      return { claimed: false, reason: 'launching' };
+    }
+
+    if (queue.status !== QUEUE_STATUS.OPEN && queue.status !== QUEUE_STATUS.READY) {
+      return { claimed: false, reason: 'bad_status' };
+    }
+
+    if (!queue.isReady || !areRolesFilled(queue)) {
+      return { claimed: false, reason: 'not_ready' };
+    }
+
+    if (!force) {
+      if (queue.status !== QUEUE_STATUS.READY) {
+        return { claimed: false, reason: 'not_ready_status' };
       }
       const launchMs = timestampToMillis(queue.launchAt);
       if (launchMs == null || launchMs > Date.now()) {
-        return { claimed: false };
+        return { claimed: false, reason: 'not_due' };
       }
-      tx.update(ref, { status: QUEUE_STATUS.LAUNCHING });
-      return { claimed: true, queue };
-    });
-  }
+    }
 
-  const snap = await ref.get();
-  if (!snap.exists) {
-    return { claimed: false };
+    tx.update(ref, { status: QUEUE_STATUS.LAUNCHING });
+    return { claimed: true, queue };
+  };
+
+  if (typeof db.runTransaction === 'function') {
+    return db.runTransaction(tryClaim);
   }
-  const queue = snap.data();
-  if (queue.status !== QUEUE_STATUS.READY || !queue.isReady) {
-    return { claimed: false };
-  }
-  const launchMs = timestampToMillis(queue.launchAt);
-  if (launchMs == null || launchMs > Date.now()) {
-    return { claimed: false };
-  }
-  await ref.update({ status: QUEUE_STATUS.LAUNCHING });
-  return { claimed: true, queue };
+  return tryClaim({
+    get: (r) => r.get(),
+    update: (r, d) => r.update(d)
+  });
 }
 
-/**
- * Launch dungeon/raid instance (correct shape for overlay + streamer-key checks).
- */
+async function recoverQueueAfterFailedLaunch(battlefieldId, queue, error) {
+  console.error('[Queue] Launch failed — recovering queue', battlefieldId, error?.message || error);
+  const ref = db.collection('battlefieldQueues').doc(battlefieldId);
+  const stillReady = areRolesFilled(queue);
+  await ref.update({
+    status: stillReady ? QUEUE_STATUS.READY : QUEUE_STATUS.OPEN,
+    isReady: stillReady,
+    launchAt: stillReady
+      ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + LAUNCH_COUNTDOWN_MS))
+      : null,
+    lastLaunchError: error?.message || String(error || 'launch_failed'),
+    lastLaunchErrorAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+export async function notifyInstanceLaunched(queue, launchResult) {
+  if (!launchResult?.success || !queue?.streamerId) {
+    return;
+  }
+  try {
+    const { broadcastToRoom } = await import('../websocket/server.js');
+    broadcastToRoom(queue.streamerId, {
+      type: 'instance_launched',
+      instanceId: launchResult.instanceId,
+      instance: launchResult.instance
+    });
+  } catch (err) {
+    console.error('[Queue] Failed to broadcast instance_launched:', err);
+  }
+}
+
 export async function launchInstance(battlefieldId, queue) {
   console.log(`[Queue] Launching ${queue.type} instance:`, queue.name);
 
-  const contentId = queue.contentId || resolveQueueContentId(queue.type, queue.queueKey || queue.instanceId)?.contentId;
+  const mapped = resolveQueueContentId(queue.type, queue.queueKey || queue.instanceId);
+  const contentId = queue.contentId || (mapped.ok ? mapped.contentId : null);
   if (!contentId) {
     return { success: false, message: 'Invalid queue content mapping' };
   }
 
   const participantData = await loadParticipantRows(queue);
+  if (participantData.length === 0) {
+    return { success: false, message: 'No valid participants for launch' };
+  }
+
   const participantIds = participantData.map(p => p.twitchUserId).filter(Boolean);
   const organizerId = queue.streamerId;
 
@@ -560,20 +756,32 @@ export async function launchInstance(battlefieldId, queue) {
 }
 
 /**
- * Try to launch a single battlefield queue if due.
+ * Claim (optional force) then launch; recover queue doc if launch fails.
  */
-export async function tryLaunchDueQueue(battlefieldId) {
-  const claim = await claimQueueForLaunch(battlefieldId);
+export async function attemptQueueLaunch(battlefieldId, options = {}) {
+  const claim = await claimQueueForLaunch(battlefieldId, options);
   if (!claim.claimed || !claim.queue) {
-    return { launched: false };
+    return { launched: false, reason: claim.reason || 'not_claimed' };
   }
-  const result = await launchInstance(battlefieldId, claim.queue);
-  return { launched: result.success, result };
+
+  try {
+    const result = await launchInstance(battlefieldId, claim.queue);
+    if (!result.success) {
+      await recoverQueueAfterFailedLaunch(battlefieldId, claim.queue, new Error(result.message));
+      return { launched: false, result, queue: claim.queue };
+    }
+    await notifyInstanceLaunched(claim.queue, result);
+    return { launched: true, result, queue: claim.queue };
+  } catch (err) {
+    await recoverQueueAfterFailedLaunch(battlefieldId, claim.queue, err);
+    throw err;
+  }
 }
 
-/**
- * Sweep all ready queues past launchAt (boot + interval).
- */
+export async function tryLaunchDueQueue(battlefieldId) {
+  return attemptQueueLaunch(battlefieldId, { force: false });
+}
+
 export async function sweepDueQueues() {
   const readySnap = await db.collection('battlefieldQueues')
     .where('status', '==', QUEUE_STATUS.READY)
@@ -589,7 +797,7 @@ export async function sweepDueQueues() {
     if (!queue.isReady || !areRolesFilled(queue)) {
       continue;
     }
-    const outcome = await tryLaunchDueQueue(doc.id);
+    const outcome = await attemptQueueLaunch(doc.id, { force: false });
     if (outcome.launched) {
       launched.push({ battlefieldId: doc.id, ...outcome });
     }
@@ -598,13 +806,13 @@ export async function sweepDueQueues() {
 }
 
 export async function joinQueueByBattlefieldDocId(queueDocId, hero, userId, options = {}) {
-  const queueDoc = await db.collection('battlefieldQueues').doc(queueDocId).get();
-  if (!queueDoc.exists) {
+  const queueDoc = await resolveQueueDocument(queueDocId);
+  if (!queueDoc) {
     return { success: false, message: 'Queue not found' };
   }
   const queue = queueDoc.data();
   return joinQueue(queue.code, hero, hero.name || userId, userId, {
     expectedType: options.expectedType,
-    expectedBattlefieldId: options.expectedBattlefieldId
+    expectedBattlefieldId: options.expectedBattlefieldId ?? queue.battlefieldId
   });
 }

@@ -137,22 +137,27 @@ export async function validateHeroesOnBattlefield(req, heroIds) {
  * Validate that a user's hero belongs to the authenticated streamer's battlefield
  * Looks up hero by twitchUserId
  */
-export async function validateUserOnBattlefield(req, twitchUserId) {
+export async function validateUserOnBattlefield(req, twitchUserId, heroId = null) {
   if (req.authType !== 'streamer-key') {
     return true;
+  }
+
+  if (heroId) {
+    return validateHeroOnBattlefield(req, heroId);
   }
   
   const heroesSnapshot = await db.collection('heroes')
     .where('twitchUserId', '==', twitchUserId)
-    .limit(1)
     .get();
   
   if (heroesSnapshot.empty) {
     return false;
   }
-  
-  const hero = heroesSnapshot.docs[0].data();
-  return hero.currentBattlefieldId === req.streamer.battlefieldId;
+
+  const expectedBattlefieldId = req.streamer.battlefieldId;
+  return heroesSnapshot.docs.some(
+    (doc) => doc.data().currentBattlefieldId === expectedBattlefieldId
+  );
 }
 
 /**
@@ -203,7 +208,7 @@ export async function assertParticipantsOnStreamerBattlefield(req, res, particip
       continue;
     }
     if (p.twitchUserId) {
-      const ok = await validateUserOnBattlefield(req, p.twitchUserId);
+      const ok = await validateUserOnBattlefield(req, p.twitchUserId, p.heroId || null);
       if (!ok) {
         res.status(403).json({
           error: 'Forbidden: hero not on your battlefield',

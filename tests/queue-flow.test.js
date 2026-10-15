@@ -66,7 +66,8 @@ async function runTests() {
     leaveQueue,
     sweepDueQueues,
     tryLaunchDueQueue,
-    cancelQueue
+    cancelQueue,
+    attemptQueueLaunch
   } = await import('../src/services/queueService.js');
   const { runQueueSweeperOnce } = await import('../src/services/queueSweeperService.js');
 
@@ -183,7 +184,7 @@ async function runTests() {
       });
     }
 
-    const left = await leaveQueue('t5', 'hero-dps3');
+    const left = await leaveQueue('t5', 'hero-dps3', BATTLEFIELD_ID);
     assert.equal(left.success, true);
     const qDoc = await db.collection('battlefieldQueues').doc(BATTLEFIELD_ID).get();
     assert.equal(qDoc.data().status, 'open');
@@ -239,6 +240,104 @@ async function runTests() {
     const bad = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'not_a_real_key');
     assert.equal(bad.success, false);
     console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 7: !qstart path uses claim (force launch)');
+  try {
+    await cancelQueue(BATTLEFIELD_ID);
+    const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');
+    const heroDocs = ['hero-tank', 'hero-healer', 'hero-dps1', 'hero-dps2', 'hero-dps3'];
+    const twitchIds = ['t1', 't2', 't3', 't4', 't5'];
+    for (let i = 0; i < heroDocs.length; i++) {
+      const doc = await db.collection('heroes').doc(heroDocs[i]).get();
+      const hero = { id: doc.id, ...doc.data() };
+      await joinQueue(created.queue.code, hero, hero.name, twitchIds[i], {
+        expectedType: 'dungeon',
+        expectedBattlefieldId: BATTLEFIELD_ID
+      });
+    }
+    const first = await attemptQueueLaunch(BATTLEFIELD_ID, { force: true });
+    assert.equal(first.launched, true);
+    const second = await attemptQueueLaunch(BATTLEFIELD_ID, { force: true });
+    assert.equal(second.launched, false);
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 8: leave refused while launching');
+  try {
+    await cancelQueue(BATTLEFIELD_ID);
+    const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');
+    const doc = await db.collection('heroes').doc('hero-tank').get();
+    const hero = { id: doc.id, ...doc.data() };
+    await joinQueue(created.queue.code, hero, hero.name, 't1', {
+      expectedType: 'dungeon',
+      expectedBattlefieldId: BATTLEFIELD_ID
+    });
+    await db.collection('battlefieldQueues').doc(BATTLEFIELD_ID).update({ status: 'launching' });
+    const left = await leaveQueue('t1', 'hero-tank', BATTLEFIELD_ID);
+    assert.equal(left.success, false);
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 9: cross-stream join rejected (no silent BF move)');
+  try {
+    await cancelQueue(BATTLEFIELD_ID);
+    const tankSnap = await db.collection('heroes').doc('hero-tank').get();
+    const tankData = { ...tankSnap.data(), currentBattlefieldId: BATTLEFIELD_ID };
+    delete tankData.activeInstance;
+    await db.collection('heroes').doc('hero-tank').set(tankData);
+    const BF2 = 'twitch:streamer2';
+    const created2 = await createQueue(BF2, 'streamer2', 'streamer2', 'dungeon', 'normal');
+    const doc = await db.collection('heroes').doc('hero-tank').get();
+    const hero = { id: doc.id, ...doc.data() };
+    const badJoin = await joinQueue(created2.queue.code, hero, hero.name, 't1', {
+      expectedType: 'dungeon',
+      expectedBattlefieldId: BF2
+    });
+    assert.equal(badJoin.success, false);
+    assert.ok(
+      badJoin.message.includes('!join') || badJoin.message.includes('channel'),
+      badJoin.message
+    );
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 10: failed launch recovers queue from launching');
+  try {
+    await cancelQueue(BATTLEFIELD_ID);
+    const created = await createQueue(BATTLEFIELD_ID, STREAMER_TWITCH, 'streamer1', 'dungeon', 'normal');
+    const heroDocs = ['hero-tank', 'hero-healer', 'hero-dps1', 'hero-dps2', 'hero-dps3'];
+    const twitchIds = ['t1', 't2', 't3', 't4', 't5'];
+    for (let i = 0; i < heroDocs.length; i++) {
+      const doc = await db.collection('heroes').doc(heroDocs[i]).get();
+      const hero = { id: doc.id, ...doc.data() };
+      await joinQueue(created.queue.code, hero, hero.name, twitchIds[i], {
+        expectedType: 'dungeon',
+        expectedBattlefieldId: BATTLEFIELD_ID
+      });
+    }
+    await db.collection('battlefieldQueues').doc(BATTLEFIELD_ID).update({ contentId: 'not_a_real_dungeon' });
+    const outcome = await attemptQueueLaunch(BATTLEFIELD_ID, { force: true });
+    assert.equal(outcome.launched, false);
+    const qDoc = await db.collection('battlefieldQueues').doc(BATTLEFIELD_ID).get();
+    assert.equal(qDoc.data().status !== 'launching', true);
+    console.log('  ✓ Passed (in-memory tx is not atomic — not proof of race safety)');
     passed++;
   } catch (e) {
     console.log('  ✗ Failed:', e.message);
