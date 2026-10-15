@@ -1483,7 +1483,7 @@ export async function tryRaidMatchmaking(raidId, raidData) {
             const raidInstance = {
               raidId: raidData.id,
               difficulty: raidData.difficulty,
-              status: 'in_progress',
+              status: INSTANCE_STATUS.IN_PROGRESS,
               organizerId: organizerId,
               participants: participantData,
               participantIds: participantUserIds,
@@ -1647,7 +1647,7 @@ export async function tryRaidMatchmaking(raidId, raidData) {
         const raidInstance = {
           raidId: raidData.id,
           difficulty: raidData.difficulty,
-          status: 'in_progress',
+          status: INSTANCE_STATUS.IN_PROGRESS,
           organizerId: organizerId,
           participants: participantData,
           participantIds: participantUserIds,
