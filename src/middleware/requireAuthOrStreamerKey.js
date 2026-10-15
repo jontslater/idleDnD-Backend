@@ -16,8 +16,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../index.js';
-
-const JWT_SECRET = process.env.JWT_SECRET;
+import { JWT_SECRET } from '../config/jwt.js';
 
 export async function requireAuthOrStreamerKey(req, res, next) {
   try {
