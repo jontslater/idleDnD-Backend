@@ -1,7 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { requireAuth, requireOwnership } from '../middleware/auth.js';
+import { requireAuth, requireOwnership, requireGuildMembership } from '../middleware/auth.js';
 
 const router = express.Router();
 

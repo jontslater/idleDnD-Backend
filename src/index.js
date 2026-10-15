@@ -9,9 +9,18 @@ import { dirname, join } from 'path';
 // Load environment variables
 dotenv.config();
 
-// Initialize Firebase Admin
+// Initialize Firebase Admin (or in-memory fake for tests)
 let db;
 try {
+  if (process.env.USE_IN_MEMORY_FIRESTORE === '1') {
+    const { createInMemoryFirestore } = await import('./testSupport/inMemoryFirestore.js');
+    const seed = globalThis.__IN_MEMORY_FIRESTORE_SEED__ || {};
+    db = createInMemoryFirestore(seed);
+    if (!admin.apps.length) {
+      admin.initializeApp({ projectId: 'test-project' });
+    }
+    console.log('✅ In-memory Firestore initialized for tests');
+  } else {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const serviceAccountPath = join(__dirname, '..', 'serviceAccountKey.json');
@@ -46,9 +55,12 @@ try {
   const { getWriteBatcher } = await import('./utils/writeBatcher.js');
   const writeBatcher = getWriteBatcher(db);
   console.log('✅ Write batcher initialized (reduces Firestore writes)');
+  }
 } catch (error) {
   console.error('❌ Failed to initialize Firebase:', error);
-  process.exit(1);
+  if (process.env.USE_IN_MEMORY_FIRESTORE !== '1') {
+    process.exit(1);
+  }
 }
 
 // Initialize Express

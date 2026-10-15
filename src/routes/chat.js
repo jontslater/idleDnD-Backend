@@ -3,7 +3,7 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import fetch from 'node-fetch';
-import { requireStreamerAccess, optionalAuth } from '../middleware/auth.js';
+import { requireAuth, requireStreamerAccess, optionalAuth } from '../middleware/auth.js';
 import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
