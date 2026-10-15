@@ -35,3 +35,5 @@ export const ROLE_CONFIG = {
   stormcaller: { baseHp: 120, baseAttack: 18, baseDefense: 4, hpPerLevel: 18, attackPerLevel: 6, defensePerLevel: 1, displayName: 'Stormcaller', category: 'dps' },
   dragonsorcerer: { baseHp: 112, baseAttack: 20, baseDefense: 3, hpPerLevel: 17, attackPerLevel: 6, defensePerLevel: 1, displayName: 'Draconic Sorcerer', category: 'dps' }
 };
+
+export { ROLE_CONFIG };

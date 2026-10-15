@@ -4,6 +4,7 @@ import { db } from '../index.js';
 import { getActiveQuests } from '../services/questService.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireAuthOrStreamerKey, validateUserOnBattlefield } from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
 
@@ -389,8 +390,6 @@ router.post('/:userId/update-batch', requireAuth, requireOwnership, async (req, 
 
 // Super-batch update: Update quest progress for multiple users at once
 // Accepts JWT (any authenticated user) or X-Streamer-Key (overlay)
-import { requireAuthOrStreamerKey, validateUserOnBattlefield } from '../middleware/requireAuthOrStreamerKey.js';
-
 router.post('/update-batch-all', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { updates } = req.body; // Array of { userId, updates: [{ trackingKey, type, increment }] }

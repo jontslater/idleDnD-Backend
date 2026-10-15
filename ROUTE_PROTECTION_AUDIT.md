@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-09-30T22:04:05.027Z
+**Generated**: 2026-10-15T15:30:42.518Z
 
 ## Summary
 
@@ -85,17 +85,17 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | / | ✅ PUBLIC | 45 |
-| GET | /queue/status | requireAuth | 57 |
-| POST | /queue | requireAuth | 94 |
-| DELETE | /queue | requireAuth | 144 |
-| POST | /group/accept | requireAuth | 177 |
-| POST | /:dungeonId/start | requireAuth | 418 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 516 |
-| POST | /instance/:instanceId/progress | requireAuth | 535 |
-| POST | /instance/:instanceId/complete | requireAuth | 593 |
-| GET | /:dungeonId | ✅ PUBLIC | 802 |
-| GET | /available/:userId | requireAuth, requireOwnership | 820 |
+| GET | / | ✅ PUBLIC | 46 |
+| GET | /queue/status | requireAuth | 58 |
+| POST | /queue | requireAuth | 95 |
+| DELETE | /queue | requireAuth | 145 |
+| POST | /group/accept | requireAuth | 178 |
+| POST | /:dungeonId/start | requireAuth | 419 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 517 |
+| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 536 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 594 |
+| GET | /:dungeonId | ✅ PUBLIC | 803 |
+| GET | /available/:userId | requireAuth, requireOwnership | 821 |
 
 ### enchanting.js (4 routes)
 
@@ -262,44 +262,44 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | /daily | ✅ PUBLIC | 11 |
-| GET | /weekly | ✅ PUBLIC | 31 |
-| GET | /monthly | ✅ PUBLIC | 51 |
-| GET | /:userId/progress | requireAuth, requireOwnership | 71 |
-| POST | /:userId/update/:trackingKey | requireAuth, requireOwnership | 136 |
-| POST | /:userId/update-batch | requireAuth, requireOwnership | 258 |
-| POST | /update-batch-all | requireAuth | 391 |
-| POST | /:userId/claim/:questId | requireAuth, requireOwnership | 562 |
-| POST | /:userId/claim-bonus/:type | requireAuth, requireOwnership | 688 |
-| POST | /auto-claim-all | requireAuth | 804 |
-| POST | /claim-all/:userId | requireAuth, requireOwnership | 938 |
+| GET | /daily | ✅ PUBLIC | 12 |
+| GET | /weekly | ✅ PUBLIC | 32 |
+| GET | /monthly | ✅ PUBLIC | 52 |
+| GET | /:userId/progress | requireAuth, requireOwnership | 72 |
+| POST | /:userId/update/:trackingKey | requireAuth, requireOwnership | 137 |
+| POST | /:userId/update-batch | requireAuth, requireOwnership | 259 |
+| POST | /update-batch-all | requireAuthOrStreamerKey, requireAuth | 393 |
+| POST | /:userId/claim/:questId | requireAuth, requireOwnership | 577 |
+| POST | /:userId/claim-bonus/:type | requireAuth, requireOwnership | 703 |
+| POST | /auto-claim-all | requireAuth | 819 |
+| POST | /claim-all/:userId | requireAuth, requireOwnership | 953 |
 
 ### raids.js (22 routes)
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | / | ✅ PUBLIC | 10 |
-| POST | /test-instance | requireAuth | 71 |
-| GET | /upcoming | ✅ PUBLIC | 147 |
-| GET | /:raidId | ✅ PUBLIC | 188 |
-| POST | /:raidId/signup | requireAuth | 214 |
-| POST | /worldboss/signup | requireAuth | 256 |
-| GET | /available/:userId | requireAuth, requireOwnership | 304 |
-| POST | /:raidId/start | requireAuth | 390 |
-| POST | /instance/:instanceId/progress | requireAuth | 602 |
-| POST | /instance/:instanceId/resume | requireAuth | 739 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 777 |
-| GET | /instance/:instanceId/status | ✅ PUBLIC | 801 |
-| POST | /instance/:instanceId/complete | requireAuth | 819 |
-| POST | /schedule | requireAuth | 1003 |
-| POST | /queue/:raidId/join | requireAuth | 1050 |
-| GET | /queue/:raidId | ✅ PUBLIC | 1152 |
-| POST | /queue/:raidId/leave | requireAuth | 1197 |
-| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1682 |
-| POST | /:raidId/guild-signup | requireAuth | 1714 |
-| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1809 |
-| POST | /instance/:instanceId/command | requireAuth | 1884 |
-| POST | /instance/:instanceId/chat | requireAuth | 1939 |
+| GET | / | ✅ PUBLIC | 11 |
+| POST | /test-instance | requireAuth | 72 |
+| GET | /upcoming | ✅ PUBLIC | 148 |
+| GET | /:raidId | ✅ PUBLIC | 189 |
+| POST | /:raidId/signup | requireAuth | 215 |
+| POST | /worldboss/signup | requireAuth | 257 |
+| GET | /available/:userId | requireAuth, requireOwnership | 305 |
+| POST | /:raidId/start | requireAuth | 391 |
+| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 603 |
+| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 740 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 778 |
+| GET | /instance/:instanceId/status | ✅ PUBLIC | 802 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 820 |
+| POST | /schedule | requireAuth | 1004 |
+| POST | /queue/:raidId/join | requireAuth | 1051 |
+| GET | /queue/:raidId | ✅ PUBLIC | 1153 |
+| POST | /queue/:raidId/leave | requireAuth | 1198 |
+| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1683 |
+| POST | /:raidId/guild-signup | requireAuth | 1715 |
+| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1810 |
+| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1885 |
+| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 1940 |
 
 ### reports.js (4 routes)
 
