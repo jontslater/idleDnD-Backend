@@ -4,7 +4,12 @@ import { db } from '../index.js';
 import { calculateTotalItemScore } from '../utils/itemScore.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
-import { requireAuthOrStreamerKey, validateHeroOnBattlefield, clampRewards } from '../middleware/requireAuthOrStreamerKey.js';
+import {
+  requireAuthOrStreamerKey,
+  clampRewards,
+  assertStreamerInstanceAccess,
+  assertParticipantsOnStreamerBattlefield
+} from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
 
@@ -547,8 +552,17 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
+    }
+    
+    const participantsToValidate = participants || instance.participants || [];
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsToValidate))) {
+      return;
     }
     
     // Extract participant IDs from updated participants
@@ -608,8 +622,16 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
+    }
+    
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsData))) {
+      return;
     }
     
     // Import dungeon data
@@ -663,7 +685,12 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     }
     
     // Dungeon succeeded - distribute rewards
-    const rewards = dungeonData.rewards || { gold: 0, tokens: 0, experience: 0 };
+    let rewards = { ...(dungeonData.rewards || { gold: 0, tokens: 0, experience: 0 }) };
+    if (req.authType === 'streamer-key') {
+      const clamped = clampRewards(req, { gold: rewards.gold, xp: rewards.experience });
+      rewards.gold = clamped.gold ?? rewards.gold;
+      rewards.experience = clamped.xp ?? rewards.experience;
+    }
     
     // Update instance as completed
     // Maintain participantIds using twitchUserId if available, fallback to userId

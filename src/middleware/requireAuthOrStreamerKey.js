@@ -160,7 +160,7 @@ export async function validateUserOnBattlefield(req, twitchUserId) {
  * Prevents overlay from awarding excessive rewards
  */
 export function clampRewards(req, rewards) {
-  if (req.authType !== 'streamer-key') {
+  if (req.authType !== 'streamer-key' || !rewards) {
     return rewards; // JWT auth doesn't need clamping
   }
   
@@ -168,10 +168,77 @@ export function clampRewards(req, rewards) {
   const MAX_GOLD_PER_CALL = 5000;
   const MAX_ITEMS_PER_CALL = 10;
   
-  return {
-    ...rewards,
-    xp: rewards.xp ? Math.min(rewards.xp, MAX_XP_PER_CALL) : rewards.xp,
-    gold: rewards.gold ? Math.min(rewards.gold, MAX_GOLD_PER_CALL) : rewards.gold,
-    items: rewards.items ? rewards.items.slice(0, MAX_ITEMS_PER_CALL) : rewards.items
-  };
+  const clamped = { ...rewards };
+  if (typeof clamped.xp === 'number') {
+    clamped.xp = Math.min(clamped.xp, MAX_XP_PER_CALL);
+  }
+  if (typeof clamped.gold === 'number') {
+    clamped.gold = Math.min(clamped.gold, MAX_GOLD_PER_CALL);
+  }
+  if (Array.isArray(clamped.items)) {
+    clamped.items = clamped.items.slice(0, MAX_ITEMS_PER_CALL);
+  }
+  return clamped;
+}
+
+/** @returns {boolean} false if response already sent */
+export function assertStreamerInstanceAccess(req, res, instance) {
+  if (req.authType !== 'streamer-key') {
+    return true;
+  }
+  if (!instance?.battlefieldId || instance.battlefieldId !== req.streamer.battlefieldId) {
+    res.status(403).json({ error: 'Instance not on your battlefield' });
+    return false;
+  }
+  return true;
+}
+
+/** @returns {boolean} false if response already sent */
+export async function assertParticipantsOnStreamerBattlefield(req, res, participants) {
+  if (req.authType !== 'streamer-key' || !Array.isArray(participants)) {
+    return true;
+  }
+  for (const p of participants) {
+    if (!p || typeof p !== 'object') {
+      continue;
+    }
+    if (p.twitchUserId) {
+      const ok = await validateUserOnBattlefield(req, p.twitchUserId);
+      if (!ok) {
+        res.status(403).json({
+          error: 'Forbidden: hero not on your battlefield',
+          userId: p.twitchUserId
+        });
+        return false;
+      }
+    }
+    if (p.userId) {
+      const ok = await validateHeroOnBattlefield(req, p.userId);
+      if (!ok) {
+        res.status(403).json({
+          error: 'Forbidden: hero not on your battlefield',
+          userId: p.userId
+        });
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Validate a single user/hero id from command/chat bodies */
+export async function assertActorOnStreamerBattlefield(req, res, userId) {
+  if (req.authType !== 'streamer-key' || !userId) {
+    return true;
+  }
+  const onBf = await validateUserOnBattlefield(req, userId);
+  if (onBf) {
+    return true;
+  }
+  const heroOk = await validateHeroOnBattlefield(req, userId);
+  if (!heroOk) {
+    res.status(403).json({ error: 'Forbidden: hero not on your battlefield', userId });
+    return false;
+  }
+  return true;
 }

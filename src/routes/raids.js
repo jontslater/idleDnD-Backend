@@ -3,7 +3,13 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
-import { requireAuthOrStreamerKey, validateHeroOnBattlefield, clampRewards } from '../middleware/requireAuthOrStreamerKey.js';
+import {
+  requireAuthOrStreamerKey,
+  clampRewards,
+  assertStreamerInstanceAccess,
+  assertParticipantsOnStreamerBattlefield,
+  assertActorOnStreamerBattlefield
+} from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
 
@@ -614,12 +620,20 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Raid instance is already finished' });
     }
     
     // Use provided participants or fallback to existing ones
     const participantsToUse = participants || instance.participants || [];
+    
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsToUse))) {
+      return;
+    }
     
     // Validate participants array
     if (!Array.isArray(participantsToUse)) {
@@ -750,12 +764,20 @@ router.post('/instance/:instanceId/resume', requireAuthOrStreamerKey, async (req
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    
     if (!instance.lastCheckpoint) {
       return res.status(400).json({ error: 'No checkpoint found to resume from' });
     }
     
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Cannot resume a completed or failed raid' });
+    }
+    
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, instance.participants))) {
+      return;
     }
     
     // Return checkpoint data for frontend to restore state
@@ -831,8 +853,17 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Raid instance is already finished' });
+    }
+    
+    const participantsForValidation = finalParticipants || instance.participants || [];
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsForValidation))) {
+      return;
     }
     
     // Import raid and loot data
@@ -934,6 +965,18 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
+    let expReward = raidData.rewards.experience;
+    let goldReward = raidData.rewards.gold;
+    let tokenReward = raidData.rewards.tokens;
+    if (req.authType === 'streamer-key') {
+      const clamped = clampRewards(req, { xp: expReward, gold: goldReward });
+      expReward = clamped.xp ?? expReward;
+      goldReward = clamped.gold ?? goldReward;
+      if (lootDrops.length > 10) {
+        lootDrops.length = 10;
+      }
+    }
+    
     // Distribute rewards to participants
     const rewardPromises = finalParticipants.map(async (participant) => {
       if (!participant.isAlive && participant.deaths > 2) {
@@ -947,15 +990,15 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
         const hero = heroDoc.data();
         
         // Add gold, tokens, and XP
-        const newXp = (hero.xp || 0) + raidData.rewards.experience;
+        const newXp = (hero.xp || 0) + expReward;
         
         // Handle level-ups (multiple level-ups if XP is high enough)
         const { processLevelUps } = await import('../utils/levelUpHelper.js');
         const levelUpResult = processLevelUps(hero, newXp);
         
         const updateData = {
-          gold: (hero.gold || 0) + raidData.rewards.gold,
-          tokens: (hero.tokens || 0) + raidData.rewards.tokens,
+          gold: (hero.gold || 0) + goldReward,
+          tokens: (hero.tokens || 0) + tokenReward,
           xp: levelUpResult.updates.xp,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -982,15 +1025,27 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     
     await Promise.all(rewardPromises);
     
+    let responseRewards = {
+      gold: raidData.rewards.gold,
+      tokens: raidData.rewards.tokens,
+      experience: raidData.rewards.experience,
+      loot: lootDrops
+    };
+    if (req.authType === 'streamer-key') {
+      const clamped = clampRewards(req, {
+        gold: responseRewards.gold,
+        xp: responseRewards.experience,
+        items: lootDrops
+      });
+      responseRewards.gold = clamped.gold ?? responseRewards.gold;
+      responseRewards.experience = clamped.xp ?? responseRewards.experience;
+      responseRewards.loot = clamped.items ?? lootDrops;
+    }
+    
     res.json({
       success: true,
       message: 'Raid completed successfully!',
-      rewards: {
-        gold: raidData.rewards.gold,
-        tokens: raidData.rewards.tokens,
-        experience: raidData.rewards.experience,
-        loot: lootDrops
-      }
+      rewards: responseRewards
     });
   } catch (error) {
     console.error('Error completing raid:', error);
@@ -1899,6 +1954,13 @@ router.post('/instance/:instanceId/command', requireAuthOrStreamerKey, async (re
     
     const instance = instanceDoc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    if (!(await assertActorOnStreamerBattlefield(req, res, userId))) {
+      return;
+    }
+    
     // Check if user is a participant
     const participant = instance.participants?.find((p) => p.userId === userId);
     if (!participant) {
@@ -1953,6 +2015,13 @@ router.post('/instance/:instanceId/chat', requireAuthOrStreamerKey, async (req, 
     }
     
     const instance = instanceDoc.data();
+    
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    if (!(await assertActorOnStreamerBattlefield(req, res, userId))) {
+      return;
+    }
     
     // Check if user is a participant
     const participant = instance.participants?.find((p) => p.userId === userId);
