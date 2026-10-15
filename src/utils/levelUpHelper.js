@@ -37,8 +37,15 @@ export function calculateMaxXp(level) {
  */
 export function processLevelUps(hero, newXp) {
   const currentLevel = hero.level || 1;
-  let currentXp = newXp;
+  let currentXp = Math.max(0, newXp); // Clamp to non-negative
   let currentMaxXp = hero.maxXp || calculateMaxXp(currentLevel);
+  
+  // Validate maxXp to prevent infinite loop from absurd values
+  if (currentMaxXp <= 0 || !isFinite(currentMaxXp) || isNaN(currentMaxXp)) {
+    console.warn(`[Level Up] Invalid maxXp (${currentMaxXp}) for hero level ${currentLevel}, recalculating`);
+    currentMaxXp = calculateMaxXp(currentLevel);
+  }
+  
   let newLevel = currentLevel;
   let totalLevelsGained = 0;
   
@@ -47,13 +54,25 @@ export function processLevelUps(hero, newXp) {
     maxXp: currentMaxXp
   };
   
-  // Handle multiple level-ups
-  while (currentXp >= currentMaxXp) {
+  // Handle multiple level-ups with safety cap
+  const MAX_LEVELS_PER_UPDATE = 50; // Safety cap to prevent infinite loops
+  while (currentXp >= currentMaxXp && totalLevelsGained < MAX_LEVELS_PER_UPDATE) {
     newLevel++;
     totalLevelsGained++;
     currentXp = currentXp - currentMaxXp;
     // Use polynomial formula for next level instead of multiplying
     currentMaxXp = calculateMaxXp(newLevel);
+    
+    // Additional safety check
+    if (currentMaxXp <= 0 || !isFinite(currentMaxXp) || isNaN(currentMaxXp)) {
+      console.error(`[Level Up] Invalid maxXp calculated for level ${newLevel}, stopping level-up`);
+      break;
+    }
+  }
+  
+  // Warn if we hit the cap (likely indicates a bug)
+  if (totalLevelsGained >= MAX_LEVELS_PER_UPDATE) {
+    console.warn(`[Level Up] Hit max level-up cap (${MAX_LEVELS_PER_UPDATE} levels), stopping to prevent infinite loop`);
   }
   
   if (totalLevelsGained > 0) {

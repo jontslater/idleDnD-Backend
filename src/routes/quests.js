@@ -3,6 +3,9 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getActiveQuests } from '../services/questService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireAuthOrStreamerKey, validateUserOnBattlefield } from '../middleware/requireAuthOrStreamerKey.js';
+
 const router = express.Router();
 
 // Get active daily quests
@@ -66,7 +69,7 @@ router.get('/monthly', async (req, res) => {
 });
 
 // Get player's quest progress
-router.get('/:userId/progress', async (req, res) => {
+router.get('/:userId/progress', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -129,10 +132,19 @@ router.get('/:userId/progress', async (req, res) => {
 
 // Update quest progress (called by Electron during gameplay)
 // questId is now a "tracking key" like "kill", "dealDamage", etc.
-router.post('/:userId/update/:trackingKey', async (req, res) => {
+// SERVER-SIDE VALIDATION (FE #3 requirement 3): Calculate progress server-side
+// The increment value is validated and clamped to prevent client manipulation
+router.post('/:userId/update/:trackingKey', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, trackingKey } = req.params;
-    const { type, increment = 1 } = req.body; // type: 'daily', 'weekly', 'monthly'
+    let { type, increment = 1 } = req.body; // type: 'daily', 'weekly', 'monthly'
+    
+    // SECURITY: Validate and cap increment to prevent client abuse
+    // Max reasonable increment per call: 100 (e.g., 100 kills in one battle)
+    increment = Math.min(Math.max(1, Math.floor(Number(increment) || 1)), 100);
+    if (increment !== req.body.increment) {
+      console.warn(`[Quest Update] Clamped increment from ${req.body.increment} to ${increment} for ${userId}/${trackingKey}`);
+    }
     
     // Find hero by twitchUserId or twitchId field (not document ID)
     const heroesSnapshot = await db.collection('heroes')
@@ -244,7 +256,7 @@ router.post('/:userId/update/:trackingKey', async (req, res) => {
 });
 
 // Batch update quest progress (accepts multiple tracking keys at once)
-router.post('/:userId/update-batch', async (req, res) => {
+router.post('/:userId/update-batch', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { updates } = req.body; // Array of { trackingKey, type, increment }
@@ -377,7 +389,8 @@ router.post('/:userId/update-batch', async (req, res) => {
 });
 
 // Super-batch update: Update quest progress for multiple users at once
-router.post('/update-batch-all', async (req, res) => {
+// Accepts JWT (any authenticated user) or X-Streamer-Key (overlay)
+router.post('/update-batch-all', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { updates } = req.body; // Array of { userId, updates: [{ trackingKey, type, increment }] }
     
@@ -398,6 +411,19 @@ router.post('/update-batch-all', async (req, res) => {
       weekly: weeklyQuests,
       monthly: monthlyQuests
     };
+    
+    // Validate battlefield ownership for streamer-key auth
+    if (req.authType === 'streamer-key') {
+      for (const userUpdate of updates) {
+        const isValid = await validateUserOnBattlefield(req, userUpdate.userId);
+        if (!isValid) {
+          return res.status(403).json({ 
+            error: 'Forbidden: hero not on your battlefield',
+            userId: userUpdate.userId
+          });
+        }
+      }
+    }
     
     // Process all users in parallel
     const results = await Promise.all(updates.map(async (userUpdate) => {
@@ -548,7 +574,7 @@ router.post('/update-batch-all', async (req, res) => {
 });
 
 // Claim individual quest reward
-router.post('/:userId/claim/:questId', async (req, res) => {
+router.post('/:userId/claim/:questId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, questId } = req.params;
     const { type } = req.body; // 'daily', 'weekly', 'monthly'
@@ -674,7 +700,7 @@ router.post('/:userId/claim/:questId', async (req, res) => {
 });
 
 // Claim completion bonus (all quests of a type done)
-router.post('/:userId/claim-bonus/:type', async (req, res) => {
+router.post('/:userId/claim-bonus/:type', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, type } = req.params;
     
@@ -790,7 +816,7 @@ router.post('/:userId/claim-bonus/:type', async (req, res) => {
 });
 
 // Auto-claim all completed quests
-router.post('/auto-claim-all', async (req, res) => {
+router.post('/auto-claim-all', requireAuth, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -924,7 +950,7 @@ router.post('/auto-claim-all', async (req, res) => {
 });
 
 // Claim all completed quests for a specific type (daily/weekly/monthly)
-router.post('/claim-all/:userId', async (req, res) => {
+router.post('/claim-all/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { type } = req.body; // Optional: 'daily', 'weekly', or 'monthly'

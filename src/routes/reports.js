@@ -2,6 +2,8 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 /**
@@ -19,7 +21,7 @@ const router = express.Router();
  *   actualBehavior: string (optional)
  * }
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const {
       userId,
@@ -83,7 +85,7 @@ router.post('/', async (req, res) => {
  *   - orderBy: field to order by (default: createdAt)
  *   - order: asc or desc (default: desc)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAdmin, async (req, res) => {
   try {
     const {
       userId,
@@ -150,7 +152,7 @@ router.get('/', async (req, res) => {
  * Get a single report by ID
  * GET /api/reports/:reportId
  */
-router.get('/:reportId', async (req, res) => {
+router.get('/:reportId', requireAdmin, async (req, res) => {
   try {
     const { reportId } = req.params;
 
@@ -190,7 +192,7 @@ router.get('/:reportId', async (req, res) => {
  *   username: string (required - must be 'theneverendingwar')
  * }
  */
-router.patch('/:reportId', async (req, res) => {
+router.patch('/:reportId', requireAuth, async (req, res) => {
   try {
     const { reportId } = req.params;
     const { status, adminNotes, username } = req.body;

@@ -1,6 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const MAX_MAIL_PER_USER = 50;
  *   codAmount?: number (required if items are attached and COD)
  * }
  */
-router.post('/send', async (req, res) => {
+router.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderId, senderHeroId, recipientId, subject, message, items, gold, tokens, codAmount } = req.body;
 
@@ -268,7 +269,7 @@ router.post('/send', async (req, res) => {
  * GET /api/mail/:userId
  * Query params: unreadOnly?: boolean
  */
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { unreadOnly } = req.query;
@@ -382,7 +383,7 @@ router.get('/:userId', async (req, res) => {
  * POST /api/mail/:mailId/read
  * Body: { userId: string }
  */
-router.post('/:mailId/read', async (req, res) => {
+router.post('/:mailId/read', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId } = req.body;
@@ -422,7 +423,7 @@ router.post('/:mailId/read', async (req, res) => {
  * POST /api/mail/:mailId/claim
  * Body: { userId: string, heroId: string }
  */
-router.post('/:mailId/claim', async (req, res) => {
+router.post('/:mailId/claim', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId, heroId } = req.body;
@@ -431,130 +432,140 @@ router.post('/:mailId/claim', async (req, res) => {
       return res.status(400).json({ error: 'userId and heroId required' });
     }
 
-    const mailDoc = await db.collection('mail').doc(mailId).get();
-    if (!mailDoc.exists) {
-      return res.status(404).json({ error: 'Mail not found' });
-    }
-
-    const mail = mailDoc.data();
-
-    // Check if mail belongs to recipient
-    if (mail.recipientId !== userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    // Check if already claimed
-    if (mail.claimed) {
-      return res.status(400).json({ error: 'Mail already claimed' });
-    }
-
-    // Check if expired
-    const expiresAt = mail.expiresAt?.toMillis() || 0;
-    if (expiresAt > 0 && expiresAt < Date.now()) {
-      return res.status(400).json({ error: 'Mail has expired' });
-    }
-
-    // Get recipient hero
-    const recipientHeroDoc = await db.collection('heroes').doc(heroId).get();
-    if (!recipientHeroDoc.exists) {
-      return res.status(404).json({ error: 'Recipient hero not found' });
-    }
-
-    const recipientHero = recipientHeroDoc.data();
-
-    // Check COD payment if required
-    if (mail.codAmount && mail.codAmount > 0) {
-      // Check if recipient has enough gold
-      const recipientGold = recipientHero.gold || 0;
-      if (recipientGold < mail.codAmount) {
-        return res.status(400).json({ 
-          error: `Insufficient gold. COD amount: ${mail.codAmount}g, you have: ${recipientGold}g` 
-        });
+    // Use a transaction to atomically claim mail and transfer items/currency
+    const mailRef = db.collection('mail').doc(mailId);
+    const recipientHeroRef = db.collection('heroes').doc(heroId);
+    
+    let codPaid = 0;
+    
+    await db.runTransaction(async (transaction) => {
+      // Read mail within transaction
+      const mailDoc = await transaction.get(mailRef);
+      if (!mailDoc.exists) {
+        throw new Error('Mail not found');
       }
 
-      // Deduct COD amount from recipient
-      await recipientHeroDoc.ref.update({
-        gold: admin.firestore.FieldValue.increment(-mail.codAmount)
-      });
+      const mail = mailDoc.data();
 
-      // Send COD payment to sender
-      const senderHeroDoc = await db.collection('heroes').doc(mail.senderHeroId).get();
-      if (senderHeroDoc.exists) {
-        await senderHeroDoc.ref.update({
-          gold: admin.firestore.FieldValue.increment(mail.codAmount)
-        });
-        console.log(`[Mail] COD payment: ${mail.codAmount}g sent from recipient ${userId} to sender ${mail.senderId} (hero: ${mail.senderHeroId})`);
-      } else {
-        console.warn(`[Mail] COD payment: Sender hero ${mail.senderHeroId} not found, COD payment not sent`);
+      // Check if mail belongs to recipient
+      if (mail.recipientId !== userId) {
+        throw new Error('Unauthorized');
       }
 
-      console.log(`[Mail] COD payment: ${mail.codAmount}g deducted from recipient ${userId} (hero: ${heroId})`);
-    }
+      // Check if already claimed
+      if (mail.claimed) {
+        throw new Error('Mail already claimed');
+      }
 
-    // Add items to recipient inventory
-    if (mail.items && mail.items.length > 0) {
-      const recipientInventory = recipientHero.inventory || [];
-      
-      for (const item of mail.items) {
-        // Check if item already exists (for stacking)
-        const existingItemIndex = recipientInventory.findIndex((inv) => 
-          inv.id === item.id || 
-          (inv.recipeKey === item.recipeKey && inv.type === item.type && inv.rarity === item.rarity)
-        );
+      // Check if expired
+      const expiresAt = mail.expiresAt?.toMillis() || 0;
+      if (expiresAt > 0 && expiresAt < Date.now()) {
+        throw new Error('Mail has expired');
+      }
 
-        if (existingItemIndex !== -1) {
-          // Stack items
-          const existingItem = recipientInventory[existingItemIndex];
-          const maxStack = item.maxStack || 10;
-          const quantity = item.quantity || 1;
-          
-          if (existingItem.quantity && existingItem.quantity < maxStack) {
-            const spaceLeft = maxStack - existingItem.quantity;
-            const toAdd = Math.min(quantity, spaceLeft);
+      // Get recipient hero
+      const recipientHeroDoc = await transaction.get(recipientHeroRef);
+      if (!recipientHeroDoc.exists) {
+        throw new Error('Recipient hero not found');
+      }
+
+      const recipientHero = recipientHeroDoc.data();
+
+      // Check COD payment if required
+      if (mail.codAmount && mail.codAmount > 0) {
+        // Check if recipient has enough gold
+        const recipientGold = recipientHero.gold || 0;
+        if (recipientGold < mail.codAmount) {
+          throw new Error(`Insufficient gold. COD amount: ${mail.codAmount}g, you have: ${recipientGold}g`);
+        }
+
+        codPaid = mail.codAmount;
+
+        // Deduct COD amount from recipient
+        transaction.update(recipientHeroRef, {
+          gold: admin.firestore.FieldValue.increment(-mail.codAmount)
+        });
+
+        // Send COD payment to sender
+        const senderHeroRef = db.collection('heroes').doc(mail.senderHeroId);
+        const senderHeroDoc = await transaction.get(senderHeroRef);
+        if (senderHeroDoc.exists) {
+          transaction.update(senderHeroRef, {
+            gold: admin.firestore.FieldValue.increment(mail.codAmount)
+          });
+          console.log(`[Mail] COD payment: ${mail.codAmount}g sent from recipient ${userId} to sender ${mail.senderId} (hero: ${mail.senderHeroId})`);
+        } else {
+          console.warn(`[Mail] COD payment: Sender hero ${mail.senderHeroId} not found, COD payment not sent`);
+        }
+
+        console.log(`[Mail] COD payment: ${mail.codAmount}g deducted from recipient ${userId} (hero: ${heroId})`);
+      }
+
+      // Add items to recipient inventory
+      if (mail.items && mail.items.length > 0) {
+        const recipientInventory = recipientHero.inventory || [];
+        
+        for (const item of mail.items) {
+          // Check if item already exists (for stacking)
+          const existingItemIndex = recipientInventory.findIndex((inv) => 
+            inv.id === item.id || 
+            (inv.recipeKey === item.recipeKey && inv.type === item.type && inv.rarity === item.rarity)
+          );
+
+          if (existingItemIndex !== -1) {
+            // Stack items
+            const existingItem = recipientInventory[existingItemIndex];
+            const maxStack = item.maxStack || 10;
+            const quantity = item.quantity || 1;
             
-            recipientInventory[existingItemIndex] = {
-              ...existingItem,
-              quantity: existingItem.quantity + toAdd
-            };
+            if (existingItem.quantity && existingItem.quantity < maxStack) {
+              const spaceLeft = maxStack - existingItem.quantity;
+              const toAdd = Math.min(quantity, spaceLeft);
+              
+              recipientInventory[existingItemIndex] = {
+                ...existingItem,
+                quantity: existingItem.quantity + toAdd
+              };
 
-            // If there's leftover, create new item
-            if (toAdd < quantity) {
-              recipientInventory.push({
-                ...item,
-                quantity: quantity - toAdd
-              });
+              // If there's leftover, create new item
+              if (toAdd < quantity) {
+                recipientInventory.push({
+                  ...item,
+                  quantity: quantity - toAdd
+                });
+              }
+            } else {
+              // Full stack, add as new item
+              recipientInventory.push(item);
             }
           } else {
-            // Full stack, add as new item
+            // New item, add to inventory
             recipientInventory.push(item);
           }
-        } else {
-          // New item, add to inventory
-          recipientInventory.push(item);
         }
+
+        transaction.update(recipientHeroRef, { inventory: recipientInventory });
       }
 
-      await recipientHeroDoc.ref.update({ inventory: recipientInventory });
-    }
+      // Add gold to recipient
+      if (mail.gold && mail.gold > 0) {
+        transaction.update(recipientHeroRef, {
+          gold: admin.firestore.FieldValue.increment(mail.gold)
+        });
+      }
 
-    // Add gold to recipient
-    if (mail.gold && mail.gold > 0) {
-      await recipientHeroDoc.ref.update({
-        gold: admin.firestore.FieldValue.increment(mail.gold)
+      // Add tokens to recipient
+      if (mail.tokens && mail.tokens > 0) {
+        transaction.update(recipientHeroRef, {
+          tokens: admin.firestore.FieldValue.increment(mail.tokens)
+        });
+      }
+
+      // Mark mail as claimed
+      transaction.update(mailRef, {
+        claimed: true,
+        claimedAt: admin.firestore.FieldValue.serverTimestamp()
       });
-    }
-
-    // Add tokens to recipient
-    if (mail.tokens && mail.tokens > 0) {
-      await recipientHeroDoc.ref.update({
-        tokens: admin.firestore.FieldValue.increment(mail.tokens)
-      });
-    }
-
-    // Mark mail as claimed
-    await mailDoc.ref.update({
-      claimed: true,
-      claimedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     console.log(`[Mail] Mail ${mailId} claimed by ${userId}`);
@@ -562,7 +573,7 @@ router.post('/:mailId/claim', async (req, res) => {
     res.json({
       success: true,
       message: 'Mail claimed successfully',
-      codPaid: mail.codAmount || 0
+      codPaid: codPaid
     });
 
   } catch (error) {
@@ -576,7 +587,7 @@ router.post('/:mailId/claim', async (req, res) => {
  * DELETE /api/mail/:mailId
  * Body: { userId: string }
  */
-router.delete('/:mailId', async (req, res) => {
+router.delete('/:mailId', requireAuth, async (req, res) => {
   try {
     const { mailId } = req.params;
     const { userId } = req.body;

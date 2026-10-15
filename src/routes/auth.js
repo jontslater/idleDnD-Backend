@@ -3,12 +3,9 @@ import admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 import fetch from 'node-fetch';
 import { db } from '../index.js';
+import { JWT_SECRET, JWT_EXPIRES_IN } from '../config/jwt.js';
 
 const router = express.Router();
-
-// JWT secret for generating tokens (should be in .env in production)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRES_IN = '30d';
 
 /**
  * Middleware to verify JWT token
@@ -262,18 +259,7 @@ router.post('/twitch', async (req, res) => {
       console.log(`⚠️  No access token available for ${streamerUsername} - chat listener not initialized`);
     }
 
-    // Generate JWT token
-    // Verify JWT_SECRET is set (allow default for local development)
-    if (!JWT_SECRET) {
-      console.error('⚠️ JWT_SECRET is not properly configured!');
-      throw new Error('Server configuration error: JWT_SECRET not set');
-    }
-    
-    // Warn if using default secret in production
-    if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'your-secret-key-change-in-production') {
-      console.warn('⚠️ WARNING: Using default JWT_SECRET in production! This is insecure.');
-    }
-    
+    // Generate JWT token (JWT_SECRET validated in src/config/jwt.js)
     const jwtPayload = {
       userId: hero ? hero.id : null,
       twitchUserId: twitchUser.id,

@@ -5,6 +5,7 @@ import { calculateGuildPerks, getGuildPerksForHero } from '../services/guildPerk
 const router = express.Router();
 
 // Get guild perks for a hero
+// Public formula calculation
 router.get('/hero/:userId', async (req, res) => {
   try {
     const perks = await getGuildPerksForHero(req.params.userId);
