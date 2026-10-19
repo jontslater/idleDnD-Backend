@@ -2,6 +2,8 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Rate limiting: 1 message per second per user
@@ -33,7 +35,7 @@ function checkRateLimit(userId) {
  *   recipientId?: string (required for whisper)
  * }
  */
-router.post('/send', async (req, res) => {
+router.post('/send', requireAuth, async (req, res) => {
   try {
     const { userId, heroId, channel, message, partyId, guildId, recipientId } = req.body;
 
@@ -376,7 +378,7 @@ router.post('/send', async (req, res) => {
  *   heroId?: string (required for whisper - current user's hero ID)
  *   limit?: number (default: 50)
  */
-router.get('/history', async (req, res) => {
+router.get('/history', requireAuth, async (req, res) => {
   try {
     const { channel, partyId, guildId, recipientId, heroId, limit = 50 } = req.query;
 
@@ -596,7 +598,7 @@ router.get('/history', async (req, res) => {
  * DELETE /api/web-chat/message/:messageId
  * Body: { userId: string }
  */
-router.delete('/message/:messageId', async (req, res) => {
+router.delete('/message/:messageId', requireAuth, async (req, res) => {
   try {
     const { messageId } = req.params;
     const { userId } = req.body;
@@ -646,7 +648,7 @@ router.delete('/message/:messageId', async (req, res) => {
  * POST /api/web-chat/block
  * Body: { userId: string, blockedUserId: string }
  */
-router.post('/block', async (req, res) => {
+router.post('/block', requireAuth, async (req, res) => {
   try {
     const { userId, blockedUserId } = req.body;
 
@@ -692,7 +694,7 @@ router.post('/block', async (req, res) => {
  * DELETE /api/web-chat/block
  * Body: { userId: string, blockedUserId: string }
  */
-router.delete('/block', async (req, res) => {
+router.delete('/block', requireAuth, async (req, res) => {
   try {
     const { userId, blockedUserId } = req.body;
 
@@ -728,7 +730,7 @@ router.delete('/block', async (req, res) => {
  * Get blocked users list
  * GET /api/web-chat/blocks/:userId
  */
-router.get('/blocks/:userId', async (req, res) => {
+router.get('/blocks/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -759,7 +761,7 @@ router.get('/blocks/:userId', async (req, res) => {
  *   reason: string
  * }
  */
-router.post('/report', async (req, res) => {
+router.post('/report', requireAuth, async (req, res) => {
   try {
     const { reporterId, reportedUserId, reportedMessageId, reason } = req.body;
 
@@ -804,7 +806,7 @@ router.post('/report', async (req, res) => {
  * GET /api/web-chat/reports
  * Query params: status?: 'pending' | 'reviewed' | 'resolved' | 'dismissed'
  */
-router.get('/reports', async (req, res) => {
+router.get('/reports', requireAuth, async (req, res) => {
   try {
     const { status } = req.query;
     // TODO: Add admin check
@@ -843,7 +845,7 @@ router.get('/reports', async (req, res) => {
  * DELETE /api/web-chat/admin/message/:messageId
  * Body: { userId: string } (admin userId)
  */
-router.delete('/admin/message/:messageId', async (req, res) => {
+router.delete('/admin/message/:messageId', requireAdmin, async (req, res) => {
   try {
     const { messageId } = req.params;
     const { userId } = req.body;
@@ -892,7 +894,7 @@ router.delete('/admin/message/:messageId', async (req, res) => {
  * POST /api/web-chat/admin/ban
  * Body: { adminId: string, bannedUserId: string, duration?: number (hours) }
  */
-router.post('/admin/ban', async (req, res) => {
+router.post('/admin/ban', requireAdmin, async (req, res) => {
   try {
     const { adminId, bannedUserId, duration } = req.body;
 
@@ -931,7 +933,7 @@ router.post('/admin/ban', async (req, res) => {
  * DELETE /api/web-chat/admin/ban/:bannedUserId
  * Body: { adminId: string }
  */
-router.delete('/admin/ban/:bannedUserId', async (req, res) => {
+router.delete('/admin/ban/:bannedUserId', requireAdmin, async (req, res) => {
   try {
     const { bannedUserId } = req.params;
     const { adminId } = req.body;
@@ -983,7 +985,7 @@ router.delete('/admin/ban/:bannedUserId', async (req, res) => {
  * Check if user is banned
  * GET /api/web-chat/ban-status/:userId
  */
-router.get('/ban-status/:userId', async (req, res) => {
+router.get('/ban-status/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 

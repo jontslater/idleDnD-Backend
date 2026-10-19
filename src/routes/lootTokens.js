@@ -7,6 +7,9 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
+
 const router = express.Router();
 
 // Loot token rewards per raid difficulty
@@ -20,7 +23,7 @@ const LOOT_TOKEN_REWARDS = {
  * GET /api/loot-tokens/:userId
  * Get user's loot token balance
  */
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -49,7 +52,7 @@ router.get('/:userId', async (req, res) => {
  * POST /api/loot-tokens/award
  * Award loot tokens to a user (called after raid/dungeon completion)
  */
-router.post('/award', async (req, res) => {
+router.post('/award', requireInternal, async (req, res) => {
   try {
     const { userId, raidId, difficulty, amount } = req.body;
 
@@ -57,13 +60,18 @@ router.post('/award', async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    // Calculate token amount
-    let tokenAmount = amount;
-    if (!tokenAmount && raidId && difficulty) {
+    let tokenAmount;
+    if (amount !== undefined && amount !== null) {
+      tokenAmount = Math.floor(Number(amount));
+      if (!Number.isFinite(tokenAmount) || tokenAmount <= 0) {
+        return res.status(400).json({ error: 'amount must be a positive integer' });
+      }
+    } else if (raidId && difficulty) {
       tokenAmount = LOOT_TOKEN_REWARDS[difficulty] || LOOT_TOKEN_REWARDS.normal;
-    }
-    if (!tokenAmount) {
-      tokenAmount = LOOT_TOKEN_REWARDS.normal;
+    } else {
+      return res.status(400).json({
+        error: 'Provide positive amount or raidId+difficulty for server-derived award'
+      });
     }
 
     const userRef = db.collection('users').doc(userId);
@@ -110,12 +118,17 @@ router.post('/award', async (req, res) => {
  * POST /api/loot-tokens/spend
  * Spend loot tokens (for purchasing items)
  */
-router.post('/spend', async (req, res) => {
+router.post('/spend', requireAuth, async (req, res) => {
   try {
     const { userId, amount, itemId, itemName } = req.body;
 
     if (!userId || !amount || amount <= 0) {
       return res.status(400).json({ error: 'userId and positive amount are required' });
+    }
+
+    const { jwtOwnsTwitchUserId } = await import('../utils/requestOwnership.js');
+    if (!jwtOwnsTwitchUserId(req, userId)) {
+      return res.status(403).json({ error: 'Forbidden: userId must match authenticated user' });
     }
 
     const userRef = db.collection('users').doc(userId);
@@ -171,7 +184,7 @@ router.post('/spend', async (req, res) => {
  * GET /api/loot-tokens/history/:userId
  * Get user's loot token transaction history
  */
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const limit = parseInt(req.query.limit) || 50;

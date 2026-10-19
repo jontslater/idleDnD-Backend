@@ -2,13 +2,14 @@ import express from 'express';
 import admin from 'firebase-admin';
 import Stripe from 'stripe';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Initialize Stripe
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
-// Pack tier configurations
+// Pack tier configurations (premiumCurrency retained on purchase records only — not granted to heroes)
 const PACK_TIERS = {
   bronze: { price: 5, premiumCurrency: 25, name: 'Bronze Founder' },
   silver: { price: 10, premiumCurrency: 75, name: 'Silver Founder' },
@@ -16,13 +17,7 @@ const PACK_TIERS = {
   platinum: { price: 25, premiumCurrency: 250, name: 'Platinum Founder' }
 };
 
-// Token pack configurations (standard gacha pricing)
-const TOKEN_PACKS = {
-  impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
-  starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
-  value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
-  premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
-};
+import { TOKEN_PACKS } from '../data/tokenPacks.js';
 
 // Tier number mapping (for database storage)
 const TIER_LEVELS = {
@@ -36,7 +31,7 @@ const TIER_LEVELS = {
  * Initiate a founders pack purchase
  * POST /api/purchases/founders-pack
  */
-router.post('/founders-pack', async (req, res) => {
+router.post('/founders-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packTier } = req.body;
 
@@ -98,105 +93,24 @@ router.post('/founders-pack', async (req, res) => {
 /**
  * Complete a founders pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
+ * This endpoint remains for backward compatibility but should be removed in production.
  */
-router.post('/complete', async (req, res) => {
-  try {
-    const { purchaseId } = req.body;
-
-    if (!purchaseId) {
-      return res.status(400).json({ error: 'purchaseId is required' });
-    }
-
-    console.log(`[Founders Pack] Completing purchase: ${purchaseId}`);
-
-    // Get purchase record
-    const purchaseRef = db.collection('purchases').doc(purchaseId);
-    const purchaseDoc = await purchaseRef.get();
-
-    if (!purchaseDoc.exists) {
-      return res.status(404).json({ error: 'Purchase not found' });
-    }
-
-    const purchase = purchaseDoc.data();
-
-    if (purchase.status === 'completed') {
-      return res.status(400).json({ error: 'Purchase already completed' });
-    }
-
-    // Find user's heroes
-    const heroesSnapshot = await db.collection('heroes')
-      .where('twitchUserId', '==', purchase.userId)
-      .get();
-
-    if (heroesSnapshot.empty) {
-      return res.status(404).json({ error: 'No heroes found for user' });
-    }
-
-    const packConfig = PACK_TIERS[purchase.packTier];
-    const tierLevel = TIER_LEVELS[purchase.packTier];
-
-    // Update all user's heroes with founder pack benefits
-    const batch = db.batch();
-    const updates = [];
-
-    heroesSnapshot.docs.forEach(heroDoc => {
-      const heroRef = db.collection('heroes').doc(heroDoc.id);
-      const hero = heroDoc.data();
-
-      // Update hero with founder pack tier
-      const heroUpdate = {
-        founderPackTier: purchase.packTier,
-        founderPackTierLevel: tierLevel,
-        tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-
-      // Auto-unlock founder title if not already unlocked
-      if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
-        heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
-        // Set as active title if no title is currently selected
-        if (!hero.activeTitle) {
-          heroUpdate.activeTitle = 'Founder';
-        }
-      }
-
-      batch.update(heroRef, heroUpdate);
-      updates.push({ heroId: heroDoc.id, heroName: hero.name || hero.username });
-    });
-
-    // Update purchase status
-    batch.update(purchaseRef, {
-      status: 'completed',
-      completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    await batch.commit();
-
-    console.log(`[Founders Pack] ✅ Purchase completed: ${purchaseId}`);
-    console.log(`[Founders Pack] Updated ${updates.length} heroes with ${purchase.packTier} pack benefits`);
-
-    res.json({
-      success: true,
-      message: `${packConfig.name} pack purchased successfully!`,
-      purchase: {
-        ...purchase,
-        status: 'completed'
-      },
-      heroesUpdated: updates.length
-    });
-
-  } catch (error) {
-    console.error('[Founders Pack] Error completing purchase:', error);
-    res.status(500).json({ error: 'Failed to complete purchase' });
-  }
+router.post('/complete', requireAuth, async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
 });
 
 /**
  * Get purchase status
  * GET /api/purchases/status/:purchaseId
  */
-router.get('/status/:purchaseId', async (req, res) => {
+router.get('/status/:purchaseId', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 
@@ -559,7 +473,7 @@ router.get('/founders', async (req, res) => {
  * Set founder status for a user (admin/manual grant)
  * POST /api/purchases/set-founder
  */
-router.post('/set-founder', async (req, res) => {
+router.post('/set-founder', requireAdmin, async (req, res) => {
   try {
     const { userId, username, tier } = req.body;
 
@@ -683,31 +597,12 @@ router.post('/set-founder', async (req, res) => {
     const batch = db.batch();
     const updates = [];
 
-    const packConfig = PACK_TIERS[tierLower];
+    const { buildFounderPackCosmeticUpdate } = await import('../utils/monetization.js');
 
     heroesSnapshot.docs.forEach(heroDoc => {
       const heroRef = db.collection('heroes').doc(heroDoc.id);
       const hero = heroDoc.data();
-
-      const heroUpdate = {
-        founderPackTier: tierLower,
-        founderPackTierLevel: tierLevel,
-        // Grant premium tokens (only if hero doesn't already have this tier to avoid double-granting)
-        tokens: hero.founderPackTier !== tierLower 
-          ? (hero.tokens || 0) + packConfig.premiumCurrency
-          : (hero.tokens || 0),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-
-      // Auto-unlock founder title if not already unlocked
-      if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
-        heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
-        // Set as active title if no title is currently selected
-        if (!hero.activeTitle) {
-          heroUpdate.activeTitle = 'Founder';
-        }
-      }
-
+      const heroUpdate = buildFounderPackCosmeticUpdate(hero, tierLower, tierLevel);
       batch.update(heroRef, heroUpdate);
       updates.push({ heroId: heroDoc.id, heroName: hero.name || hero.username });
     });
@@ -734,7 +629,7 @@ router.post('/set-founder', async (req, res) => {
  * Remove founder pack status from a user (admin only)
  * POST /api/purchases/remove-founder
  */
-router.post('/remove-founder', async (req, res) => {
+router.post('/remove-founder', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.body;
 
@@ -817,7 +712,7 @@ router.post('/remove-founder', async (req, res) => {
  * Initiate a token pack purchase
  * POST /api/purchases/token-pack
  */
-router.post('/token-pack', async (req, res) => {
+router.post('/token-pack', requireAuth, async (req, res) => {
   try {
     const { userId, packType, heroId } = req.body;
 
@@ -854,7 +749,6 @@ router.post('/token-pack', async (req, res) => {
       packType,
       price: packConfig.price,
       tokens: packConfig.tokens,
-      gold: packConfig.gold,
       status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -879,8 +773,19 @@ router.post('/token-pack', async (req, res) => {
 /**
  * Complete a token pack purchase (called after Stripe payment succeeds)
  * POST /api/purchases/complete-token-pack
+ * 
+ * DEPRECATED: This endpoint should NOT be called directly by clients.
+ * Payment completion is handled automatically by the Stripe webhook at /api/purchases/webhook
  */
-router.post('/complete-token-pack', async (req, res) => {
+router.post('/complete-token-pack', requireAuth, async (req, res) => {
+  // SECURITY: Do not allow direct completion - payments must be verified via Stripe webhook
+  return res.status(403).json({ 
+    error: 'Forbidden',
+    message: 'Direct purchase completion is not allowed. Payment is processed automatically via webhook.'
+  });
+  
+  // Original implementation commented out - webhook handles everything
+  /*
   try {
     const { purchaseId } = req.body;
 
@@ -955,18 +860,19 @@ router.post('/complete-token-pack', async (req, res) => {
     console.error('[Token Pack] Error completing purchase:', error);
     res.status(500).json({ error: 'Failed to complete purchase' });
   }
+  */
 });
 
 /**
  * Create Stripe checkout session endpoint
  * POST /api/purchases/create-checkout-session
  */
-router.post('/create-checkout-session', async (req, res) => {
+router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
-    const { purchaseId, price } = req.body;
+    const { purchaseId } = req.body;
 
-    if (!purchaseId || !price) {
-      return res.status(400).json({ error: 'purchaseId and price are required' });
+    if (!purchaseId) {
+      return res.status(400).json({ error: 'purchaseId is required' });
     }
 
     // In development/localhost, allow mock checkout for testing
@@ -996,23 +902,36 @@ router.post('/create-checkout-session', async (req, res) => {
     }
 
     const purchase = purchaseDoc.data();
-    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
-    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
-    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
-    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
-
+    
+    // SERVER-SIDE PRICE LOOKUP (FE #3 requirement 1): Never trust client prices
+    // Look up price from server-side configs or purchase record
+    let serverPrice = null;
     let productName = 'Purchase';
     let productDescription = 'Game purchase';
 
     if (purchase.packTier) {
       const packConfig = PACK_TIERS[purchase.packTier];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = `${packConfig.name} Pack`;
-      productDescription = `Founder's Pack - ${packConfig.premiumCurrency} Tokens`;
+      productDescription = `Founder's Pack (${packConfig.name}) — cosmetic entitlements`;
     } else if (purchase.packType) {
       const packConfig = TOKEN_PACKS[purchase.packType];
+      serverPrice = packConfig.price; // Use server-side config price
       productName = packConfig.name;
-      productDescription = `${packConfig.tokens} Tokens + ${packConfig.gold} Gold`;
+      productDescription = `${packConfig.tokens} premium tokens (cosmetic shop only)`;
+    } else if (purchase.price) {
+      // Fallback: use price from purchase record (created server-side)
+      serverPrice = purchase.price;
     }
+    
+    if (!serverPrice) {
+      return res.status(400).json({ error: 'Cannot determine purchase price' });
+    }
+    
+    const API_URL = process.env.BACKEND_URL || process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:3001';
+    const baseUrl = API_URL.startsWith('http') ? API_URL : `https://${API_URL}`;
+    const successUrl = `${baseUrl}/api/purchases/success?purchaseId=${purchaseId}`;
+    const cancelUrl = `${baseUrl}/api/purchases/cancel?purchaseId=${purchaseId}`;
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -1024,7 +943,7 @@ router.post('/create-checkout-session', async (req, res) => {
               name: productName,
               description: productDescription,
             },
-            unit_amount: Math.round(price * 100), // Convert to cents
+            unit_amount: Math.round(serverPrice * 100), // Convert to cents, using SERVER price
           },
           quantity: 1,
         },
@@ -1074,7 +993,7 @@ router.get('/cancel', async (req, res) => {
  * Get user's purchase history
  * GET /api/purchases/history/:userId
  */
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -1186,7 +1105,7 @@ router.get('/history/:userId', async (req, res) => {
  * Get purchase details with hero information
  * GET /api/purchases/:purchaseId/details
  */
-router.get('/:purchaseId/details', async (req, res) => {
+router.get('/:purchaseId/details', requireAuth, async (req, res) => {
   try {
     const { purchaseId } = req.params;
 

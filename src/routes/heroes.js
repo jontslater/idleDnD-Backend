@@ -4,11 +4,168 @@ import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
 import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
+import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
+/**
+ * Adventure / overlay progress (browser-source-unified) — no XP/gold/gear.
+ * For XP/gold batches use POST /api/overlay/sync with streamer key.
+ */
+router.post('/:userId/progress-sync', requireAuth, requireOwnership, async (req, res) => {
+  try {
+    const heroId = req.params.userId;
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const {
+      currentWave,
+      highestWave,
+      winStreak,
+      difficultyPercent,
+      lastAdventureSyncAt,
+      adventureState
+    } = req.body;
+
+    const patch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+
+    if (currentWave !== undefined) {
+      patch.currentWave = Math.min(999, Math.max(0, Math.floor(Number(currentWave) || 0)));
+    }
+    if (highestWave !== undefined) {
+      patch.highestWave = Math.min(999, Math.max(0, Math.floor(Number(highestWave) || 0)));
+    }
+    if (winStreak !== undefined) {
+      patch.winStreak = Math.min(50, Math.max(0, Math.floor(Number(winStreak) || 0)));
+    }
+    if (difficultyPercent !== undefined) {
+      const d = Number(difficultyPercent) || 100;
+      patch.difficultyPercent = Math.min(125, Math.max(40, Math.floor(d)));
+    }
+    if (lastAdventureSyncAt !== undefined) {
+      patch.lastAdventureSyncAt = Math.floor(Number(lastAdventureSyncAt) || Date.now());
+    }
+    if (adventureState && typeof adventureState === 'object' && !Array.isArray(adventureState)) {
+      const safe = {};
+      for (const key of ['phase', 'subPhase', 'targetEnemyId', 'inCombat']) {
+        if (adventureState[key] !== undefined) safe[key] = adventureState[key];
+      }
+      if (Object.keys(safe).length > 0) {
+        patch.adventureState = safe;
+      }
+    }
+
+    if (Object.keys(patch).length === 1) {
+      return res.status(400).json({ error: 'No valid progress fields to update' });
+    }
+
+    await heroRef.update(patch);
+    const updated = await heroRef.get();
+    res.json({ success: true, hero: { id: updated.id, ...updated.data() } });
+  } catch (error) {
+    console.error('Error syncing progress:', error);
+    res.status(500).json({ error: 'Failed to sync progress' });
+  }
+});
+
+/** Bulk vendor sell — server prices, removes items from inventory atomically. */
+router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'itemIds array is required' });
+    }
+    if (itemIds.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 items per sell request' });
+    }
+
+    const { getVendorSellPrice } = await import('../utils/vendorPrice.js');
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const sellCounts = new Map();
+    for (const rawId of itemIds) {
+      const id = String(rawId);
+      sellCounts.set(id, (sellCounts.get(id) || 0) + 1);
+    }
+
+    const result = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(heroRef);
+      if (!fresh.exists) {
+        throw Object.assign(new Error('Hero not found'), { status: 404 });
+      }
+      const hero = fresh.data();
+      const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
+      const equippedIds = new Set(
+        Object.values(hero.equipment || {})
+          .filter(Boolean)
+          .map((i) => i.id)
+      );
+
+      let goldGained = 0;
+      const sold = [];
+      const remaining = [...inventory];
+
+      for (const [itemId, qty] of sellCounts.entries()) {
+        let left = qty;
+        for (let i = remaining.length - 1; i >= 0 && left > 0; i--) {
+          const item = remaining[i];
+          if (!item?.id || item.id !== itemId) continue;
+          if (equippedIds.has(item.id)) {
+            throw Object.assign(new Error(`Cannot sell equipped item: ${item.id}`), { status: 400 });
+          }
+          const stackQty = Math.max(1, Number(item.quantity) || 1);
+          if (stackQty <= left) {
+            const price = getVendorSellPrice(item) * stackQty;
+            goldGained += price;
+            sold.push({ id: item.id, name: item.name, gold: price, quantity: stackQty });
+            remaining.splice(i, 1);
+            left -= stackQty;
+          } else {
+            const price = getVendorSellPrice(item) * left;
+            goldGained += price;
+            sold.push({ id: item.id, name: item.name, gold: price, quantity: left });
+            item.quantity = stackQty - left;
+            left = 0;
+          }
+        }
+        if (left > 0) {
+          throw Object.assign(new Error(`Not enough quantity to sell for item ${itemId}`), { status: 400 });
+        }
+      }
+
+      const newGold = (hero.gold || 0) + goldGained;
+      tx.update(heroRef, {
+        inventory: remaining,
+        gold: newGold,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      return { goldGained, newGold, sold };
+    });
+
+    res.json({
+      success: true,
+      goldGained: result.goldGained,
+      newGold: result.newGold,
+      soldCount: result.sold.length,
+      sold: result.sold
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('Error bulk selling inventory:', error);
+    res.status(status).json({ error: error.message || 'Failed to sell items' });
+  }
+});
+
 // Track wave completion for periodic chat updates
-router.post('/:userId/track-wave', async (req, res) => {
+router.post('/:userId/track-wave', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
     const heroRef = db.collection('heroes').doc(heroId);
@@ -35,7 +192,7 @@ router.post('/:userId/track-wave', async (req, res) => {
 });
 
 // Create test hero for testing (dev only)
-router.post('/test/create', async (req, res) => {
+router.post('/test/create', requireAdmin, async (req, res) => {
   try {
     const { userId, username, heroName, role, level } = req.body;
     
@@ -125,7 +282,14 @@ router.post('/test/create', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const snapshot = await db.collection('heroes').get();
-    const heroes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+    const heroes = snapshot.docs.map(doc => {
+      const data = { ...doc.data(), id: doc.id };
+      // Remove sensitive OAuth tokens from response
+      delete data.twitchAccessToken;
+      delete data.twitchRefreshToken;
+      delete data.twitchTokenExpiresAt;
+      return data;
+    });
     res.json(heroes);
   } catch (error) {
     console.error('Error fetching heroes:', error);
@@ -135,7 +299,7 @@ router.get('/', async (req, res) => {
 
 // Login reward routes - MUST be before /:userId route to ensure proper matching
 // Route: GET /api/heroes/login-reward/:userId/status
-router.get('/login-reward/:userId/status', async (req, res) => {
+router.get('/login-reward/:userId/status', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     console.log(`[Login Reward] GET /api/heroes/login-reward/${userId}/status - userId: ${userId}`);
@@ -158,7 +322,7 @@ router.get('/login-reward/:userId/status', async (req, res) => {
   }
 });
 
-router.post('/login-reward/:userId', async (req, res) => {
+router.post('/login-reward/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     const provider = req.body.provider || 'twitch'; // Default to twitch, can be 'tiktok'
@@ -176,7 +340,7 @@ router.post('/login-reward/:userId', async (req, res) => {
  * GET /api/heroes/:userId/prestige-store
  * MUST come before /:userId route to ensure proper matching
  */
-router.get('/:userId/prestige-store', async (req, res) => {
+router.get('/:userId/prestige-store', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);
@@ -227,7 +391,7 @@ router.get('/:userId/prestige-store', async (req, res) => {
 });
 
 // Get hero by user ID
-router.get('/:userId', async (req, res) => {
+router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
     const heroCache = getHeroCache();
@@ -287,6 +451,12 @@ router.get('/:userId', async (req, res) => {
     
     // Ensure heroData has an id field (use heroId if missing)
     const responseData = { ...heroData, id: heroData.id || heroId };
+    
+    // Remove sensitive OAuth tokens from response
+    delete responseData.twitchAccessToken;
+    delete responseData.twitchRefreshToken;
+    delete responseData.twitchTokenExpiresAt;
+    
     res.json(responseData);
   } catch (error) {
     console.error(`[Heroes] Error fetching hero ${req.params.userId}:`, error);
@@ -296,98 +466,16 @@ router.get('/:userId', async (req, res) => {
 });
 
 // Unlock hero slot endpoint
-router.post('/:userId/unlock-slot', async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const { twitchUserId, tiktokUserId } = req.body;
-
-    // Get user ID (prefer Twitch, fallback to TikTok)
-    const actualUserId = twitchUserId || tiktokUserId || userId;
-    const isTwitch = !!twitchUserId || !!userId;
-
-    // Get current slots unlocked
-    const currentSlots = await getUserSlotsUnlocked(actualUserId, isTwitch);
-
-    // Check if already at max
-    if (currentSlots >= MAX_HEROES) {
-      return res.status(400).json({
-        error: `Already at maximum hero slots (${MAX_HEROES})`,
-        slotsUnlocked: currentSlots,
-        maxHeroes: MAX_HEROES
-      });
-    }
-
-    const nextSlot = currentSlots + 1;
-    const unlockCost = SLOT_UNLOCK_COSTS[nextSlot] || SLOT_UNLOCK_COSTS[20]; // Default to max cost
-
-    // Get all user's heroes to find tokens
-    let existingHeroes = [];
-    if (twitchUserId || userId) {
-      const twitchCheck = await db.collection('heroes')
-        .where('twitchUserId', '==', actualUserId)
-        .get();
-      existingHeroes = twitchCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-    
-    if (tiktokUserId && existingHeroes.length === 0) {
-      const tiktokCheck = await db.collection('heroes')
-        .where('tiktokUserId', '==', actualUserId)
-        .get();
-      existingHeroes = tiktokCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-
-    // Sum tokens across all user's heroes
-    const totalTokens = existingHeroes.reduce((sum, hero) => sum + (hero.tokens || 0), 0);
-
-    if (totalTokens < unlockCost) {
-      return res.status(400).json({
-        error: `Insufficient tokens. Required: ${unlockCost}, Available: ${totalTokens}`,
-        required: unlockCost,
-        available: totalTokens,
-        nextSlot,
-        currentSlots
-      });
-    }
-
-    // Deduct tokens from the highest level hero (or first hero if same level)
-    const heroToDeduct = existingHeroes.reduce((highest, hero) => {
-      if (!highest) return hero;
-      return (hero.level || 0) > (highest.level || 0) ? hero : highest;
-    }, null);
-
-    if (heroToDeduct) {
-      const newTokens = Math.max(0, (heroToDeduct.tokens || 0) - unlockCost);
-      await db.collection('heroes').doc(heroToDeduct.id).update({
-        tokens: newTokens
-        // Removed updatedAt to reduce writes - only update when data changes
-      });
-    }
-
-    // Update user's slotsUnlocked
-    const userRef = db.collection('users').doc(actualUserId);
-    await userRef.set({
-      slotsUnlocked: nextSlot
-      // Removed updatedAt to reduce writes
-    }, { merge: true });
-
-    console.log(`[Slot Unlock] User ${actualUserId} unlocked slot ${nextSlot} for ${unlockCost} tokens`);
-
-    res.json({
-      success: true,
-      slotsUnlocked: nextSlot,
-      tokensSpent: unlockCost,
-      remainingTokens: totalTokens - unlockCost,
-      nextSlotCost: SLOT_UNLOCK_COSTS[nextSlot + 1] || null,
-      maxHeroes: MAX_HEROES
-    });
-  } catch (error) {
-    console.error('Error unlocking hero slot:', error);
-    res.status(500).json({ error: 'Failed to unlock hero slot', details: error.message });
-  }
+router.post('/:userId/unlock-slot', requireAuth, requireOwnership, async (req, res) => {
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json({
+    ...gameplayTokenSinkResponse(),
+    message: 'Hero slot unlocks cannot be purchased with premium tokens. Use gold or Stripe hero-slot products.'
+  });
 });
 
 // Get user's slot information
-router.get('/:userId/slots', async (req, res) => {
+router.get('/:userId/slots', requireAuth, requireOwnership, async (req, res) => {
   try {
     const userId = req.params.userId;
     const { twitchUserId, tiktokUserId } = req.query;
@@ -530,7 +618,7 @@ router.get('/twitch/:twitchUserId', async (req, res) => {
 });
 
 // Get ALL heroes for a Twitch user ID (string/number safe, no Firestore index needed)
-router.get('/twitch/:twitchUserId/all', async (req, res) => {
+router.get('/twitch/:twitchUserId/all', requireAuth, async (req, res) => {
   try {
     const { twitchUserId } = req.params; // always a string in URL params
     const dbRef = db.collection('heroes');
@@ -637,7 +725,7 @@ async function getUserSlotsUnlocked(userId, isTwitch = true) {
 }
 
 // Create new hero with class selection
-router.post('/create', async (req, res) => {
+router.post('/create', requireAuth, async (req, res) => {
   try {
     const { class: classKey, twitchUserId, tiktokUserId, battlefieldId } = req.body;
 
@@ -723,78 +811,17 @@ router.post('/create', async (req, res) => {
       }
     }
     
-    const heroData = {
+    const { buildNewHeroDocument } = await import('../utils/heroCreation.js');
+    const heroData = buildNewHeroDocument({
+      classKey,
       name: heroName,
-      ...(twitchUserId && { twitchUserId }),
-      ...(tiktokUserId && { tiktokUserId }),
-      ...(twitchUsername && { twitchUsername }),
-      role: classKey,
-      level: 1,
-      hp: config.baseHp,
-      maxHp: config.baseHp,
-      xp: 0,
-      maxXp: 100,
-      attack: config.baseAttack,
-      defense: config.baseDefense,
-      gold: 0,
-      tokens: 0,
-      totalIdleTokens: 0,
-      lastTokenClaim: Date.now(),
-      lastCommandTime: Date.now(),
-      equipment: (() => {
-        const category = config.category || 'dps';
-        const defaultSlots = category === 'tank' 
-          ? ['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots']
-          : ['weapon', 'armor', 'accessory', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots'];
-        
-        const equipment = {};
-        defaultSlots.forEach(slot => {
-          equipment[slot] = null;
-        });
-        return equipment;
-      })(),
-      stats: {
-        totalDamage: 0,
-        totalHealing: 0,
-        damageBlocked: 0
-      },
-      isDead: false,
-      deathTime: null,
-      potions: {
-        health: 0
-      },
-      activeBuffs: {},
-      profession: null,
-      skills: {},
-      skillPoints: 0,
-      skillPointsEarned: 0,
-      joinedAt: Date.now(),
-      // Prestige system - initialize to defaults
-      prestigeLevel: 0,
-      prestigeTokens: 0,
-      prestigeBoosts: {
-        xpGain: 1.0,
-        goldGain: 1.0,
-        idleTicketGain: 1.0,
-        statBoost: {
-          attack: 0,
-          defense: 0,
-          hp: 0
-        }
-      },
-      prestigeSlotCores: {}, // Prestige cores attached to equipment slots (not items)
-      // Inherit founder pack tier from existing heroes (applies to all user's heroes)
-      ...(founderPackTier && { founderPackTier }),
-      ...(founderPackTierLevel !== null && { founderPackTierLevel }),
-      // Set battlefield ID if provided (for streamer battlefields)
-      // Format: "twitch:channelId" or "twitch:username"
-      ...(battlefieldId && { 
-        currentBattlefieldId: battlefieldId,
-        currentBattlefieldType: battlefieldId.startsWith('twitch:') ? 'streamer' : 'world'
-      }),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+      twitchUserId,
+      tiktokUserId,
+      twitchUsername,
+      founderPackTier,
+      founderPackTierLevel,
+      battlefieldId
+    });
     
     const docRef = await db.collection('heroes').add(heroData);
     const doc = await docRef.get();
@@ -812,7 +839,7 @@ router.post('/create', async (req, res) => {
 });
 
 // Rename hero endpoint
-router.patch('/:heroId/rename', async (req, res) => {
+router.patch('/:heroId/rename', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
     const { newName } = req.body;
@@ -932,19 +959,73 @@ router.get('/create/cost-info', async (req, res) => {
   }
 });
 
-// Create new hero (legacy endpoint)
-router.post('/', async (req, res) => {
+// Create new hero (legacy endpoint) — same slot/cap checks as POST /create
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const heroData = {
-      ...req.body,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    
+    const { pickHeroCreateInput, buildNewHeroDocument } = await import('../utils/heroCreation.js');
+    const { assertHeroCreationAllowed } = await import('../utils/heroSlotLimits.js');
+    const { picked, rejected } = pickHeroCreateInput(req.body);
+
+    if (rejected.length > 0) {
+      console.warn(`[Create Hero Legacy] Ignored fields: ${rejected.join(', ')}`);
+    }
+
+    const classKey = picked.class || picked.role;
+    if (!classKey || !ROLE_CONFIG[classKey]) {
+      return res.status(400).json({ error: 'Invalid class' });
+    }
+
+    const twitchUserId = req.body.twitchUserId || req.user.twitchUserId;
+    const tiktokUserId = req.body.tiktokUserId || null;
+
+    if (twitchUserId && req.user.twitchUserId && twitchUserId !== req.user.twitchUserId) {
+      return res.status(403).json({ error: 'Forbidden: twitchUserId mismatch' });
+    }
+
+    const gate = await assertHeroCreationAllowed({ twitchUserId, tiktokUserId });
+    if (!gate.ok) {
+      return res.status(gate.status).json(gate.body);
+    }
+
+    const { role: _r, class: _c, name, heroName, twitchUsername, ...cosmetic } = picked;
+    const { existingHeroes } = gate;
+
+    let founderPackTier = null;
+    let founderPackTierLevel = null;
+    let inheritedUsername = twitchUsername || req.user.twitchUsername || null;
+    if (existingHeroes.length > 0) {
+      const first = existingHeroes[0];
+      if (first.founderPackTier) {
+        founderPackTier = first.founderPackTier;
+        founderPackTierLevel = first.founderPackTierLevel;
+      }
+      if (!inheritedUsername && first.twitchUsername) {
+        inheritedUsername = first.twitchUsername;
+      }
+    }
+
+    const heroData = buildNewHeroDocument({
+      classKey,
+      name: name || heroName,
+      twitchUserId: twitchUserId || null,
+      tiktokUserId,
+      twitchUsername: inheritedUsername,
+      founderPackTier,
+      founderPackTierLevel,
+      cosmetic,
+      battlefieldId: req.body.battlefieldId
+    });
+
     const docRef = await db.collection('heroes').add(heroData);
     const doc = await docRef.get();
-    
-    res.status(201).json({ ...doc.data(), id: doc.id });
+
+    const { MAX_HEROES } = await import('../utils/heroSlotLimits.js');
+    res.status(201).json({
+      ...doc.data(),
+      id: doc.id,
+      heroCount: gate.heroCount + 1,
+      maxHeroes: MAX_HEROES
+    });
   } catch (error) {
     console.error('Error creating hero:', error);
     res.status(500).json({ error: 'Failed to create hero' });
@@ -952,9 +1033,16 @@ router.post('/', async (req, res) => {
 });
 
 // Update hero
-router.put('/:userId', async (req, res) => {
+// Update hero - now requires authentication and ownership
+router.put('/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroId = req.params.userId;
+    
+    // Basic ownership check: if twitchUserId is provided in body, verify it matches
+    // This prevents users from modifying other users' heroes
+    // TODO: Add proper JWT token verification in production
+    const claimedTwitchUserId = req.body.twitchUserId || req.query.twitchUserId;
+    
     const heroRef = db.collection('heroes').doc(heroId);
     const doc = await heroRef.get();
     
@@ -965,123 +1053,31 @@ router.put('/:userId', async (req, res) => {
     
     const oldHero = doc.data();
     
-    // CRITICAL: Enforce level cap of 100
-    // This prevents heroes from leveling beyond 100, even if frontend sends invalid data
-    const MAX_LEVEL = 100;
-    const hasPrestiged = (oldHero.prestigeLevel || 0) > 0;
-    
-    if (req.body.level !== undefined) {
-      const requestedLevel = req.body.level;
-      
-      // CRITICAL: If hero has prestiged, they should NEVER be above level 100
-      // Also, if they're at level 1 after prestige, don't allow setting to a high level
-      if (hasPrestiged) {
-        if (requestedLevel > MAX_LEVEL) {
-          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${requestedLevel}, capping at ${MAX_LEVEL}`);
-          req.body.level = MAX_LEVEL;
-        } else if (oldHero.level === 1 && requestedLevel > 100) {
-          // Hero just prestiged (level 1), don't allow setting to high level
-          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) at level 1 attempted to set level ${requestedLevel}, blocking update`);
-          delete req.body.level; // Remove level from update to prevent overwrite
-        }
-      } else if (requestedLevel > MAX_LEVEL) {
-        // Non-prestiged hero, just cap at 100
-        console.warn(`⚠️ [Update Hero] Attempted to set level ${requestedLevel} for hero ${heroId}, capping at ${MAX_LEVEL}`);
-        req.body.level = MAX_LEVEL;
-      }
-      
-      // Cap XP at maxXp for level 100 if level was capped
-      if (req.body.level === MAX_LEVEL) {
-        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
-        req.body.maxXp = calculateMaxXp(MAX_LEVEL);
-        if (req.body.xp !== undefined && req.body.xp > req.body.maxXp) {
-          req.body.xp = req.body.maxXp;
-        }
-      }
+    // Verify ownership if twitchUserId is claimed
+    if (claimedTwitchUserId && oldHero.twitchUserId && claimedTwitchUserId !== oldHero.twitchUserId) {
+      console.warn(`⚠️ [Update Hero] Ownership mismatch: claimed ${claimedTwitchUserId}, actual ${oldHero.twitchUserId}`);
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'You do not own this hero'
+      });
     }
     
-    const updateData = {
-      ...req.body
-      // Removed updatedAt to reduce writes - only update when data changes
-    };
-    
-    // Also check existing hero level and cap it if over 100 (safety check for old data)
-    // This fixes heroes that were already over level 100 from before the cap was implemented
-    if (oldHero.level > MAX_LEVEL) {
-      // CRITICAL: If hero has prestiged, they should be at level 1, not 100
-      if (hasPrestiged) {
-        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level}, fixing to level 1`);
-        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = 1;
-        updateData.maxXp = getInitialMaxXp(1);
-        updateData.xp = 0;
-      } else {
-        console.warn(`⚠️ [Update Hero] Hero ${heroId} has level ${oldHero.level}, capping at ${MAX_LEVEL}`);
-        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = MAX_LEVEL;
-        updateData.maxXp = calculateMaxXp(MAX_LEVEL);
-        if (updateData.xp === undefined && oldHero.xp > updateData.maxXp) {
-          updateData.xp = updateData.maxXp;
-        } else if (updateData.xp !== undefined && updateData.xp > updateData.maxXp) {
-          updateData.xp = updateData.maxXp;
-        }
-      }
+    const { pickPlayerEditableHeroFields } = await import('../utils/heroUpdateAllowList.js');
+    const { allowed: updateData, rejected } = pickPlayerEditableHeroFields(req.body);
+
+    if (rejected.length > 0) {
+      console.warn(
+        `⚠️ [Update Hero] Ignored non-editable fields for ${heroId}: ${rejected.slice(0, 12).join(', ')}${rejected.length > 12 ? '…' : ''}`
+      );
     }
-    
-    // CRITICAL: If hero has prestiged, protect against ANY invalid level updates
-    // Prestiged heroes should always be between 1 and 100
-    if (hasPrestiged && updateData.level !== undefined) {
-      if (updateData.level > MAX_LEVEL) {
-        console.error(`🚨 [Update Hero] BLOCKED: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${updateData.level}. Forcing to level 1.`);
-        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = 1;
-        updateData.xp = 0;
-        updateData.maxXp = getInitialMaxXp(1);
-      } else if (updateData.level < 1) {
-        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} attempted to set level ${updateData.level}, forcing to 1.`);
-        updateData.level = 1;
-      }
+
+    if (Object.keys(updateData).length === 0) {
+      const updated = await heroRef.get();
+      return res.json({ ...updated.data(), id: updated.id });
     }
-    
-    // CRITICAL: Additional check - if prestiged hero's current level in DB is > 100, force reset
-    if (hasPrestiged && oldHero.level > MAX_LEVEL) {
-      console.error(`🚨 [Update Hero] CRITICAL: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level} in database. Forcing reset to level 1.`);
-      const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-      updateData.level = 1;
-      updateData.xp = 0;
-      updateData.maxXp = getInitialMaxXp(1);
-    }
-    
-    // Track stats for periodic chat updates
-    try {
-      const { trackXpGained, trackLevelUp } = await import('../services/streamStatsService.js');
-      const twitchId = oldHero.twitchUserId || oldHero.twitchId;
-      
-      if (twitchId) {
-        // Track XP gain (if XP increased)
-        if (req.body.xp !== undefined && oldHero.xp !== undefined) {
-          const xpDelta = req.body.xp - oldHero.xp;
-          if (xpDelta > 0) {
-            await trackXpGained(twitchId, xpDelta);
-          }
-        }
-        
-        // Track level up (if level increased)
-        if (req.body.level !== undefined && oldHero.level !== undefined) {
-          const levelDelta = req.body.level - oldHero.level;
-          if (levelDelta > 0) {
-            // Track each level up
-            for (let i = 0; i < levelDelta; i++) {
-              await trackLevelUp(twitchId);
-            }
-          }
-        }
-      }
-    } catch (statsError) {
-      // Don't fail the hero update if stats tracking fails
-      console.error('[Update Hero] Error tracking stats:', statsError);
-    }
-    
+
+    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
     await heroRef.update(updateData);
     
     // Invalidate cache after update
@@ -1098,7 +1094,7 @@ router.put('/:userId', async (req, res) => {
 });
 
 // Toggle hero pin status
-router.post('/:userId/pin', async (req, res) => {
+router.post('/:userId/pin', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroRef = db.collection('heroes').doc(req.params.userId);
     const doc = await heroRef.get();
@@ -1124,7 +1120,7 @@ router.post('/:userId/pin', async (req, res) => {
 });
 
 // Delete hero
-router.delete('/:heroId', async (req, res) => {
+router.delete('/:heroId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
     const { userId } = req.body; // User ID for authorization check
@@ -1159,7 +1155,7 @@ router.delete('/:heroId', async (req, res) => {
 });
 
 // Purchase gold shop item
-router.post('/:userId/purchase/gold', async (req, res) => {
+router.post('/:userId/purchase/gold', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { itemKey } = req.body;
     const { userId } = req.params;
@@ -1274,172 +1270,57 @@ router.post('/:userId/purchase/gold', async (req, res) => {
   }
 });
 
-// Purchase token shop gear
-router.post('/:userId/purchase/tokens', async (req, res) => {
+// Purchase token shop gear (disabled — premium tokens are cosmetic-only)
+router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (req, res) => {
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json(gameplayTokenSinkResponse());
+});
+
+router.post('/:userId/purchase/cosmetic-tokens', requireAuth, requireOwnership, async (req, res) => {
   try {
-    const { rarity, slot, quantity } = req.body;
+    const { itemId } = req.body;
     const { userId } = req.params;
-    
-    // Default quantity to 1 if not provided
-    const purchaseQuantity = quantity || 1;
-
-    const TOKEN_SHOP_PRICES = {
-      common: 50, // Balanced: 50t (was 25t) - 2x increase for monetization
-      rare: 200, // Balanced: 200t (was 100t) - 2x increase
-      epic: 600, // Balanced: 600t (was 300t) - 2x increase
-      legendary: 2500, // Balanced: 2500t (was 1000t) - 2.5x increase
-      mythic: 10000 // NEW - ultra-rare tier
-    };
-
-    if (!TOKEN_SHOP_PRICES[rarity]) {
-      return res.status(400).json({ error: 'Invalid rarity' });
+    const { COSMETIC_TOKEN_CATALOG } = await import('../utils/tokenCosmetics.js');
+    const item = COSMETIC_TOKEN_CATALOG[itemId];
+    if (!item) {
+      return res.status(400).json({ error: 'Invalid cosmetic item' });
     }
 
-    const validSlots = ['weapon', 'armor', 'accessory', 'shield'];
-    if (!validSlots.includes(slot)) {
-      return res.status(400).json({ error: 'Invalid slot' });
-    }
-
-    const costPerItem = TOKEN_SHOP_PRICES[rarity];
-    const totalCost = costPerItem * purchaseQuantity;
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'Hero not found' });
-    }
-
+    if (!doc.exists) return res.status(404).json({ error: 'Hero not found' });
     const hero = doc.data();
-    const currentTokens = hero.tokens || 0;
-
-    if (currentTokens < totalCost) {
-      return res.status(400).json({ 
-        error: `Not enough tokens! Need ${totalCost}t (${purchaseQuantity}x ${costPerItem}t), have ${currentTokens}t` 
-      });
+    const tokens = hero.tokens || 0;
+    if (tokens < item.price) {
+      return res.status(400).json({ error: `Need ${item.price} tokens, have ${tokens}` });
     }
-    
-    // Check inventory space
-    const currentInventory = hero.inventory || [];
-    const consumableGroups = new Set();
-    const professionGroups = new Set();
-    let regularItemCount = 0;
-    
-    currentInventory.forEach(item => {
-      if (item.professionItem) {
-        const key = item.recipeKey || item.id;
-        professionGroups.add(key);
-      } else if (item.type === 'potion' || item.type === 'buff' || item.itemKey) {
-        const key = item.itemKey || item.name || item.id;
-        consumableGroups.add(key);
-      } else {
-        regularItemCount++;
+
+    const update = {
+      tokens: tokens - item.price,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    if (item.grants.cosmetics) {
+      update.cosmetics = { ...(hero.cosmetics || {}), ...item.grants.cosmetics };
+    }
+    if (item.grants.unlockedTitles) {
+      update.unlockedTitles = admin.firestore.FieldValue.arrayUnion(...item.grants.unlockedTitles);
+      if (item.grants.activeTitle && !hero.activeTitle) {
+        update.activeTitle = item.grants.activeTitle;
       }
-    });
-    
-    const currentSlotsUsed = professionGroups.size + consumableGroups.size + regularItemCount;
-    const maxSlots = hero.bankSize || 50;
-    
-    // Each gear item takes 1 slot
-    if (currentSlotsUsed + purchaseQuantity > maxSlots) {
-      return res.status(400).json({ 
-        error: `Inventory full! You have ${currentSlotsUsed}/${maxSlots} slots used. Cannot add ${purchaseQuantity} more items. Sell items or expand storage.` 
-      });
     }
 
-    // Generate gear based on hero level (same logic as Electron app)
-    // Token shop mythic is weaker (3.5x) than raid/dungeon mythic (4.0x)
-    const LOOT_RARITIES = {
-      common: { statMultiplier: 1.0, color: '#9ca3af' },
-      uncommon: { statMultiplier: 1.2, color: '#10b981' },
-      rare: { statMultiplier: 1.5, color: '#3b82f6' },
-      epic: { statMultiplier: 2.0, color: '#a855f7' },
-      legendary: { statMultiplier: 3.0, color: '#eab308' },
-      mythic: { statMultiplier: 3.5, color: '#ef4444' }, // Token shop mythic (weaker than raid/dungeon)
-      artifact: { statMultiplier: 4.0, color: '#ef4444' }
-    };
-
-    const rarityData = LOOT_RARITIES[rarity];
-    if (!rarityData) {
-      return res.status(400).json({ error: `Invalid rarity: ${rarity}. Valid rarities: ${Object.keys(LOOT_RARITIES).join(', ')}` });
-    }
-
-    const heroLevel = hero.level || 1;
-    const levelMultiplier = 1 + (heroLevel * 0.1);
-
-    // Base item templates by slot
-    const templates = {
-      weapon: { name: 'Weapon', attack: 12, defense: 0, hp: 0 },
-      armor: { name: 'Armor', attack: 5, defense: 12, hp: 30 },
-      accessory: { name: 'Ring', attack: 8, defense: 4, hp: 15 },
-      shield: { name: 'Shield', attack: 0, defense: 15, hp: 30 }
-    };
-
-    const template = templates[slot];
-    if (!template) {
-      return res.status(400).json({ error: `Invalid slot: ${slot}` });
-    }
-
-    const item = {
-      id: `${rarity}_${slot}_${Date.now()}`,
-      name: `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${template.name}`,
-      slot,
-      rarity,
-      color: rarityData.color,
-      attack: Math.floor(template.attack * rarityData.statMultiplier * levelMultiplier),
-      defense: Math.floor(template.defense * rarityData.statMultiplier * levelMultiplier),
-      hp: Math.floor(template.hp * rarityData.statMultiplier * levelMultiplier)
-    };
-
-    // Initialize inventory if needed
-    if (!hero.inventory) {
-      hero.inventory = [];
-    }
-
-    // Add items to inventory (multiple if quantity > 1)
-    const itemsToAdd = [];
-    for (let i = 0; i < purchaseQuantity; i++) {
-      const itemCopy = {
-        ...item,
-        id: `${rarity}_${slot}_${Date.now()}_${i}` // Unique ID for each item
-      };
-      itemsToAdd.push(itemCopy);
-    }
-    
-    // Validate inventory space before adding
-    const { validateInventorySpace } = await import('../utils/inventoryValidator.js');
-    const validation = validateInventorySpace(hero, itemsToAdd);
-    if (!validation.valid) {
-      return res.status(400).json({ error: validation.error });
-    }
-    
-    // Add items to inventory
-    itemsToAdd.forEach(itemCopy => hero.inventory.push(itemCopy));
-
-    // Deduct tokens
-    await heroRef.update({
-      tokens: currentTokens - totalCost,
-      inventory: hero.inventory
-      // Removed updatedAt to reduce writes
-    });
-
-    console.log(`🎫 ${userId} purchased ${purchaseQuantity}x ${rarity} ${slot} for ${totalCost}t`);
-
-    res.json({ 
-      success: true, 
-      message: `Purchased ${purchaseQuantity}x ${item.name}! Tokens remaining: ${currentTokens - totalCost}t`,
-      items: itemsToAdd,
-      quantity: purchaseQuantity,
-      newTokens: currentTokens - totalCost
-    });
+    await heroRef.update(update);
+    const updated = await heroRef.get();
+    res.json({ success: true, itemId, newTokens: tokens - item.price, hero: updated.data() });
   } catch (error) {
-    console.error('Error purchasing token gear:', error);
-    res.status(500).json({ error: 'Failed to purchase gear' });
+    console.error('Error purchasing cosmetic with tokens:', error);
+    res.status(500).json({ error: 'Failed to purchase cosmetic' });
   }
 });
 
 // Gold Sinks - Balanced, not gacha
 // Upgrade equipment with custom stat selection (2 of 4 random stats)
-router.post('/:userId/upgrade-item', async (req, res) => {
+router.post('/:userId/upgrade-item', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { itemId, selectedStats, upgradeLevel } = req.body; // upgradeLevel is optional - which level to upgrade/replace
@@ -1581,7 +1462,7 @@ router.post('/:userId/upgrade-item', async (req, res) => {
 });
 
 // Reforge secondary stats (reroll secondary stats, keep primary stats)
-router.post('/:userId/reforge-item', async (req, res) => {
+router.post('/:userId/reforge-item', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { itemId } = req.body;
@@ -1710,7 +1591,7 @@ router.post('/:userId/reforge-item', async (req, res) => {
 });
 
 // Lock/unlock equipment item
-router.post('/:userId/equipment/:slot/lock', async (req, res) => {
+router.post('/:userId/equipment/:slot/lock', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, slot } = req.params;
     
@@ -1753,7 +1634,7 @@ router.post('/:userId/equipment/:slot/lock', async (req, res) => {
   }
 });
 
-router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
+router.post('/:userId/equipment/:slot/unlock', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId, slot } = req.params;
     
@@ -1797,7 +1678,7 @@ router.post('/:userId/equipment/:slot/unlock', async (req, res) => {
 });
 
 // Expand bank storage (add bank slots)
-router.post('/:userId/expand-storage', async (req, res) => {
+router.post('/:userId/expand-storage', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { slots = 15, currency = 'gold' } = req.body; // Default 15 slots, currency: 'gold' or 'tokens'
@@ -1807,9 +1688,13 @@ router.post('/:userId/expand-storage', async (req, res) => {
       return res.status(400).json({ error: 'Must expand by exactly 15 slots per purchase' });
     }
 
-    // Validate currency
-    if (currency !== 'gold' && currency !== 'tokens') {
-      return res.status(400).json({ error: 'Currency must be "gold" or "tokens"' });
+    if (currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
+    if (currency !== 'gold') {
+      return res.status(400).json({ error: 'Currency must be "gold"' });
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -1826,32 +1711,17 @@ router.post('/:userId/expand-storage', async (req, res) => {
     let currentAmount;
     let updateData = {};
     
-    if (currency === 'gold') {
-      // Gold cost: 50g per slot = 750g for 15 slots
-      const costPerSlot = 50;
-      totalCost = costPerSlot * slots; // 750g for 15 slots
-      currentAmount = hero.gold || 0;
-      
-      if (currentAmount < totalCost) {
-        return res.status(400).json({ 
-          error: `Not enough gold! Need ${totalCost}g, have ${currentAmount}g` 
-        });
-      }
-      
-      updateData.gold = currentAmount - totalCost;
-    } else {
-      // Token cost: 50 tokens for 15 slots (more reasonable vs 750g)
-      totalCost = 50; // Fixed cost for 15 slots
-      currentAmount = hero.tokens || 0;
-      
-      if (currentAmount < totalCost) {
-        return res.status(400).json({ 
-          error: `Not enough tokens! Need ${totalCost}t, have ${currentAmount}t` 
-        });
-      }
-      
-      updateData.tokens = currentAmount - totalCost;
+    const costPerSlot = 50;
+    totalCost = costPerSlot * slots;
+    currentAmount = hero.gold || 0;
+
+    if (currentAmount < totalCost) {
+      return res.status(400).json({
+        error: `Not enough gold! Need ${totalCost}g, have ${currentAmount}g`
+      });
     }
+
+    updateData.gold = currentAmount - totalCost;
 
     // Get current bank size (default 50 if not set)
     const currentBankSize = hero.bankSize || 50;
@@ -1870,8 +1740,8 @@ router.post('/:userId/expand-storage', async (req, res) => {
     const currencySymbol = currency === 'gold' ? 'g' : 't';
     console.log(`📦 ${userId} expanded bank by ${slots} slots (${currentBankSize} -> ${newBankSize}) for ${totalCost}${currencySymbol}`);
 
-    const remainingAmount = currency === 'gold' ? updateData.gold : updateData.tokens;
-    const currencyName = currency === 'gold' ? 'Gold' : 'Tokens';
+    const remainingAmount = updateData.gold;
+    const currencyName = 'Gold';
 
     res.json({ 
       success: true, 
@@ -1887,7 +1757,7 @@ router.post('/:userId/expand-storage', async (req, res) => {
 
 
 // Port hero to new battlefield
-router.post('/:userId/port', async (req, res) => {
+router.post('/:userId/port', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { battlefieldId, battlefieldType } = req.body;
@@ -1994,7 +1864,7 @@ router.post('/:userId/port', async (req, res) => {
  * heroId is the hero document ID (from hero.id in frontend)
  * This essentially triggers the !claim command for the hero
  */
-router.post('/:heroId/claim-idle-rewards', async (req, res) => {
+router.post('/:heroId/claim-idle-rewards', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { heroId } = req.params;
 
@@ -2037,7 +1907,7 @@ router.post('/:heroId/claim-idle-rewards', async (req, res) => {
  * Admin: Give item to hero
  * POST /api/heroes/:userId/admin/give-item
  */
-router.post('/:userId/admin/give-item', async (req, res) => {
+router.post('/:userId/admin/give-item', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { item } = req.body;
@@ -2082,7 +1952,7 @@ router.post('/:userId/admin/give-item', async (req, res) => {
  * Prestige endpoint - Reset hero to level 1 and apply permanent boosts
  * POST /api/heroes/:userId/prestige
  */
-router.post('/:userId/prestige', async (req, res) => {
+router.post('/:userId/prestige', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const heroRef = db.collection('heroes').doc(userId);
@@ -2232,7 +2102,7 @@ router.post('/:userId/prestige', async (req, res) => {
  * Purchase prestige core
  * POST /api/heroes/:userId/prestige-store/purchase
  */
-router.post('/:userId/prestige-store/purchase', async (req, res) => {
+router.post('/:userId/prestige-store/purchase', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { tier } = req.body;
     const { userId } = req.params;
@@ -2332,7 +2202,7 @@ router.post('/:userId/prestige-store/purchase', async (req, res) => {
  * Apply prestige core to equipment slot (not item - persists when gear is replaced)
  * POST /api/heroes/:userId/prestige-store/apply
  */
-router.post('/:userId/prestige-store/apply', async (req, res) => {
+router.post('/:userId/prestige-store/apply', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { coreId, slot } = req.body;
     const { userId } = req.params;

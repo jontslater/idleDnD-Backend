@@ -9,9 +9,18 @@ import { dirname, join } from 'path';
 // Load environment variables
 dotenv.config();
 
-// Initialize Firebase Admin
+// Initialize Firebase Admin (or in-memory fake for tests)
 let db;
 try {
+  if (process.env.USE_IN_MEMORY_FIRESTORE === '1') {
+    const { createInMemoryFirestore } = await import('./testSupport/inMemoryFirestore.js');
+    const seed = globalThis.__IN_MEMORY_FIRESTORE_SEED__ || {};
+    db = createInMemoryFirestore(seed);
+    if (!admin.apps.length) {
+      admin.initializeApp({ projectId: 'test-project' });
+    }
+    console.log('✅ In-memory Firestore initialized for tests');
+  } else {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const serviceAccountPath = join(__dirname, '..', 'serviceAccountKey.json');
@@ -46,9 +55,12 @@ try {
   const { getWriteBatcher } = await import('./utils/writeBatcher.js');
   const writeBatcher = getWriteBatcher(db);
   console.log('✅ Write batcher initialized (reduces Firestore writes)');
+  }
 } catch (error) {
   console.error('❌ Failed to initialize Firebase:', error);
-  process.exit(1);
+  if (process.env.USE_IN_MEMORY_FIRESTORE !== '1') {
+    process.exit(1);
+  }
 }
 
 // Initialize Express
@@ -143,31 +155,14 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
           .get();
 
         if (!heroesSnapshot.empty) {
-          const packConfig = PACK_TIERS[purchase.packTier];
           const tierLevel = TIER_LEVELS[purchase.packTier];
+          const { buildFounderPackCosmeticUpdate } = await import('./utils/monetization.js');
           const batch = db.batch();
 
           heroesSnapshot.docs.forEach(heroDoc => {
             const heroRef = db.collection('heroes').doc(heroDoc.id);
             const hero = heroDoc.data();
-            
-            // Build hero update with founder pack benefits
-            const heroUpdate = {
-              founderPackTier: purchase.packTier,
-              founderPackTierLevel: tierLevel, // Fixed: use founderPackTierLevel (not founderPackLevel)
-              tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-
-            // Auto-unlock founder title if not already unlocked
-            if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
-              heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
-              // Set as active title if no title is currently selected
-              if (!hero.activeTitle) {
-                heroUpdate.activeTitle = 'Founder';
-              }
-            }
-
+            const heroUpdate = buildFounderPackCosmeticUpdate(hero, purchase.packTier, tierLevel);
             batch.update(heroRef, heroUpdate);
           });
 
@@ -176,13 +171,7 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
         }
       } else if (purchase.packType && purchase.heroId) {
         // Complete token pack
-        const TOKEN_PACKS = {
-          impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
-          starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
-          value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
-          premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
-        };
-        
+        const { TOKEN_PACKS } = await import('./data/tokenPacks.js');
         const packConfig = TOKEN_PACKS[purchase.packType];
         const heroRef = db.collection('heroes').doc(purchase.heroId);
         const heroDoc = await heroRef.get();
@@ -191,7 +180,6 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
           const hero = heroDoc.data();
           await heroRef.update({
             tokens: (hero.tokens || 0) + packConfig.tokens,
-            gold: (hero.gold || 0) + packConfig.gold,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           console.log(`[Stripe Webhook] Token pack ${purchase.packType} completed for hero ${purchase.heroId}`);
@@ -244,6 +232,10 @@ import purchasesRoutes from './routes/purchases.js';
 import mailRoutes from './routes/mail.js';
 import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
+import overlayRoutes from './routes/overlay.js';
+import queueRoutes from './routes/queues.js';
+import balanceRoutes from './routes/balance.js';
+import cosmeticsRoutes from './routes/cosmetics.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -273,6 +265,10 @@ app.use('/api/loot-tokens', lootTokenRoutes);
 app.use('/api/mail', mailRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/stream/settings', streamSettingsRoutes);
+app.use('/api/overlay', overlayRoutes);
+app.use('/api/queues', queueRoutes);
+app.use('/api/balance', balanceRoutes);
+app.use('/api/cosmetics', cosmeticsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -283,10 +279,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Populate test data (for UI testing)
-// Clean up test data
+// Clean up test data - ADMIN ONLY
+// Requires admin key in environment variable for security
 app.post('/api/test/cleanup', async (req, res) => {
   try {
+    // Require admin key for destructive operations
+    const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+    const expectedAdminKey = process.env.ADMIN_KEY;
+    
+    if (!expectedAdminKey) {
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+      });
+    }
+    
+    if (!adminKey || adminKey !== expectedAdminKey) {
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'Invalid or missing admin key'
+      });
+    }
+    
     console.log('🧹 Cleaning up test data...');
     
     // Delete all test raid instances
@@ -318,7 +332,26 @@ app.post('/api/test/cleanup', async (req, res) => {
   }
 });
 
+// Populate test data - ADMIN ONLY  
 app.post('/api/test/populate', async (req, res) => {
+  // Require admin key for test data creation
+  const adminKey = req.headers['x-admin-key'] || req.body.adminKey;
+  const expectedAdminKey = process.env.ADMIN_KEY;
+  
+  if (!expectedAdminKey) {
+    return res.status(503).json({ 
+      error: 'Service unavailable',
+      message: 'Admin operations are disabled. Set ADMIN_KEY environment variable to enable.'
+    });
+  }
+  
+  if (!adminKey || adminKey !== expectedAdminKey) {
+    return res.status(403).json({ 
+      error: 'Forbidden',
+      message: 'Invalid or missing admin key'
+    });
+  }
+  
   try {
     console.log('🎮 Creating test data...');
     
@@ -479,7 +512,13 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('');
 }
 
-const server = app.listen(PORT, async () => {
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const { ensureSkillDefinitionsExported } = await import('./routes/skills.js');
+  ensureSkillDefinitionsExported();
+  const { ensureBalanceJsonExported } = await import('./routes/balance.js');
+  ensureBalanceJsonExported();
+  const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗
 ║   The Never Ending War - Backend API      ║
@@ -582,7 +621,15 @@ Press Ctrl+C to stop
   } catch (error) {
     console.error('❌ Failed to initialize XP accumulator service:', error);
   }
-});
 
-// Export for Firebase Functions (optional)
+  try {
+    const { startQueueSweeper } = await import('./services/queueSweeperService.js');
+    startQueueSweeper();
+  } catch (error) {
+    console.error('❌ Failed to initialize queue sweeper:', error);
+  }
+  });
+}
+
+// Export for Firebase Functions and testing
 export { app, db };

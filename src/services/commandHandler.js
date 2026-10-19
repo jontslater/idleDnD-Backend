@@ -65,8 +65,7 @@ async function isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername) {
     return true;
   }
   
-  // TODO: Check if viewer is in streamer's mod list (future feature)
-  // For now, only streamer is authorized
+  // MOD_HOOK: allow mods to run streamer queue commands when mod list / roles are wired up
   return false;
 }
 
@@ -83,7 +82,7 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
   try {
     // Use numeric streamerId if available (for queues), otherwise use username (legacy)
     const battlefieldId = streamerId ? `twitch:${streamerId}` : `twitch:${streamerUsername.toLowerCase()}`;
-    const commandLower = command.toLowerCase();
+    let commandLower = command.toLowerCase();
     
     console.log(`[Command] Processing !${command} - BattlefieldId: ${battlefieldId}, StreamerId: ${streamerId}`);
     
@@ -524,7 +523,7 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
         return await handleQCancelCommand(battlefieldId, viewerUsername);
       
       case 'qleave':
-        return await handleQLeaveCommand(viewerId, viewerUsername);
+        return await handleQLeaveCommand(viewerId, viewerUsername, battlefieldId);
       
       case 'level':
         return await handleLevelCommand(hero, args, viewerUsername, viewerId, streamerUsername, battlefieldId);
@@ -964,6 +963,15 @@ async function handleBuyCommand(hero, args, username) {
     };
   }
 
+  // Validate cost is positive
+  if (shopItem.cost <= 0 || !isFinite(shopItem.cost) || isNaN(shopItem.cost)) {
+    console.error(`[Shop] Invalid item cost: ${shopItem.cost} for ${shopItem.name}`);
+    return {
+      success: false,
+      message: `@${username} Item price error. Contact an admin.`
+    };
+  }
+
   // Check if hero has enough gold
   const heroGold = hero.gold || 0;
   if (shopItem.type === 'gold' && heroGold < shopItem.cost) {
@@ -973,9 +981,19 @@ async function handleBuyCommand(hero, args, username) {
     };
   }
 
-  // Deduct cost
+  // Validate hero's gold is non-negative (prevent exploits)
+  if (heroGold < 0) {
+    console.error(`[Shop] Hero ${hero.id} has negative gold: ${heroGold}`);
+    return {
+      success: false,
+      message: `@${username} Account error. Contact an admin.`
+    };
+  }
+
+  // Deduct cost (ensure result is non-negative)
+  const newGold = Math.max(0, heroGold - shopItem.cost);
   const updateData = {
-    gold: heroGold - shopItem.cost,
+    gold: newGold,
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   };
 
@@ -986,12 +1004,12 @@ async function handleBuyCommand(hero, args, username) {
 
   await db.collection('heroes').doc(hero.id).update(updateData);
 
-  const message = `@${username} bought ${shopItem.name} for ${shopItem.cost}g! (${heroGold - shopItem.cost}g remaining)`;
+  const message = `@${username} bought ${shopItem.name} for ${shopItem.cost}g! (${newGold}g remaining)`;
 
   return {
     success: true,
     message,
-    data: { item: shopItem.name, cost: shopItem.cost, remainingGold: heroGold - shopItem.cost }
+    data: { item: shopItem.name, cost: shopItem.cost, remainingGold: newGold }
   };
 }
 
@@ -1186,28 +1204,11 @@ export async function handleClaimCommand(hero, username) {
   const lastClaim = hero.lastTokenClaim || hero.joinedAt || now;
   const timeSinceClaim = now - lastClaim;
   
-  // Base idle tokens: 2.5 per hour
-  let tokensPerHour = 2.5;
-  
-  // Founder pack bonuses (add to base rate)
-  const founderTier = hero.founderPackTier || null;
-  const founderBonuses = {
-    'bronze': 0.5,   // +0.5 tokens/hour (total: 3.0)
-    'silver': 1.0,   // +1.0 tokens/hour (total: 3.5)
-    'gold': 1.5,     // +1.5 tokens/hour (total: 4.0)
-    'platinum': 2.0  // +2.0 tokens/hour (total: 4.5)
-  };
-  
-  if (founderTier) {
-    const bonus = founderBonuses[founderTier.toLowerCase()] || 0;
-    if (bonus > 0) {
-      tokensPerHour += bonus;
-      console.log(`[Claim] ${username} has ${founderTier} founder pack: +${bonus} tokens/hour (total: ${tokensPerHour}/hr)`);
-    }
-  }
-  
+  const { getIdleTokensPerHour, computeIdleClaimTokens } = await import('../utils/monetization.js');
+  const tokensPerHour = getIdleTokensPerHour(hero);
+
   const hoursSinceClaim = timeSinceClaim / (1000 * 60 * 60);
-  const tokensToClaim = Math.floor(hoursSinceClaim * tokensPerHour);
+  const tokensToClaim = computeIdleClaimTokens(hoursSinceClaim, hero);
   
   if (tokensToClaim <= 0) {
     const minutesUntilNext = Math.ceil((3600000 - timeSinceClaim) / 60000);
@@ -1217,9 +1218,7 @@ export async function handleClaimCommand(hero, username) {
     };
   }
 
-  // Cap at reasonable amount (e.g., 24 hours worth based on boosted rate)
-  const maxTokens = Math.floor(tokensPerHour * 24); // 24 hours worth of tokens at current rate
-  const actualTokens = Math.min(tokensToClaim, maxTokens);
+  const actualTokens = tokensToClaim;
   
   const newTokens = (hero.tokens || 0) + actualTokens;
   const newTotalIdleTokens = (hero.totalIdleTokens || 0) + actualTokens;
@@ -1233,13 +1232,7 @@ export async function handleClaimCommand(hero, username) {
   });
 
   const hours = Math.floor(hoursSinceClaim);
-  let message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
-  
-  // Show founder bonus in message if applicable
-  if (founderTier && founderBonuses[founderTier.toLowerCase()]) {
-    const tierName = founderTier.charAt(0).toUpperCase() + founderTier.slice(1);
-    message += ` [${tierName} Founder: ${tokensPerHour.toFixed(1)}/hr]`;
-  }
+  const message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
 
   return {
     success: true,
@@ -2151,8 +2144,19 @@ async function handleElixirsCommand(hero, username) {
 async function handleSkillsCommand(hero, username) {
   const skillPoints = hero.skillPoints || 0;
   const skills = hero.skills || {};
-  
-  const message = `${username}: Skill Points: ${skillPoints} | Skills system coming soon! Check the website.`;
+  const { getSkillById } = await import('../data/skills.js');
+
+  const ranked = Object.entries(skills)
+    .filter(([, data]) => (data?.points || 0) > 0)
+    .map(([id, data]) => {
+      const def = getSkillById(id);
+      const label = def?.name || id.replace(/_skill_\d+$/, '');
+      return `${label} ${data.points}/5`;
+    })
+    .slice(0, 6);
+
+  const rankSummary = ranked.length > 0 ? ranked.join(', ') : 'no ranks yet';
+  const message = `${username}: SP ${skillPoints} | ${rankSummary} — full tree on the website.`;
 
   return {
     success: true,
@@ -2397,8 +2401,8 @@ async function handleDungeonQueueCommand(args, username, userId, streamerUsernam
 👥 Roles: ${queue.requirements.roles.tank.required} Tank, ${queue.requirements.roles.healer.required} Healer, ${queue.requirements.roles.dps.required} DPS
 ⏰ Expires in 30 minutes
 
-📋 Check the Player Portal for the room code!
-Type !qdungeon [CODE] to join!`;
+🔑 Room code: ${queue.code}
+Type !qdungeon ${queue.code} to join!`;
   
   return {
     success: true,
@@ -2475,8 +2479,8 @@ async function handleRaidQueueCommand(args, username, userId, streamerUsername, 
 ⚠️ Minimum ${queue.requirements.minHealers} healer${queue.requirements.minHealers > 1 ? 's' : ''} required!
 ⏰ Expires in 30 minutes
 
-📋 Check the Player Portal for the room code!
-Type !qraid [CODE] to join!`;
+🔑 Room code: ${queue.code}
+Type !qraid ${queue.code} to join!`;
   
   return {
     success: true,
@@ -2501,7 +2505,10 @@ async function handleQDungeonJoinCommand(args, hero, username, userId, battlefie
   const code = args[0].toUpperCase();
   
   // Join queue
-  const result = await joinQueue(code, hero, username, userId);
+  const result = await joinQueue(code, hero, username, userId, {
+    expectedType: 'dungeon',
+    expectedBattlefieldId: battlefieldId
+  });
   
   if (!result.success) {
     return result;
@@ -2513,27 +2520,6 @@ async function handleQDungeonJoinCommand(args, hero, username, userId, battlefie
     type: 'queue_updated',
     queue: result.queue
   });
-  
-  // If ready, schedule auto-launch
-  if (result.isReady) {
-    setTimeout(async () => {
-      const { launchInstance, getActiveQueue } = await import('./queueService.js');
-      
-      // Check if queue still exists and is ready
-      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
-      if (currentQueue && currentQueue.isReady) {
-        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
-        
-        if (launchResult.success) {
-          broadcastToRoom(currentQueue.streamerId, {
-            type: 'instance_launched',
-            instanceId: launchResult.instanceId,
-            instance: launchResult.instance
-          });
-        }
-      }
-    }, 10000); // 10 second countdown
-  }
   
   return result;
 }
@@ -2554,7 +2540,10 @@ async function handleQRaidJoinCommand(args, hero, username, userId, battlefieldI
   const code = args[0].toUpperCase();
   
   // Join queue
-  const result = await joinQueue(code, hero, username, userId);
+  const result = await joinQueue(code, hero, username, userId, {
+    expectedType: 'raid',
+    expectedBattlefieldId: battlefieldId
+  });
   
   if (!result.success) {
     return result;
@@ -2566,26 +2555,6 @@ async function handleQRaidJoinCommand(args, hero, username, userId, battlefieldI
     type: 'queue_updated',
     queue: result.queue
   });
-  
-  // If ready, schedule auto-launch
-  if (result.isReady) {
-    setTimeout(async () => {
-      const { launchInstance, getActiveQueue } = await import('./queueService.js');
-      
-      const currentQueue = await getActiveQueue(result.queue.battlefieldId);
-      if (currentQueue && currentQueue.isReady) {
-        const launchResult = await launchInstance(result.queue.battlefieldId, currentQueue);
-        
-        if (launchResult.success) {
-          broadcastToRoom(currentQueue.streamerId, {
-            type: 'instance_launched',
-            instanceId: launchResult.instanceId,
-            instance: launchResult.instance
-          });
-        }
-      }
-    }, 10000);
-  }
   
   return result;
 }
@@ -2632,7 +2601,7 @@ async function handleQStatusCommand(battlefieldId, username) {
  * !qstart - Force start queue (streamer only, requires filled roles)
  */
 async function handleQStartCommand(battlefieldId, username, streamerName) {
-  const { getActiveQueue, launchInstance } = await import('./queueService.js');
+  const { getActiveQueue, attemptQueueLaunch } = await import('./queueService.js');
   const { areRolesFilled, getNeededRoles } = await import('../data/queueRequirements.js');
   
   const queue = await getActiveQueue(battlefieldId);
@@ -2644,7 +2613,6 @@ async function handleQStartCommand(battlefieldId, username, streamerName) {
     };
   }
   
-  // Validate all required roles are filled
   if (!areRolesFilled(queue)) {
     const needed = getNeededRoles(queue);
     return {
@@ -2653,24 +2621,25 @@ async function handleQStartCommand(battlefieldId, username, streamerName) {
     };
   }
   
-  // Launch instance
-  const result = await launchInstance(battlefieldId, queue);
+  const outcome = await attemptQueueLaunch(battlefieldId, { force: true });
   
-  if (!result.success) {
-    return result;
+  if (!outcome.launched) {
+    if (outcome.reason === 'launching') {
+      return {
+        success: false,
+        message: `@${username} Queue is already launching — please wait.`
+      };
+    }
+    return {
+      success: false,
+      message: outcome.result?.message || `@${username} Could not start the queue right now.`
+    };
   }
-  
-  // Broadcast launch
-  const { broadcastToRoom } = await import('../websocket/server.js');
-  broadcastToRoom(queue.streamerId, {
-    type: 'instance_launched',
-    instanceId: result.instanceId,
-    instance: result.instance
-  });
   
   return {
     success: true,
-    message: `⚡ ${username} is force-starting ${queue.name}! Launching NOW! ⚔️`
+    suppressChatMessage: true,
+    message: outcome.result?.message || `⚔️ ${queue.name} started! Good luck heroes! 🗡️`
   };
 }
 
@@ -2702,10 +2671,10 @@ async function handleQCancelCommand(battlefieldId, username) {
 /**
  * !qleave - Leave queue
  */
-async function handleQLeaveCommand(userId, username) {
+async function handleQLeaveCommand(userId, username, battlefieldId = null) {
   const { leaveQueue } = await import('./queueService.js');
   
-  const result = await leaveQueue(userId, username);
+  const result = await leaveQueue(userId, username, battlefieldId);
   
   if (!result.success) {
     return result;

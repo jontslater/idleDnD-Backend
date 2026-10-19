@@ -3,10 +3,12 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getEnchantmentById, getEnchantmentsForSlot } from '../data/enchantments.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+
 const router = express.Router();
 
 // Apply enchantment to item
-router.post('/:userId/enchant', async (req, res) => {
+router.post('/:userId/enchant', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     const { itemId, enchantmentType, enchantmentLevel } = req.body;
@@ -151,7 +153,7 @@ router.post('/:userId/enchant', async (req, res) => {
 });
 
 // Get hero's enchanted items
-router.get('/:userId/enchantments', async (req, res) => {
+router.get('/:userId/enchantments', requireAuth, requireOwnership, async (req, res) => {
   try {
     const heroRef = db.collection('heroes').doc(req.params.userId);
     const doc = await heroRef.get();

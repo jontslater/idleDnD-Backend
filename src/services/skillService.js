@@ -1,33 +1,70 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { getAllSkills, getSkillsForClass, getSkillById, calculateSkillPoints } from '../data/skills.js';
+import {
+  getAllSkills,
+  getSkillsForClass,
+  getSkillById,
+  calculateSkillPoints,
+  sumSkillRanks,
+  MAX_SKILL_RANK
+} from '../data/skills.js';
+import { SKILL_BALANCE_CAPS } from '../data/skillDefinitions.js';
+
+/** Server-fixed respec cost (client cannot override). */
+export const DEFAULT_PLAYER_RESPEC_GOLD_COST = 250;
+
+function runTx(updateFn) {
+  if (typeof db.runTransaction === 'function') {
+    return db.runTransaction(updateFn);
+  }
+  return updateFn({
+    async get(ref) {
+      return ref.get();
+    },
+    update(ref, data) {
+      return ref.update(data);
+    }
+  });
+}
+
+export function totalPointsSpent(skills) {
+  return sumSkillRanks(skills);
+}
+
+export function expectedSkillPointsEarned(hero) {
+  const level = hero.level || 1;
+  const fromLevel = calculateSkillPoints(level);
+  const tracked = hero.skillPointsEarned;
+  if (tracked != null && tracked > fromLevel) {
+    return tracked;
+  }
+  return fromLevel;
+}
 
 // Get hero's skills
 export async function getHeroSkills(userId) {
   try {
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
-    
+
     if (!doc.exists) {
       return null;
     }
-    
+
     const hero = doc.data();
     const skills = hero.skills || {};
     const skillPoints = hero.skillPoints || 0;
     const skillPointsEarned = hero.skillPointsEarned || 0;
     const level = hero.level || 1;
-    
-    // Get ALL skills for this class (not just unlocked ones)
+
     const allClassSkills = getSkillsForClass(hero.role);
-    
-    // Merge with hero's allocated skills
-    const skillsData = allClassSkills.map(skill => ({
+
+    const skillsData = allClassSkills.map((skill) => ({
       ...skill,
       points: skills[skill.id]?.points || 0,
       unlockedAt: skills[skill.id]?.unlockedAt || null
     }));
-    
+
     return {
       skills: skillsData,
       skillPoints,
@@ -41,131 +78,151 @@ export async function getHeroSkills(userId) {
   }
 }
 
-// Allocate skill point
+function validateSkillAllocation(hero, skillId, skills) {
+  const level = hero.level || 1;
+  const skillPoints = hero.skillPoints || 0;
+  if (skillPoints < 1) {
+    throw new Error('Not enough skill points');
+  }
+
+  const skillDef = getSkillById(skillId);
+  if (!skillDef) {
+    throw new Error('Invalid skill ID');
+  }
+
+  if (skillDef.class !== hero.role) {
+    throw new Error('Skill does not belong to hero class');
+  }
+
+  if (level < skillDef.unlockLevel) {
+    throw new Error(`Skill unlocks at level ${skillDef.unlockLevel}`);
+  }
+
+  const currentPoints = skills[skillId]?.points || 0;
+  if (currentPoints >= MAX_SKILL_RANK || currentPoints >= skillDef.maxPoints) {
+    throw new Error('Skill is already maxed out');
+  }
+
+  const earned = expectedSkillPointsEarned(hero);
+  const spent = totalPointsSpent(skills);
+  if (spent + 1 > earned) {
+    throw new Error('Cannot spend more points than earned');
+  }
+
+  return { skillDef, currentPoints };
+}
+
+// Allocate skill point (transactional)
 export async function allocateSkillPoint(userId, skillId) {
-  try {
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    
+  const heroRef = db.collection('heroes').doc(userId);
+
+  return runTx(async (tx) => {
+    const doc = await tx.get(heroRef);
     if (!doc.exists) {
       throw new Error('Hero not found');
     }
-    
+
     const hero = doc.data();
-    const level = hero.level || 1;
-    const skillPoints = hero.skillPoints || 0;
-    const skills = hero.skills || {};
-    
-    // Check if hero has skill points
-    if (skillPoints < 1) {
-      throw new Error('Not enough skill points');
-    }
-    
-    // Get skill definition
-    const skillDef = getSkillById(skillId);
-    if (!skillDef) {
-      throw new Error('Invalid skill ID');
-    }
-    
-    // Check if skill is for this class
-    if (skillDef.class !== hero.role) {
-      throw new Error('Skill does not belong to hero class');
-    }
-    
-    // Check if skill is unlocked
-    if (level < skillDef.unlockLevel) {
-      throw new Error(`Skill unlocks at level ${skillDef.unlockLevel}`);
-    }
-    
-    // Check if skill is already maxed
-    const currentPoints = skills[skillId]?.points || 0;
-    if (currentPoints >= skillDef.maxPoints) {
-      throw new Error('Skill is already maxed out');
-    }
-    
-    // Allocate point
+    const skills = { ...(hero.skills || {}) };
+    const { skillDef, currentPoints } = validateSkillAllocation(hero, skillId, skills);
+
     if (!skills[skillId]) {
       skills[skillId] = {
         points: 0,
-        unlockedAt: level
+        unlockedAt: hero.level || 1
       };
     }
-    
+
     skills[skillId].points = currentPoints + 1;
-    
-    // Update hero
-    await heroRef.update({
+    const skillPoints = (hero.skillPoints || 0) - 1;
+
+    await tx.update(heroRef, {
       skills,
-      skillPoints: skillPoints - 1,
+      skillPoints,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
-    
+
     return {
       success: true,
       skill: {
         ...skillDef,
         points: skills[skillId].points
       },
-      remainingPoints: skillPoints - 1
+      remainingPoints: skillPoints
     };
-  } catch (error) {
-    console.error('Error allocating skill point:', error);
-    throw error;
-  }
+  });
 }
 
-// Reset all skills (costs tokens)
-export async function resetSkills(userId, cost = 500) {
-  try {
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    
+async function resetSkillsCore(userId, { goldCost = 0, tokenCost = 0, useTokens = false } = {}) {
+  const heroRef = db.collection('heroes').doc(userId);
+
+  return runTx(async (tx) => {
+    const doc = await tx.get(heroRef);
     if (!doc.exists) {
       throw new Error('Hero not found');
     }
-    
+
     const hero = doc.data();
-    const tokens = hero.tokens || 0;
     const level = hero.level || 1;
-    
-    // Check if hero has enough tokens
-    if (tokens < cost) {
-      throw new Error(`Not enough tokens. Need ${cost}, have ${tokens}`);
+    const totalEarned = expectedSkillPointsEarned(hero);
+    const targetEarned = Math.max(totalEarned, calculateSkillPoints(level));
+
+    if (useTokens) {
+      const tokens = hero.tokens || 0;
+      if (tokens < tokenCost) {
+        throw new Error(`Not enough tokens. Need ${tokenCost}, have ${tokens}`);
+      }
+    } else if (goldCost > 0) {
+      const gold = hero.gold || 0;
+      if (gold < goldCost) {
+        throw new Error(`Not enough gold. Need ${goldCost}, have ${gold}`);
+      }
     }
-    
-    // Calculate skill points to refund
-    const skills = hero.skills || {};
-    let totalPointsSpent = 0;
-    Object.values(skills).forEach(skill => {
-      totalPointsSpent += skill.points || 0;
-    });
-    
-    // Reset skills and refund points
-    await heroRef.update({
+
+    const spent = totalPointsSpent(hero.skills || {});
+    const updates = {
       skills: {},
-      skillPoints: totalPointsSpent,
-      tokens: tokens - cost,
+      skillPoints: targetEarned,
+      skillPointsEarned: targetEarned,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
+    };
+
+    if (useTokens && tokenCost > 0) {
+      updates.tokens = (hero.tokens || 0) - tokenCost;
+    } else if (goldCost > 0) {
+      updates.gold = (hero.gold || 0) - goldCost;
+    }
+
+    await tx.update(heroRef, updates);
+
     return {
       success: true,
-      pointsRefunded: totalPointsSpent,
-      tokensRemaining: tokens - cost
+      pointsRefunded: spent,
+      skillPointsAvailable: targetEarned,
+      pointsSpentBeforeReset: spent,
+      tokensRemaining: useTokens ? updates.tokens : hero.tokens,
+      goldRemaining: updates.gold ?? hero.gold
     };
-  } catch (error) {
-    console.error('Error resetting skills:', error);
-    throw error;
-  }
+  });
 }
 
-// Calculate skill bonuses for a hero
+/** Player respec — refunds all points (unspent + spent = earned). */
+export async function respecSkillsForPlayer(userId) {
+  return resetSkillsCore(userId, { goldCost: DEFAULT_PLAYER_RESPEC_GOLD_COST, useTokens: false });
+}
+
+/** Admin reset — no premium token spend (cosmetic-only policy). */
+export async function resetSkills(userId, _cost = 500) {
+  return resetSkillsCore(userId, { goldCost: 0, useTokens: false });
+}
+
+// Calculate skill bonuses for a hero (capped)
 export function calculateSkillBonuses(hero) {
   const skills = hero.skills || {};
   const bonuses = {
     attack: 0,
     defense: 0,
-    hp: 0,
+    hpPercentMax: 0,
     damageMultiplier: 0,
     healingMultiplier: 0,
     defenseMultiplier: 0,
@@ -173,20 +230,23 @@ export function calculateSkillBonuses(hero) {
     critDamage: 0,
     cooldownReduction: 0,
     lifesteal: 0,
-    speedBoost: 0
+    speedBoost: 0,
+    doubleHealProcChance: 0
   };
-  
+
   Object.entries(skills).forEach(([skillId, skillData]) => {
     const skillDef = getSkillById(skillId);
     if (!skillDef || !skillData.points) return;
-    
+
     const value = skillDef.scaling(skillData.points);
-    
+
     switch (skillDef.effect) {
       case 'stat_boost':
         if (skillDef.stat === 'attack') bonuses.attack += value;
         else if (skillDef.stat === 'defense') bonuses.defense += value;
-        else if (skillDef.stat === 'hp') bonuses.hp += value;
+        break;
+      case 'hp_percent_max':
+        bonuses.hpPercentMax += value;
         break;
       case 'damage_mult':
         bonuses.damageMultiplier += value;
@@ -212,39 +272,43 @@ export function calculateSkillBonuses(hero) {
       case 'speed_boost':
         bonuses.speedBoost += value;
         break;
+      case 'double_heal_proc':
+        bonuses.doubleHealProcChance += value;
+        break;
+      default:
+        break;
     }
   });
-  
+
+  bonuses.critChance = Math.min(bonuses.critChance, SKILL_BALANCE_CAPS.critChancePercent);
+  bonuses.defenseMultiplier = Math.min(
+    bonuses.defenseMultiplier,
+    SKILL_BALANCE_CAPS.damageReductionPercent
+  );
+  bonuses.cooldownReduction = Math.min(
+    bonuses.cooldownReduction,
+    SKILL_BALANCE_CAPS.cooldownReductionPercent
+  );
+
   return bonuses;
 }
 
-// Update skill points when hero levels up
+// Legacy: level-up points should be applied via levelUpHelper patch; kept for direct calls.
 export async function updateSkillPointsOnLevelUp(userId, newLevel) {
   try {
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
-    
     if (!doc.exists) return;
-    
+
     const hero = doc.data();
-    const oldLevel = hero.level || 1;
-    
-    // Calculate skill points for both levels
-    const oldPoints = calculateSkillPoints(oldLevel);
-    const newPoints = calculateSkillPoints(newLevel);
-    
-    // If new level earns a skill point (every other level past 5)
-    if (newPoints > oldPoints) {
-      const pointsEarned = newPoints - oldPoints;
-      const currentPoints = hero.skillPoints || 0;
-      const currentEarned = hero.skillPointsEarned || 0;
-      
-      await heroRef.update({
-        skillPoints: currentPoints + pointsEarned,
-        skillPointsEarned: currentEarned + pointsEarned,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    }
+    const { skillPointPatchForLevelUp } = await import('../utils/levelUpHelper.js');
+    const patch = skillPointPatchForLevelUp(hero, newLevel);
+    if (Object.keys(patch).length === 0) return;
+
+    await heroRef.update({
+      ...patch,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
   } catch (error) {
     console.error('Error updating skill points on level up:', error);
   }

@@ -18,11 +18,11 @@ const streamerClients = new Map(); // streamerUsername -> tmi.Client
 const botJoinedChannels = new Set(); // Track channels TNEWBOT has joined
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
-// Active chatter tracking: channelName -> Map<userId, lastChatTimestamp>
-// Tracks users who chatted in the last hour for viewer bonuses
+import { CHAT_BOOST, chatDamageHealMultiplier, chatLootRarityBonus } from '../data/balance.js';
+
 const activeChatters = new Map(); // channelName -> Map<userId, timestamp>
 const channelToStreamerId = new Map(); // channelName -> streamerTwitchId (for broadcasting)
-const CHATTER_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const CHATTER_TIMEOUT_MS = CHAT_BOOST.activeWindowMs;
 
 // List of valid game commands (whitelist approach)
 // Only commands in this list will be processed - all others are silently ignored
@@ -32,20 +32,14 @@ const VALID_GAME_COMMANDS = new Set([
   // Combat commands
   'stats', 'gear', 'shop', 'attack', 'heal', 'cast', 'defend',
   'buy', 'use', 'rest', 'claim', 'tokens', 'leave', 'rejoin',
-  'switch', 'switchhero', 'auto',
+  'switch', 'auto',
   // Profession commands
   'profession', 'gather', 'herbs', 'recipes', 'craft', 'elixirs',
-  // Equipment commands
-  'equip', 'unequip', 'upgrade', 'reforge', 'lock', 'unlock',
   // Skill/Quest commands
-  'skills', 'skill', 'quest', 'quests', 'potion', 'dispel',
-  // Social commands
-  'party', 'invite', 'accept', 'decline',
+  'skills', 'quest', 'quests', 'potion', 'dispel',
   // Raid/Dungeon commands
-  'raid', 'raids', 'dungeon', 'dungeons', 'queue',
+  'raid', 'raids', 'dungeon', 'dungeons',
   'qdungeon', 'qraid', 'qstatus', 'qstart', 'qcancel', 'qleave',
-  // Guild commands
-  'guild', 'create',
   // Leaderboard commands
   'leaderboard', 'rank',
   // Command aliases (shortcuts)
@@ -70,22 +64,25 @@ async function trackChatActivity(channelName, userId, username, streamerTwitchId
   // Update or add user's last chat time
   chatters.set(userId, now);
   
-  // Clean up old chatters (older than 1 hour)
-  const oneHourAgo = now - CHATTER_TIMEOUT_MS;
+  const windowStart = now - CHATTER_TIMEOUT_MS;
   for (const [chatterUserId, lastChat] of chatters.entries()) {
-    if (lastChat < oneHourAgo) {
+    if (lastChat < windowStart) {
       chatters.delete(chatterUserId);
     }
   }
-  
-  // Get current count
+
   const count = chatters.size;
-  
-  // Broadcast chatter count update
+  const chatMult = chatDamageHealMultiplier(count);
+  const chatBoostPercent = Math.round((chatMult - 1) * 100);
+
   if (streamerTwitchId) {
     broadcastToRoom(String(streamerTwitchId), {
       type: 'chatter_count_update',
       count: count,
+      chatMult,
+      chatBoostPercent,
+      lootRarityBonus: chatLootRarityBonus(count),
+      activeWindowMs: CHATTER_TIMEOUT_MS,
       timestamp: now
     });
     console.log(`📡 [Chatter Tracking] ${channelName}: ${count} active chatters (updated from ${username})`);
@@ -181,9 +178,14 @@ function broadcastAllChatterCounts() {
     const streamerTwitchId = channelToStreamerId.get(channelName);
     if (streamerTwitchId) {
       // Broadcast even if count is 0 to keep browser sources updated
+      const chatMult = chatDamageHealMultiplier(count);
       broadcastToRoom(String(streamerTwitchId), {
         type: 'chatter_count_update',
         count: count,
+        chatMult,
+        chatBoostPercent: Math.round((chatMult - 1) * 100),
+        lootRarityBonus: chatLootRarityBonus(count),
+        activeWindowMs: CHATTER_TIMEOUT_MS,
         timestamp: now
       });
     }
@@ -307,34 +309,20 @@ export function handleTwitchEvents() {
           classKey
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/chat/join`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            viewerUsername: username,
-            viewerId: userId,
-            streamerUsername: channelName,
-            streamerId: tags['room-id'], // Channel ID
-            class: classKey, // Optional class name (only if not a number)
-            heroIndex: heroIndex // Optional hero index (1-based)
-          })
+        // Call join service directly (internal call, no HTTP)
+        const { handleJoinCommand } = await import('../services/chatJoinService.js');
+        const result = await handleJoinCommand({
+          viewerUsername: username,
+          viewerId: userId,
+          streamerUsername: channelName,
+          streamerId: tags['room-id'],
+          class: classKey,
+          heroIndex: heroIndex
         });
         
-        console.log(`📥 [Join] Response status: ${response.status}`);
+        console.log(`📥 [Join] Result:`, result);
         
-        let result;
-        try {
-          result = await response.json();
-        } catch (parseError) {
-          console.error(`❌ Failed to parse response:`, parseError);
-          const text = await response.text();
-          console.error(`Response text:`, text);
-          throw new Error(`Invalid response from server: ${text}`);
-        }
-        
-        console.log(`📥 [Join] Response data:`, result);
-        
-        if (response.ok) {
+        if (result.success) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
           // Send response to chat as TNEWBOT
@@ -401,7 +389,7 @@ export function handleTwitchEvents() {
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
           // Send response to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
@@ -421,7 +409,7 @@ export function handleTwitchEvents() {
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
           // Send error message to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });
@@ -655,34 +643,20 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           classKey
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/chat/join`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            viewerUsername: username,
-            viewerId: userId,
-            streamerUsername: channelName,
-            streamerId: tags['room-id'],
-            class: classKey, // Optional class name (only if not a number)
-            heroIndex: heroIndex // Optional hero index (1-based)
-          })
+        // Call join service directly (internal call, no HTTP)
+        const { handleJoinCommand } = await import('../services/chatJoinService.js');
+        const result = await handleJoinCommand({
+          viewerUsername: username,
+          viewerId: userId,
+          streamerUsername: channelName,
+          streamerId: tags['room-id'],
+          class: classKey,
+          heroIndex: heroIndex
         });
         
-        console.log(`📥 [Join] Response status: ${response.status}`);
+        console.log(`📥 [Join] Result:`, result);
         
-        let result;
-        try {
-          result = await response.json();
-        } catch (parseError) {
-          console.error(`❌ Failed to parse response:`, parseError);
-          const text = await response.text();
-          console.error(`Response text:`, text);
-          throw new Error(`Invalid response from server: ${text}`);
-        }
-        
-        console.log(`📥 [Join] Response data:`, result);
-        
-        if (response.ok) {
+        if (result.success) {
           console.log(`✅ ${username} joined ${channelName}'s battlefield`);
           
           // Send response to chat as TNEWBOT
@@ -749,7 +723,7 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
           console.log(`✅ Command !${command} processed for ${username}: ${result.message}`);
           
           // Send response to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send chat message:`, err);
             });
@@ -769,7 +743,7 @@ export async function initializeStreamerChatListener(streamerUsername, accessTok
         } else {
           console.log(`⚠️ Command !${command} failed for ${username}: ${result.message}`);
           // Send error message to chat as TNEWBOT
-          if (result.message) {
+          if (result.message && !result.suppressChatMessage) {
             await sendChatMessageAsBot(channel, result.message).catch(err => {
               console.error(`❌ Failed to send error message:`, err);
             });

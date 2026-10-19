@@ -4,11 +4,21 @@
  */
 
 import express from 'express';
+import crypto from 'crypto';
 import { db } from '../index.js';
 import admin from 'firebase-admin';
 import { joinChannelAsBot, leaveChannelAsBot, sendChatMessageAsBot } from '../websocket/twitch-events.js';
+import { requireAuth, requireStreamerAccess } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
 
 const router = express.Router();
+
+/**
+ * Generate a cryptographically random overlay key
+ */
+function generateOverlayKey() {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 /**
  * Get streamer's Twitch username from their Twitch ID
@@ -63,7 +73,7 @@ function getDefaultSettings() {
  * POST /api/stream/settings/:twitchId/test
  * Must be before /:twitchId route to avoid route conflicts
  */
-router.post('/:twitchId/test', async (req, res) => {
+router.post('/:twitchId/test', requireAuth, async (req, res) => {
   try {
     const { twitchId } = req.params;
 
@@ -149,10 +159,86 @@ router.post('/:twitchId/test', async (req, res) => {
 });
 
 /**
+ * Get streamer's overlay key (owner only)
+ * GET /api/stream/settings/:twitchId/overlay-key
+ */
+router.get('/:twitchId/overlay-key', requireAuth, async (req, res) => {
+  try {
+    const { twitchId } = req.params;
+    
+    // Verify requester is the streamer
+    if (req.user.twitchUserId !== twitchId) {
+      return res.status(403).json({ error: 'You can only view your own overlay key' });
+    }
+    
+    // Get or create overlay key
+    const settingsRef = db.collection('streamerSettings').doc(twitchId);
+    const settingsDoc = await settingsRef.get();
+    
+    let overlayKey;
+    
+    if (settingsDoc.exists && settingsDoc.data().overlayKey) {
+      overlayKey = settingsDoc.data().overlayKey;
+    } else {
+      // Generate new key on first request
+      overlayKey = generateOverlayKey();
+      await settingsRef.set({
+        twitchId,
+        overlayKey,
+        overlayKeyCreatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      console.log(`[Stream Settings] Generated new overlay key for ${twitchId}`);
+    }
+    
+    res.json({
+      success: true,
+      overlayKey
+    });
+  } catch (error) {
+    console.error('Error getting overlay key:', error);
+    res.status(500).json({ error: 'Failed to get overlay key' });
+  }
+});
+
+/**
+ * Regenerate streamer's overlay key (owner only)
+ * POST /api/stream/settings/:twitchId/overlay-key/regenerate
+ */
+router.post('/:twitchId/overlay-key/regenerate', requireAuth, async (req, res) => {
+  try {
+    const { twitchId } = req.params;
+    
+    // Verify requester is the streamer
+    if (req.user.twitchUserId !== twitchId) {
+      return res.status(403).json({ error: 'You can only regenerate your own overlay key' });
+    }
+    
+    // Generate and save new key
+    const overlayKey = generateOverlayKey();
+    await db.collection('streamerSettings').doc(twitchId).set({
+      twitchId,
+      overlayKey,
+      overlayKeyCreatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    
+    console.log(`[Stream Settings] Regenerated overlay key for ${twitchId}`);
+    
+    res.json({
+      success: true,
+      overlayKey,
+      message: 'Overlay key regenerated. Update your browser source URL.'
+    });
+  } catch (error) {
+    console.error('Error regenerating overlay key:', error);
+    res.status(500).json({ error: 'Failed to regenerate overlay key' });
+  }
+});
+
+/**
  * Get streamer's chat update settings
  * GET /api/stream/settings/:twitchId
  */
-router.get('/:twitchId', async (req, res) => {
+router.get('/:twitchId', requireAuth, async (req, res) => {
   try {
     const { twitchId } = req.params;
 
@@ -201,7 +287,11 @@ router.get('/:twitchId', async (req, res) => {
  *   customMessage: string (optional)
  * }
  */
-router.put('/:twitchId', async (req, res) => {
+router.put('/:twitchId', requireAuth, async (req, res) => {
+  // Verify requester is the streamer
+  if (req.user.twitchUserId !== req.params.twitchId) {
+    return res.status(403).json({ error: 'You can only update your own settings' });
+  }
   try {
     const { twitchId } = req.params;
     const {

@@ -13,6 +13,8 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { processLevelUps } from '../utils/levelUpHelper.js';
+import { getPaidGameplayRewardMultiplier } from '../utils/monetization.js';
+import { combatKillBaseXp } from '../data/balance.js';
 
 /**
  * Configuration for XP distribution
@@ -175,8 +177,9 @@ export function calculateXPDistribution(baseXP, enemyLevel, heroes) {
     // Calculate base XP with level penalty
     let xpGained = Math.floor(baseXPSplit * levelMultiplier);
     
-    // Apply XP buffs
+    // Apply XP buffs (shop/guild/rested — not founder tier)
     xpGained = Math.floor(xpGained * buffMultiplier);
+    xpGained = Math.floor(xpGained * getPaidGameplayRewardMultiplier(hero, 'xp'));
     
     // Ensure minimum XP (scaled for high-level players)
     const heroLevel = hero.level || 1;
@@ -219,16 +222,15 @@ export function calculateXPDistribution(baseXP, enemyLevel, heroes) {
  * @returns {Promise<Object>} Result object with distribution details
  */
 export async function awardCombatXP(battlefieldId, baseXP, enemyLevel, options = {}) {
-  const { enemyName = 'Unknown', specificHeroIds = null } = options;
-  
-  // Support batch processing: if arrays are provided, process all enemies at once
+  const { enemyName = 'Unknown', specificHeroIds = null, enemyKind = 'normal' } = options;
+
   const isBatch = Array.isArray(baseXP) || Array.isArray(enemyLevel);
-  
+
   if (isBatch) {
-    return await awardCombatXPBatch(battlefieldId, baseXP, enemyLevel, options);
+    return await awardCombatXPBatch(battlefieldId, baseXP, enemyLevel, { ...options, enemyKind });
   }
-  
-  // Single enemy kill (original logic)
+
+  baseXP = combatKillBaseXp(enemyLevel, enemyKind);
   
   try {
     // Get all heroes in the battlefield
@@ -402,10 +404,9 @@ export async function awardCombatXP(battlefieldId, baseXP, enemyLevel, options =
  * @returns {Promise<Object>} Result object with batch distribution details
  */
 async function awardCombatXPBatch(battlefieldId, baseXP, enemyLevel, options = {}) {
-  const { enemyName = 'Unknown', specificHeroIds = null } = options;
-  
+  const { enemyName = 'Unknown', specificHeroIds = null, enemyKind = 'normal' } = options;
+
   try {
-    // Normalize to arrays
   const baseXPArray = Array.isArray(baseXP) ? baseXP : [baseXP];
   const enemyLevelArray = Array.isArray(enemyLevel) ? enemyLevel : [enemyLevel];
   const enemyNameArray = Array.isArray(enemyName) ? enemyName : 
@@ -413,8 +414,8 @@ async function awardCombatXPBatch(battlefieldId, baseXP, enemyLevel, options = {
   
   // Ensure arrays are same length
   const maxLength = Math.max(baseXPArray.length, enemyLevelArray.length);
-  const normalizedBaseXP = baseXPArray.length === 1 ? Array(maxLength).fill(baseXPArray[0]) : baseXPArray;
   const normalizedEnemyLevel = enemyLevelArray.length === 1 ? Array(maxLength).fill(enemyLevelArray[0]) : enemyLevelArray;
+  const normalizedBaseXP = normalizedEnemyLevel.map((level) => combatKillBaseXp(level, enemyKind));
   const normalizedEnemyName = enemyNameArray.length === maxLength ? enemyNameArray : 
     Array(maxLength).fill(enemyNameArray[0] || 'Unknown');
   

@@ -1,6 +1,8 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
+import { requireAuth, requireOwnership } from '../middleware/auth.js';
+import { getVendorSellPrice } from '../utils/vendorPrice.js';
 
 const router = express.Router();
 
@@ -67,41 +69,25 @@ router.get('/listings', async (req, res) => {
   }
 });
 
-// Calculate vendor sell price (estimated based on rarity and type)
-function getVendorSellPrice(item) {
-  const rarityMultipliers = {
-    common: 1,
-    uncommon: 5,
-    rare: 20,
-    epic: 100,
-    legendary: 500
-  };
-  
-  const basePrice = rarityMultipliers[item.rarity || 'common'] || 1;
-  
-  // Adjust by item type
-  if (item.slot) {
-    // Gear: higher value
-    return basePrice * 10;
-  } else if (item.type === 'potion' || item.type === 'buff' || item.name?.toLowerCase().includes('potion')) {
-    // Consumables: moderate value
-    return basePrice * 2;
-  } else {
-    // Materials: lower value
-    return basePrice;
-  }
-}
-
 // Create listing
-router.post('/list', async (req, res) => {
+router.post('/list', requireAuth, async (req, res) => {
   try {
     const { sellerId, sellerUsername, item, startingPrice, buyoutPrice, currency = 'gold', quantity = 1, duration = '24' } = req.body;
     
     if (!sellerId || !item || !startingPrice) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, sellerId))) {
+      return;
+    }
     
-    if (currency !== 'gold' && currency !== 'tokens') {
+    if (currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+    if (currency !== 'gold') {
       return res.status(400).json({ error: 'Invalid currency' });
     }
     
@@ -257,13 +243,18 @@ router.post('/list', async (req, res) => {
 });
 
 // Place bid
-router.post('/:listingId/bid', async (req, res) => {
+router.post('/:listingId/bid', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId, username, amount } = req.body;
     
     if (!userId || !amount) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
     }
     
     const listingRef = db.collection('auctionListings').doc(listingId);
@@ -282,7 +273,12 @@ router.post('/:listingId/bid', async (req, res) => {
     if (listing.sellerId === userId) {
       return res.status(400).json({ error: 'Cannot bid on your own listing' });
     }
-    
+
+    if (listing.currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
     const bidAmount = Number(amount);
     const minBid = Math.max(listing.startingPrice, listing.highestBid + 1);
     
@@ -307,42 +303,7 @@ router.post('/:listingId/bid', async (req, res) => {
       });
     }
     
-    // Refund previous highest bidder if exists
-    if (listing.highestBid > 0 && listing.bids.length > 0) {
-      const lastBid = listing.bids[listing.bids.length - 1];
-      const lastBidderRef = db.collection('heroes').doc(lastBid.userId);
-      const lastBidderDoc = await lastBidderRef.get();
-      
-      if (lastBidderDoc.exists) {
-        const lastBidder = lastBidderDoc.data();
-        const refundUpdates = {
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        
-        if (listing.currency === 'gold') {
-          refundUpdates.gold = (lastBidder.gold || 0) + lastBid.amount;
-        } else {
-          refundUpdates.tokens = (lastBidder.tokens || 0) + lastBid.amount;
-        }
-        
-        await lastBidderRef.update(refundUpdates);
-      }
-    }
-    
-    // Deduct bid amount from buyer
-    const buyerUpdates = {
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    
-    if (listing.currency === 'gold') {
-      buyerUpdates.gold = currentCurrency - bidAmount;
-    } else {
-      buyerUpdates.tokens = currentCurrency - bidAmount;
-    }
-    
-    await heroRef.update(buyerUpdates);
-    
-    // Add bid to listing
+    // Use a transaction to atomically refund previous bidder, deduct from new bidder, and update listing
     const newBid = {
       userId,
       username: username || hero.name || 'Unknown',
@@ -350,10 +311,67 @@ router.post('/:listingId/bid', async (req, res) => {
       bidAt: admin.firestore.Timestamp.now()
     };
     
-    await listingRef.update({
-      bids: admin.firestore.FieldValue.arrayUnion(newBid),
-      highestBid: bidAmount,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    await db.runTransaction(async (transaction) => {
+      // Re-read listing within transaction to ensure we have latest state
+      const latestListingDoc = await transaction.get(listingRef);
+      if (!latestListingDoc.exists) {
+        throw new Error('Listing was deleted');
+      }
+      
+      const latestListing = latestListingDoc.data();
+      
+      // Verify listing is still active
+      if (latestListing.status !== 'active') {
+        throw new Error('Listing is no longer active');
+      }
+      
+      // Verify bid is still valid (another bid might have been placed)
+      const latestMinBid = Math.max(latestListing.startingPrice, latestListing.highestBid + 1);
+      if (bidAmount < latestMinBid) {
+        throw new Error(`Bid must be at least ${latestMinBid}`);
+      }
+      
+      // Refund previous highest bidder if exists
+      if (latestListing.highestBid > 0 && latestListing.bids.length > 0) {
+        const lastBid = latestListing.bids[latestListing.bids.length - 1];
+        const lastBidderRef = db.collection('heroes').doc(lastBid.userId);
+        const lastBidderDoc = await transaction.get(lastBidderRef);
+        
+        if (lastBidderDoc.exists) {
+          const lastBidder = lastBidderDoc.data();
+          const refundUpdates = {
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+          
+          if (listing.currency === 'gold') {
+            refundUpdates.gold = (lastBidder.gold || 0) + lastBid.amount;
+          } else {
+            refundUpdates.tokens = (lastBidder.tokens || 0) + lastBid.amount;
+          }
+          
+          transaction.update(lastBidderRef, refundUpdates);
+        }
+      }
+      
+      // Deduct bid amount from buyer
+      const buyerUpdates = {
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      
+      if (listing.currency === 'gold') {
+        buyerUpdates.gold = currentCurrency - bidAmount;
+      } else {
+        buyerUpdates.tokens = currentCurrency - bidAmount;
+      }
+      
+      transaction.update(heroRef, buyerUpdates);
+      
+      // Update listing with new bid
+      transaction.update(listingRef, {
+        bids: admin.firestore.FieldValue.arrayUnion(newBid),
+        highestBid: bidAmount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
     });
     
     console.log(`💵 ${userId} bid ${bidAmount} ${listing.currency} on listing ${listingId}`);
@@ -366,13 +384,18 @@ router.post('/:listingId/bid', async (req, res) => {
 });
 
 // Buyout
-router.post('/:listingId/buyout', async (req, res) => {
+router.post('/:listingId/buyout', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId, username } = req.body;
     
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
     }
     
     const listingRef = db.collection('auctionListings').doc(listingId);
@@ -391,11 +414,16 @@ router.post('/:listingId/buyout', async (req, res) => {
     if (!listing.buyoutPrice) {
       return res.status(400).json({ error: 'Listing has no buyout price' });
     }
-    
+
+    if (listing.currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
     if (listing.sellerId === userId) {
       return res.status(400).json({ error: 'Cannot buyout your own listing' });
     }
-    
+
     const buyoutPrice = listing.buyoutPrice;
     
     // Check buyer has enough currency
@@ -526,13 +554,18 @@ router.post('/:listingId/buyout', async (req, res) => {
 });
 
 // Cancel listing
-router.post('/:listingId/cancel', async (req, res) => {
+router.post('/:listingId/cancel', requireAuth, async (req, res) => {
   try {
     const { listingId } = req.params;
     const { userId } = req.body;
     
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
     }
     
     const listingRef = db.collection('auctionListings').doc(listingId);
@@ -612,7 +645,7 @@ router.post('/:listingId/cancel', async (req, res) => {
 });
 
 // Get user's listings
-router.get('/my-listings/:userId', async (req, res) => {
+router.get('/my-listings/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -697,7 +730,7 @@ router.get('/my-listings/:userId', async (req, res) => {
 });
 
 // Get user's active bids
-router.get('/my-bids/:userId', async (req, res) => {
+router.get('/my-bids/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -717,7 +750,7 @@ router.get('/my-bids/:userId', async (req, res) => {
 });
 
 // Get transaction history
-router.get('/history/:userId', async (req, res) => {
+router.get('/history/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     

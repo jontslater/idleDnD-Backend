@@ -3,7 +3,26 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getBattlefieldCache } from '../utils/battlefieldCache.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer, optionalAuth } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
+import { requireAuthOrStreamerKey } from '../middleware/requireAuthOrStreamerKey.js';
+import {
+  checkCombatXpRateLimit,
+  maxImmediateCombatXpForLevel,
+  normalizeKillXp,
+  parseBattlefieldStreamerId,
+  clampEnemyLevel,
+  clampEnemyLevelToParty,
+  capAccumulatedXpForMinute
+} from '../utils/combatXpLimiter.js';
+
 const router = express.Router();
+
+async function getBattlefieldHeroLevels(battlefieldId) {
+  const snap = await db.collection('heroes').where('currentBattlefieldId', '==', battlefieldId).limit(40).get();
+  if (snap.empty) return [1];
+  return snap.docs.map((d) => d.data().level || 1);
+}
 
 // Get all heroes in a specific battlefield
 router.get('/:battlefieldId/heroes', async (req, res) => {
@@ -126,7 +145,8 @@ router.get('/:battlefieldId/state', async (req, res) => {
 
 // Register browser source association
 // This also attempts to initialize chat listener if not already active
-router.post('/register', async (req, res) => {
+// Register hero to battlefield (browser source calls this with user JWT)
+router.post('/register', requireAuth, async (req, res) => {
   try {
     const { battlefieldId, userId, token } = req.body;
     
@@ -297,7 +317,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Save sprite facing preferences
-router.post('/preferences/sprite-facing', async (req, res) => {
+router.post('/preferences/sprite-facing', requireAuth, async (req, res) => {
   try {
     const { userId, spriteName, facing } = req.body;
     
@@ -382,7 +402,7 @@ function getDefaultFacingForRole(roleOrEnemyType) {
 }
 
 // Get sprite facing preferences for a user (with defaults for roles)
-router.get('/preferences/sprite-facing/:userId', async (req, res) => {
+router.get('/preferences/sprite-facing/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -449,7 +469,7 @@ router.get('/preferences/sprite-facing/:userId', async (req, res) => {
 });
 
 // Save all sprite facing preferences at once
-router.post('/preferences/sprite-facing/bulk', async (req, res) => {
+router.post('/preferences/sprite-facing/bulk', requireAuth, async (req, res) => {
   try {
     const { userId, preferences } = req.body;
     
@@ -484,27 +504,46 @@ router.post('/preferences/sprite-facing/bulk', async (req, res) => {
 // Accumulate enemy kill (stores in memory, awards XP periodically)
 // This is the RECOMMENDED endpoint for high-frequency enemy kills
 // Reduces API calls by 80-90% compared to immediate awarding
-router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
+// Internal route - XP accumulation service (requires internal key)
+router.post('/:battlefieldId/combat/xp/accumulate', requireInternal, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     const { baseXP, enemyLevel, enemyName, enemies } = req.body;
     
+    // Clamping limits for XP accumulation
+    const MAX_BASE_XP = 1000;
+    const MAX_ENEMY_LEVEL = 200;
+    const MAX_BATCH_SIZE = 100;
+    
     // Support both single enemy and batch
     if (enemies && Array.isArray(enemies)) {
       // Batch mode: array of enemies
+      if (enemies.length > MAX_BATCH_SIZE) {
+        return res.status(400).json({ 
+          error: `Maximum batch size is ${MAX_BATCH_SIZE} enemies` 
+        });
+      }
+      
       if (enemies.some(e => !e.baseXP || !e.level)) {
         return res.status(400).json({ 
           error: 'Each enemy must have baseXP and level' 
         });
       }
       
+      // Validate and clamp each enemy
+      const clampedEnemies = enemies.map(e => ({
+        baseXP: Math.min(Math.max(0, Math.floor(e.baseXP)), MAX_BASE_XP),
+        level: Math.min(Math.max(1, Math.floor(e.level)), MAX_ENEMY_LEVEL),
+        name: e.name || 'Unknown Enemy'
+      }));
+      
       const { accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
-      accumulateEnemyKills(battlefieldId, enemies);
+      accumulateEnemyKills(battlefieldId, clampedEnemies);
       
       res.json({
         success: true,
-        message: `Accumulated ${enemies.length} enemy/enemies`,
-        accumulated: enemies.length
+        message: `Accumulated ${clampedEnemies.length} enemy/enemies`,
+        accumulated: clampedEnemies.length
       });
     } else {
       // Single enemy mode
@@ -514,14 +553,18 @@ router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
         });
       }
       
-      if (baseXP <= 0 || enemyLevel <= 0) {
+      // Validate and clamp
+      const clampedXP = Math.min(Math.max(0, Math.floor(baseXP)), MAX_BASE_XP);
+      const clampedLevel = Math.min(Math.max(1, Math.floor(enemyLevel)), MAX_ENEMY_LEVEL);
+      
+      if (clampedXP <= 0 || clampedLevel <= 0) {
         return res.status(400).json({ 
           error: 'baseXP and enemyLevel must be positive numbers' 
         });
       }
       
       const { accumulateEnemyKill } = await import('../services/xpAccumulatorService.js');
-      accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+      accumulateEnemyKill(battlefieldId, clampedXP, clampedLevel, enemyName || 'Unknown Enemy');
       
       res.json({
         success: true,
@@ -538,60 +581,101 @@ router.post('/:battlefieldId/combat/xp/accumulate', async (req, res) => {
 // Award XP to heroes when enemies are killed (supports single or batch)
 // This is the IMMEDIATE award endpoint - use for important events (level-ups, etc.)
 // For regular enemy kills, use /accumulate instead to reduce API calls
-router.post('/:battlefieldId/combat/xp', async (req, res) => {
+router.post('/:battlefieldId/combat/xp', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
-    const { baseXP, enemyLevel, enemyName, heroIds, immediate = false } = req.body;
-    
-    // If immediate=false, use accumulator instead
+    const { baseXP, enemyLevel, enemyName, heroIds, immediate = false, enemyKind = 'normal' } = req.body;
+
+    if (req.authType === 'jwt') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Combat XP must be awarded with the streamer overlay key, not a player JWT'
+      });
+    }
+
+    const streamerFromBf = parseBattlefieldStreamerId(battlefieldId);
+    if (req.authType === 'streamer-key' && streamerFromBf && req.streamer?.twitchId !== streamerFromBf) {
+      return res.status(403).json({ error: 'Battlefield does not belong to authenticated streamer' });
+    }
+
+    const rate = checkCombatXpRateLimit(battlefieldId);
+    if (!rate.allowed) {
+      return res.status(429).json({
+        error: 'Too many combat XP requests',
+        retryAfterMs: rate.retryAfterMs
+      });
+    }
+
     if (!immediate) {
-      // Redirect to accumulate endpoint
       const { accumulateEnemyKill, accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
-      
+      const heroLevels = await getBattlefieldHeroLevels(battlefieldId);
+      const avgHeroLevel = Math.floor(heroLevels.reduce((a, b) => a + b, 0) / heroLevels.length);
+
+      const normalizeKill = (rawLevel, kind) => {
+        const level = clampEnemyLevelToParty(heroLevels, rawLevel);
+        const xp = normalizeKillXp(level, kind);
+        const { allowedXp } = capAccumulatedXpForMinute(battlefieldId, avgHeroLevel, xp);
+        return { baseXP: allowedXp, level, name: enemyName || 'Unknown Enemy' };
+      };
+
+      let accumulated = 0;
       if (Array.isArray(baseXP)) {
-        const enemies = baseXP.map((xp, i) => ({
-          baseXP: xp,
-          level: Array.isArray(enemyLevel) ? enemyLevel[i] : enemyLevel,
-          name: Array.isArray(enemyName) ? enemyName[i] : (enemyName || 'Unknown')
-        }));
-        accumulateEnemyKills(battlefieldId, enemies);
+        const enemies = baseXP.map((_, i) => {
+          const rawLevel = Array.isArray(enemyLevel) ? enemyLevel[i] : enemyLevel;
+          const k = normalizeKill(rawLevel, enemyKind);
+          if (k.baseXP > 0) accumulated += 1;
+          return { ...k, name: Array.isArray(enemyName) ? enemyName[i] : (enemyName || 'Unknown') };
+        }).filter((e) => e.baseXP > 0);
+        if (enemies.length) accumulateEnemyKills(battlefieldId, enemies);
       } else {
-        accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+        const k = normalizeKill(enemyLevel, enemyKind);
+        if (k.baseXP > 0) {
+          accumulateEnemyKill(battlefieldId, k.baseXP, k.level, enemyName || 'Unknown Enemy');
+          accumulated = 1;
+        }
       }
-      
+
       return res.json({
         success: true,
         message: 'Enemy kill(s) accumulated (will be awarded periodically)',
-        accumulated: Array.isArray(baseXP) ? baseXP.length : 1
+        accumulated
       });
     }
     
-    if (!baseXP || !enemyLevel) {
-      return res.status(400).json({ 
-        error: 'baseXP and enemyLevel are required' 
-      });
+    if (!enemyLevel) {
+      return res.status(400).json({ error: 'enemyLevel is required' });
     }
-    
-    // Validate single or array values
-    const baseXPArray = Array.isArray(baseXP) ? baseXP : [baseXP];
+
     const enemyLevelArray = Array.isArray(enemyLevel) ? enemyLevel : [enemyLevel];
-    
-    if (baseXPArray.some(xp => xp <= 0) || enemyLevelArray.some(level => level <= 0)) {
-      return res.status(400).json({ 
-        error: 'baseXP and enemyLevel must be positive numbers' 
+    if (enemyLevelArray.some((level) => clampEnemyLevel(level) <= 0)) {
+      return res.status(400).json({ error: 'enemyLevel must be positive' });
+    }
+
+    const normalizedLevels = enemyLevelArray.map((l) => clampEnemyLevel(l));
+    const baseXPArray = normalizedLevels.map((l) => normalizeKillXp(l, enemyKind));
+    const avgLevel = Math.floor(
+      normalizedLevels.reduce((a, b) => a + b, 0) / normalizedLevels.length
+    );
+    const totalXp = baseXPArray.reduce((a, b) => a + b, 0);
+    const maxBatch = maxImmediateCombatXpForLevel(avgLevel, enemyKind);
+    if (totalXp > maxBatch) {
+      return res.status(400).json({
+        error: 'XP batch exceeds server cap for this level',
+        maxAllowed: maxBatch,
+        requested: totalXp
       });
     }
-    
+
     const { awardCombatXP } = await import('../services/xpDistributionService.js');
-    
-    // Pass arrays or single values - service handles both
+
     const result = await awardCombatXP(
       battlefieldId,
-      baseXP,
-      enemyLevel,
+      baseXPArray.length === 1 ? baseXPArray[0] : baseXPArray,
+      normalizedLevels.length === 1 ? normalizedLevels[0] : normalizedLevels,
       {
         enemyName: enemyName || 'Unknown Enemy',
-        specificHeroIds: heroIds || null
+        specificHeroIds: heroIds || null,
+        enemyKind
       }
     );
     
@@ -614,7 +698,8 @@ router.post('/:battlefieldId/combat/xp', async (req, res) => {
 
 // Flush accumulated XP immediately for a battlefield
 // Useful for important events (wave completion, level-ups, etc.)
-router.post('/:battlefieldId/combat/xp/flush', async (req, res) => {
+// Internal route - XP flush service (requires internal key)
+router.post('/:battlefieldId/combat/xp/flush', requireInternal, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     
@@ -674,7 +759,7 @@ router.get('/:battlefieldId/combat/xp/status', async (req, res) => {
 });
 
 // Preview XP distribution without awarding (for UI display)
-router.post('/:battlefieldId/combat/xp/preview', async (req, res) => {
+router.post('/:battlefieldId/combat/xp/preview', requireAuth, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
     const { baseXP, enemyLevel } = req.body;

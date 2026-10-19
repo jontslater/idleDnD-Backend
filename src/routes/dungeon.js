@@ -3,6 +3,16 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { calculateTotalItemScore } from '../utils/itemScore.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import {
+  requireAuthOrStreamerKey,
+  clampRewards,
+  assertStreamerInstanceAccess,
+  assertParticipantsOnStreamerBattlefield,
+  assertJwtInstanceParticipant,
+  resolveInstanceParticipants
+} from '../middleware/requireAuthOrStreamerKey.js';
+
 const router = express.Router();
 
 // Helper function to update queue role counters
@@ -52,7 +62,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get queue status (must be before /queue route)
-router.get('/queue/status', async (req, res) => {
+router.get('/queue/status', requireAuth, async (req, res) => {
   try {
     const { userId } = req.query;
     
@@ -89,7 +99,7 @@ router.get('/queue/status', async (req, res) => {
 });
 
 // Join queue
-router.post('/queue', async (req, res) => {
+router.post('/queue', requireAuth, async (req, res) => {
   try {
     const { userId, heroId, role, itemScore, dungeonType = 'normal' } = req.body;
     
@@ -139,7 +149,7 @@ router.post('/queue', async (req, res) => {
 });
 
 // Leave queue
-router.delete('/queue', async (req, res) => {
+router.delete('/queue', requireAuth, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -172,7 +182,7 @@ router.delete('/queue', async (req, res) => {
 });
 
 // Accept group invite
-router.post('/group/accept', async (req, res) => {
+router.post('/group/accept', requireAuth, async (req, res) => {
   try {
     const { userId, groupId } = req.body;
     
@@ -355,7 +365,7 @@ async function createDungeonInstanceForGroup(group, dungeonDataOverride = null) 
     const dungeonInstance = {
       dungeonId: selectedDungeon.id,
       difficulty: selectedDungeon.difficulty || 'normal',
-      status: 'active',
+      status: 'in-progress',
       organizerId,
       participants: participantData,
       participantIds: participantIds,
@@ -413,7 +423,7 @@ function estimateWaitTime(roleCounts, userRole) {
 // ==================== DUNGEON INSTANCE ENDPOINTS ====================
 
 // Start a new dungeon instance
-router.post('/:dungeonId/start', async (req, res) => {
+router.post('/:dungeonId/start', requireAuth, async (req, res) => {
   try {
     const { dungeonId } = req.params;
     const { participants, organizerId } = req.body; // Array of userId strings
@@ -479,7 +489,7 @@ router.post('/:dungeonId/start', async (req, res) => {
     const dungeonInstance = {
       dungeonId: dungeonData.id,
       difficulty: dungeonData.difficulty || 'normal',
-      status: 'active',
+      status: 'in-progress',
       organizerId,
       participants: participantData,
       participantIds: participantIds, // For efficient querying
@@ -530,7 +540,7 @@ router.get('/instance/:instanceId', async (req, res) => {
 });
 
 // Update dungeon progress (room completed)
-router.post('/instance/:instanceId/progress', async (req, res) => {
+router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { room, participants, combatLogEntries } = req.body;
@@ -544,12 +554,26 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
     }
     
+    const participantsToValidate = resolveInstanceParticipants(req, instance, participants);
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsToValidate))) {
+      return;
+    }
+    
     // Extract participant IDs from updated participants
-    const updatedParticipantIds = participants ? participants.map(p => p.userId) : instance.participantIds || [];
+    const updatedParticipantIds = participants
+      ? participants.map(p => p.twitchUserId || p.userId).filter(Boolean)
+      : instance.participantIds || [];
     
     // Build update data
     const updateData = {
@@ -560,7 +584,7 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
     // Only update room if provided
     if (room !== undefined) {
       updateData.currentRoom = room;
-      updateData.status = room >= instance.maxRooms ? 'in-progress' : 'active';
+      updateData.status = 'in-progress';
     }
     
     // Only update participants if provided
@@ -588,13 +612,10 @@ router.post('/instance/:instanceId/progress', async (req, res) => {
 });
 
 // Complete dungeon and distribute loot
-router.post('/instance/:instanceId/complete', async (req, res) => {
+router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
     const { success, finalParticipants, participants, finalCombatLog, combatLog } = req.body;
-    
-    // Support both finalParticipants and participants field names
-    const participantsData = finalParticipants || participants || [];
     
     const instanceRef = db.collection('dungeonInstances').doc(instanceId);
     const doc = await instanceRef.get();
@@ -605,15 +626,57 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     
     const instance = doc.data();
     
+    if (!assertStreamerInstanceAccess(req, res, instance)) {
+      return;
+    }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
+    
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
+    }
+
+    const participantsData = resolveInstanceParticipants(
+      req,
+      instance,
+      finalParticipants || participants
+    );
+    
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsData))) {
+      return;
     }
     
     // Import dungeon data
     const { getDungeonById } = await import('../data/dungeons.js');
     const dungeonData = getDungeonById(instance.dungeonId);
     
-    if (!success) {
+    // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
+    // Verify dungeon was actually completed (all rooms cleared, at least one survivor)
+    let serverValidatedSuccess = success;
+    
+    if (success) {
+      // Validate success criteria:
+      // 1. All rooms must be completed (currentRoom >= maxRooms)
+      // 2. At least one participant must be alive
+      const currentRoom = instance.currentRoom || 0;
+      const maxRooms = instance.maxRooms || dungeonData.rooms?.length || 0;
+      const aliveParticipants = participantsData.filter(p => p.isAlive);
+      
+      if (currentRoom < maxRooms) {
+        console.warn(`[Dungeon Complete] Not all rooms cleared (${currentRoom}/${maxRooms}), marking as failed`);
+        serverValidatedSuccess = false;
+      }
+      
+      if (aliveParticipants.length === 0) {
+        console.warn(`[Dungeon Complete] No survivors, marking as failed despite client success`);
+        serverValidatedSuccess = false;
+      }
+      
+      console.log(`[Dungeon Complete] Server validation: clientSuccess=${success}, serverValidated=${serverValidatedSuccess}, rooms=${currentRoom}/${maxRooms}, aliveCount=${aliveParticipants.length}`);
+    }
+    
+    if (!serverValidatedSuccess) {
       // Dungeon failed
       // Maintain participantIds using twitchUserId if available, fallback to userId
       const updatedParticipantIds = participantsData.map(p => p.twitchUserId || p.userId).filter(Boolean);
@@ -626,6 +689,9 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
+
+      const { clearActiveInstanceForParticipants } = await import('../services/heroInstanceService.js');
+      await clearActiveInstanceForParticipants(instance.participants || participantsData);
       
       return res.json({
         success: false,
@@ -635,7 +701,9 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
     }
     
     // Dungeon succeeded - distribute rewards
-    const rewards = dungeonData.rewards || { gold: 0, tokens: 0, experience: 0 };
+    let rewards = { ...(dungeonData.rewards || { gold: 0, tokens: 0 }) };
+    const { dungeonClearXp, XP_SOURCES } = await import('../data/balance.js');
+    const xpMinutes = rewards.xpRewardMinutes ?? XP_SOURCES.dungeonClearMinutes;
     
     // Update instance as completed
     // Maintain participantIds using twitchUserId if available, fallback to userId
@@ -662,8 +730,9 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
         const heroRef = heroDoc.ref;
         const hero = heroDoc.data();
         
-        // Add gold, tokens, and XP
-        const newXp = (hero.xp || 0) + rewards.experience;
+        const heroLevel = hero.level || 1;
+        const experienceGain = dungeonClearXp(heroLevel, xpMinutes);
+        const newXp = (hero.xp || 0) + experienceGain;
         
         // Handle level-ups (multiple level-ups if XP is high enough)
         const { processLevelUps } = await import('../utils/levelUpHelper.js');
@@ -762,7 +831,7 @@ router.post('/instance/:instanceId/complete', async (req, res) => {
       rewards: {
         gold: rewards.gold,
         tokens: rewards.tokens,
-        experience: rewards.experience
+        xpRewardMinutes: xpMinutes
       }
     });
   } catch (error) {
@@ -790,7 +859,7 @@ router.get('/:dungeonId', async (req, res) => {
 });
 
 // Get available dungeons for a user
-router.get('/available/:userId', async (req, res) => {
+router.get('/available/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     

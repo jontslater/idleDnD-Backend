@@ -32,6 +32,27 @@ Update `.env` with your Firebase credentials from the service account JSON:
 - `FIREBASE_CLIENT_EMAIL` - from "client_email"
 - `FIREBASE_PRIVATE_KEY` - from "private_key" (keep the quotes and newlines)
 
+### Required Environment Variables
+
+**Security Keys** (generate with `openssl rand -hex 32`):
+- `JWT_SECRET` - JWT signing secret (required in production)
+- `INTERNAL_API_KEY` - Internal service-to-service authentication
+- `ADMIN_KEY` - Admin route authentication
+
+**Twitch OAuth**:
+- `TWITCH_CLIENT_ID` - Twitch application client ID
+- `TWITCH_CLIENT_SECRET` - Twitch application secret
+- `TWITCH_REDIRECT_URI` - OAuth callback URL
+
+**Stripe** (optional, for payments):
+- `STRIPE_SECRET_KEY` - Stripe API key
+- `STRIPE_WEBHOOK_SECRET` - Stripe webhook signature verification
+
+**Other**:
+- `PORT` - API server port (default: 3001)
+- `NODE_ENV` - Environment (development/production)
+- `ALLOWED_ORIGINS` - CORS allowed origins (comma-separated)
+
 ### 4. Run Development Server
 
 ```bash

@@ -2,10 +2,13 @@ import express from 'express';
 import { db } from '../index.js';
 import { getLeaderboard, getUserRankings, updateLeaderboards } from '../services/leaderboardService.js';
 
+import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import { requireInternal } from '../middleware/requireInternal.js';
+
 const router = express.Router();
 
 // Get user's rankings (MUST be before /:type/:category route to avoid route conflict)
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', requireAuth, requireOwnership, async (req, res) => {
   try {
     const { userId } = req.params;
     
@@ -53,8 +56,8 @@ router.get('/:type/:category', async (req, res) => {
   }
 });
 
-// Update leaderboards (admin endpoint)
-router.post('/update', async (req, res) => {
+// Update leaderboards (internal service route)
+router.post('/update', requireInternal, async (req, res) => {
   try {
     await updateLeaderboards();
     res.json({ success: true, message: 'Leaderboards updated' });
