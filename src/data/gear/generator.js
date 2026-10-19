@@ -19,11 +19,6 @@ const RARITY_COLORS = {
   mythic: '#e60000'
 };
 
-function jitterStat(value, rnd, band = 0.05) {
-  const delta = (rnd() * 2 - 1) * band;
-  return Math.max(0, Math.floor(value * (1 + delta)));
-}
-
 function applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix) {
   const affixes = [];
   if (prefix) {
