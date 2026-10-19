@@ -1,0 +1,29 @@
+/** ~20 unique legendaries with role-active hooks (signature effect budget ~6%). */
+export const LEGENDARIES = [
+  { id: 'dragon_fang_blade', name: 'Dragon Fang Blade', slot: 'weapon', roleGroup: 'melee', hook: 'burst_strike_ignite', description: 'Burst Strike ignites for 40% over 4s' },
+  { id: 'phylactery_shard', name: 'Phylactery Shard', slot: 'accessory', roleGroup: 'tank', hook: 'shield_wall_absorb', description: 'Shield Wall also absorbs 5% max HP' },
+  { id: 'priests_corrupted_orb', name: "Priest's Corrupted Orb", slot: 'weapon', roleGroup: 'caster', hook: 'burst_strike_dot_amp', description: 'Burst Strike DoT +20%' },
+  { id: 'demon_lords_crown', name: "Demon Lord's Infernal Crown", slot: 'helm', roleGroup: 'caster', hook: 'burst_strike_charge_rate', description: 'Burst Strike charges 10% faster' },
+  { id: 'sanctified_reliquary', name: 'Sanctified Reliquary', slot: 'accessory', roleGroup: 'healer', hook: 'group_heal_hot', description: 'Group Heal HoT +5%' },
+  { id: 'bulwark_of_ages', name: 'Bulwark of Ages', slot: 'shield', roleGroup: 'tank', hook: 'shield_wall_party_dr', description: 'Shield Wall party DR +3%' },
+  { id: 'windwalkers', name: "Windwalker's Boots", slot: 'boots', roleGroup: 'melee', hook: 'burst_strike_cleave', description: 'Burst Strike cleave +25%' },
+  { id: 'starweave_mantle', name: 'Starweave Mantle', slot: 'cloak', roleGroup: 'caster', hook: 'burst_strike_crit', description: 'Burst Strike +5% crit' },
+  { id: 'ironheart_gauntlets', name: 'Ironheart Gauntlets', slot: 'gloves', roleGroup: 'tank', hook: 'shield_wall_cooldown_ms', description: 'Shield Wall CD −2s' },
+  { id: 'lifebinders_tear', name: "Lifebinder's Tear", slot: 'ring1', roleGroup: 'healer', hook: 'group_heal_bonus', description: 'Group Heal +5%' },
+  { id: 'assassins_mark', name: "Assassin's Mark", slot: 'ring2', roleGroup: 'melee', hook: 'burst_strike_crit', description: 'Burst Strike +8% crit' },
+  { id: 'archmage_focus', name: 'Archmage Focus', slot: 'weapon', roleGroup: 'caster', hook: 'burst_strike_dot', description: 'Burst Strike DoT +15%' },
+  { id: 'wardens_aegis', name: "Warden's Aegis", slot: 'armor', roleGroup: 'tank', hook: 'shield_wall_absorb', description: 'Shield Wall absorb +3% max HP' },
+  { id: 'berserker_fang', name: "Berserker's Fang", slot: 'weapon', roleGroup: 'melee', hook: 'burst_strike_ignite', description: 'Burst Strike ignite +10%' },
+  { id: 'void_touched_blade', name: 'Void-Touched Blade', slot: 'weapon', roleGroup: 'melee', hook: 'burst_strike_cleave', description: 'Extra cleave target at 35%' },
+  { id: 'celestial_halo', name: 'Celestial Halo', slot: 'helm', roleGroup: 'healer', hook: 'group_heal_bonus', description: 'Group Heal +8%' },
+  { id: 'emberwoven_robes', name: 'Emberwoven Robes', slot: 'armor', roleGroup: 'caster', hook: 'burst_strike_dot', description: 'DoT duration +1s' },
+  { id: 'thunderfist', name: 'Thunderfist', slot: 'gloves', roleGroup: 'melee', hook: 'burst_strike_crit', description: 'Burst Strike crit damage +10%' },
+  { id: 'eclipse_band', name: 'Eclipse Band', slot: 'ring1', roleGroup: 'caster', hook: 'burst_strike_charge_rate', description: 'Charge rate +8%' },
+  { id: 'worldheart_charm', name: 'Worldheart Charm', slot: 'accessory', roleGroup: 'healer', hook: 'group_heal_hot', description: 'HoT +8%' }
+];
+
+export function pickLegendary(roleGroup, slot, seed = Math.random()) {
+  const pool = LEGENDARIES.filter((l) => l.roleGroup === roleGroup && l.slot === slot);
+  if (!pool.length) return LEGENDARIES[Math.floor(seed * LEGENDARIES.length) % LEGENDARIES.length];
+  return pool[Math.floor(seed * pool.length) % pool.length];
+}

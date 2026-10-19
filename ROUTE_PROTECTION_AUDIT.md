@@ -1,12 +1,12 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-19T09:01:22.870Z
+**Generated**: 2026-10-19T09:05:30.546Z
 
 ## Summary
 
-- **Total Routes**: 236
+- **Total Routes**: 238
 - **Protected**: 186
-- **Public (whitelisted)**: 50
+- **Public (whitelisted)**: 52
 - **Unprotected**: 0 ✅
 
 ## ✅ NO VIOLATIONS
@@ -121,6 +121,13 @@ All routes are properly protected!
 | GET | /enchantments/:slot | ✅ PUBLIC | 176 |
 | GET | /enchantments | ✅ PUBLIC | 188 |
 
+### gear.js (2 routes)
+
+| Method | Route | Middleware | Line |
+|--------|-------|------------|------|
+| GET | /sets | ✅ PUBLIC | 9 |
+| GET | /catalog | ✅ PUBLIC | 13 |
+
 ### guildPerks.js (2 routes)
 
 | Method | Route | Middleware | Line |
@@ -224,7 +231,7 @@ All routes are properly protected!
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
 | POST | /sync | requireStreamerAccess | 53 |
-| GET | /sync/:batchId | requireStreamerAccess | 234 |
+| GET | /sync/:batchId | requireStreamerAccess | 266 |
 
 ### parties.js (12 routes)
 

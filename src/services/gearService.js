@@ -1,7 +1,9 @@
 /**
- * Gear Generation Service
- * Generates gear items matching game.js logic exactly
+ * Gear Generation Service — delegates to budget-based generator (GEAR_PLAN).
  */
+
+import { generateGearItem as generateFromBudget } from '../data/gear/generator.js';
+import { roleGroupFromHero } from '../data/gear/roleGroup.js';
 
 // Role configurations - must match game.js
 const ROLE_CONFIG = {
@@ -98,142 +100,25 @@ const LOOT_TEMPLATES_BY_CATEGORY = {
  * @returns {Object} Generated gear item
  */
 function generateGearItem(role, slot, rarity, heroLevel = 1) {
-  // Validate inputs
   if (!ROLE_CONFIG[role]) {
     throw new Error(`Invalid role: ${role}`);
   }
-  
-  if (!LOOT_RARITIES[rarity]) {
+  if (!LOOT_RARITIES[rarity] && rarity !== 'mythic') {
     throw new Error(`Invalid rarity: ${rarity}`);
   }
-  
   const category = ROLE_CONFIG[role].category;
   const availableSlots = category === 'tank' ? TANK_EQUIPMENT_SLOTS : EQUIPMENT_SLOTS;
-  
   if (!availableSlots.includes(slot)) {
     throw new Error(`Invalid slot ${slot} for role ${role} (category: ${category})`);
   }
-  
-  // Get template
-  const template = LOOT_TEMPLATES_BY_CATEGORY[category][slot];
-  if (!template) {
-    throw new Error(`Missing template for category ${category}, slot ${slot}`);
-  }
-  
-  const rarityData = LOOT_RARITIES[rarity];
-  
-  // Calculate stats with level scaling (matching game.js logic)
-  const levelMultiplier = 1 + (heroLevel * 0.08); // 8% per level
-  const totalMultiplier = levelMultiplier; // No wave scaling for Bits purchases
-  
-  const item = {
-    id: Date.now() + Math.random(), // Unique ID
-    name: `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${template.name}`,
-    slot: slot,
-    rarity: rarity,
-    color: rarityData.color,
-    attack: Math.floor(template.attack * rarityData.statMultiplier * totalMultiplier),
-    defense: Math.floor(template.defense * rarityData.statMultiplier * totalMultiplier),
-    hp: Math.floor(template.hp * rarityData.statMultiplier * totalMultiplier),
-    level: heroLevel,
-    forRole: role
-  };
-  
-  // Add primary stats based on category
-  const primaryStatBase = Math.floor(2 + (rarityData.statMultiplier * Math.min(totalMultiplier, 3)));
-  
-  if (category === 'healer') {
-    item.intellect = primaryStatBase;
-    // Add spell power for healers (scales healing)
-    item.spellPower = Math.floor(primaryStatBase * 1.2); // Spell power slightly higher than intellect
-  } else if (category === 'tank') {
-    item.strength = Math.floor(primaryStatBase * 0.7);
-    item.stamina = Math.floor(primaryStatBase * 1.3);
-  } else { // DPS
-    const isMeleeRole = ['berserker', 'crusader', 'assassin', 'reaper', 'bladedancer', 'monk', 'stormwarrior', 'hunter'].includes(role);
-    if (isMeleeRole) {
-      item.strength = primaryStatBase;
-      item.dexterity = Math.floor(primaryStatBase * 0.5);
-    } else {
-      // Ranged/Caster DPS
-      item.intellect = primaryStatBase;
-      item.wisdom = Math.floor(primaryStatBase * 0.5);
-      // Add spell power for casters (scales spell damage)
-      item.spellPower = Math.floor(primaryStatBase * 1.2); // Spell power slightly higher than intellect
-    }
-  }
-  
-  // Add secondary stats to Rare+ gear
-  if (rarity !== 'common' && rarity !== 'uncommon') {
-    item.secondaryStats = {};
-    const secondaryBase = rarityData.statMultiplier * Math.min(totalMultiplier, 3);
-    
-    if (category === 'healer') {
-      item.secondaryStats.healingPower = Math.min(Math.floor(3 + (secondaryBase * 2)), 30);
-      if (rarity === 'epic' || rarity === 'legendary') {
-        item.secondaryStats.hpRegen = Math.min(Math.floor(2 + secondaryBase), 15);
-      }
-    } else if (category === 'tank') {
-      item.secondaryStats.hpRegen = Math.min(Math.floor(2 + (secondaryBase * 1.5)), 20);
-      if (rarity === 'epic' || rarity === 'legendary') {
-        item.secondaryStats.damageReduction = Math.min(Math.floor(1 + secondaryBase), 15);
-      }
-    } else { // DPS
-      const isMeleeRole = ['berserker', 'crusader', 'assassin', 'reaper', 'bladedancer', 'monk', 'stormwarrior', 'hunter'].includes(role);
-      if (isMeleeRole) {
-        item.secondaryStats.meleeDamage = Math.min(Math.floor(3 + (secondaryBase * 2)), 30);
-      } else {
-        item.secondaryStats.spellDamage = Math.min(Math.floor(3 + (secondaryBase * 2)), 30);
-      }
-      if (rarity === 'legendary') {
-        item.secondaryStats.critChance = Math.min((1 + secondaryBase) / 100, 0.05);
-      }
-    }
-  }
-  
-  // Add proc effects to rare+ gear
-  if (rarity !== 'common' && rarity !== 'uncommon') {
-    const procCount = rarity === 'rare' ? 1 : rarity === 'epic' ? 2 : 3;
-    const procs = [];
-    
-    const tankProcs = [
-      { name: 'Fortified', effect: 'defenseBonus', value: 0.1, chance: 0.15, description: '15% chance: +10% defense for 5s' },
-      { name: 'Thorns', effect: 'damageReflect', value: 0.2, chance: 0.2, description: '20% chance: Reflect 20% damage' },
-      { name: 'Retaliation', effect: 'counterAttack', value: 0.4, chance: 0.2, description: '20% chance: Counter attack for 40% damage when hit' },
-      { name: 'Enduring', effect: 'healOnHit', value: 5, chance: 0.1, description: '10% chance: Heal 5 HP when hit' },
-      { name: 'Bulwark', effect: 'damageReduction', value: 0.15, chance: 0.12, description: '12% chance: -15% damage taken' }
-    ];
-    
-    const healerProcs = [
-      { name: 'Blessed', effect: 'healingBonus', value: 0.15, chance: 0.15, description: '15% chance: +15% healing done' },
-      { name: 'Rejuvenating', effect: 'healOverTime', value: 3, chance: 0.2, description: '20% chance: +3 HP regen/tick' },
-      { name: 'Holy', effect: 'manaRegen', value: 0.1, chance: 0.1, description: '10% chance: Restore mana (cosmetic)' },
-      { name: 'Radiant', effect: 'groupHealBonus', value: 10, chance: 0.08, description: '8% chance: +10 HP to group heal' }
-    ];
-    
-    const dpsProcs = [
-      { name: 'Deadly', effect: 'critChance', value: 0.15, chance: 0.2, description: '20% chance: Critical strike' },
-      { name: 'Vicious', effect: 'damageBonus', value: 0.12, chance: 0.15, description: '15% chance: +12% damage' },
-      { name: 'Swift', effect: 'hasteProc', value: 0.1, chance: 0.1, description: '10% chance: Extra attack' },
-      { name: 'Brutal', effect: 'executeBonus', value: 0.25, chance: 0.12, description: '12% chance: +25% vs low HP enemies' }
-    ];
-    
-    const procPool = category === 'tank' ? tankProcs : category === 'healer' ? healerProcs : dpsProcs;
-    
-    // Randomly select procCount procs
-    const selectedProcs = [];
-    const availableProcs = [...procPool];
-    
-    for (let i = 0; i < procCount && availableProcs.length > 0; i++) {
-      const randomIndex = Math.floor(Math.random() * availableProcs.length);
-      selectedProcs.push(availableProcs[randomIndex]);
-      availableProcs.splice(randomIndex, 1);
-    }
-    
-    item.procEffects = selectedProcs;
-  }
-  
-  return item;
+  const roleGroup = roleGroupFromHero({ role, level: heroLevel });
+  return generateFromBudget({
+    roleGroup,
+    slot,
+    rarity,
+    source: { type: 'idle', enemyLevel: heroLevel },
+    seed: `legacy-${role}-${slot}-${Date.now()}`
+  });
 }
 
 /**

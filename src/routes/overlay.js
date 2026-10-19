@@ -52,7 +52,7 @@ function checkOverlayBatchRateLimit(streamerId) {
  */
 router.post('/sync', requireStreamerAccess, async (req, res) => {
   try {
-    const { streamerId, batchId, deltas } = req.body;
+    const { streamerId, batchId, deltas, kills } = req.body;
     
     if (!streamerId) {
       return res.status(400).json({ error: 'streamerId is required' });
@@ -201,6 +201,36 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
       }
     }
     
+    const drops = [];
+    if (Array.isArray(kills) && kills.length > 0) {
+      const { rollLootForKill } = await import('../services/lootRollService.js');
+      const maxKills = Math.min(kills.length, 30);
+      for (let i = 0; i < maxKills; i++) {
+        const kill = kills[i];
+        const heroId = kill.heroId;
+        if (!heroId) continue;
+        const heroRef = db.collection('heroes').doc(heroId);
+        const heroDoc = await heroRef.get();
+        if (!heroDoc.exists) continue;
+        const hero = { id: heroDoc.id, ...heroDoc.data() };
+        if (hero.currentBattlefieldId !== battlefieldId) continue;
+        const roll = rollLootForKill(hero, kill, {
+          lootPity: hero.lootPity || {},
+          setCollection: hero.setCollection || {}
+        });
+        if (!roll.dropped || !roll.item) continue;
+        const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
+        inventory.push(roll.item);
+        await heroRef.update({
+          inventory,
+          lootPity: roll.pity,
+          setCollection: roll.setCollection,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        drops.push({ heroId, item: roll.item });
+      }
+    }
+
     // Mark batch as processed (prevents double-application on retry)
     await batchRef.set({
       streamerId,
@@ -208,6 +238,7 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
       processedAt: Date.now(),
       deltasProcessed: successCount,
       deltasFailed: errorCount,
+      dropsGranted: drops.length,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
     
@@ -218,7 +249,8 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
       alreadyProcessed: false,
       deltasApplied: successCount,
       deltasFailed: errorCount,
-      results: results
+      results: results,
+      drops
     });
     
   } catch (error) {

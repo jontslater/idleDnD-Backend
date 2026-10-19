@@ -1,0 +1,2222 @@
+[
+  {
+    "id": "tank_weapon_t1",
+    "roleGroup": "tank",
+    "slot": "weapon",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Warhammer",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_weapon_t2",
+    "roleGroup": "tank",
+    "slot": "weapon",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Warhammer",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_weapon_t3",
+    "roleGroup": "tank",
+    "slot": "weapon",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Warhammer",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_weapon_t4",
+    "roleGroup": "tank",
+    "slot": "weapon",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Warhammer",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_weapon_t5",
+    "roleGroup": "tank",
+    "slot": "weapon",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Warhammer",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_armor_t1",
+    "roleGroup": "tank",
+    "slot": "armor",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Plate",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_armor_t2",
+    "roleGroup": "tank",
+    "slot": "armor",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Plate",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_armor_t3",
+    "roleGroup": "tank",
+    "slot": "armor",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Plate",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_armor_t4",
+    "roleGroup": "tank",
+    "slot": "armor",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Plate",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_armor_t5",
+    "roleGroup": "tank",
+    "slot": "armor",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Plate",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_accessory_t1",
+    "roleGroup": "tank",
+    "slot": "accessory",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Sigil",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_accessory_t2",
+    "roleGroup": "tank",
+    "slot": "accessory",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Sigil",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_accessory_t3",
+    "roleGroup": "tank",
+    "slot": "accessory",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Sigil",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_accessory_t4",
+    "roleGroup": "tank",
+    "slot": "accessory",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Sigil",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_accessory_t5",
+    "roleGroup": "tank",
+    "slot": "accessory",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Sigil",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_shield_t1",
+    "roleGroup": "tank",
+    "slot": "shield",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Bulwark",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_shield_t2",
+    "roleGroup": "tank",
+    "slot": "shield",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Bulwark",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_shield_t3",
+    "roleGroup": "tank",
+    "slot": "shield",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Bulwark",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_shield_t4",
+    "roleGroup": "tank",
+    "slot": "shield",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Bulwark",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_shield_t5",
+    "roleGroup": "tank",
+    "slot": "shield",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Bulwark",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_helm_t1",
+    "roleGroup": "tank",
+    "slot": "helm",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Greathelm",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_helm_t2",
+    "roleGroup": "tank",
+    "slot": "helm",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Greathelm",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_helm_t3",
+    "roleGroup": "tank",
+    "slot": "helm",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Greathelm",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_helm_t4",
+    "roleGroup": "tank",
+    "slot": "helm",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Greathelm",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_helm_t5",
+    "roleGroup": "tank",
+    "slot": "helm",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Greathelm",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_cloak_t1",
+    "roleGroup": "tank",
+    "slot": "cloak",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Mantle",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_cloak_t2",
+    "roleGroup": "tank",
+    "slot": "cloak",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Mantle",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_cloak_t3",
+    "roleGroup": "tank",
+    "slot": "cloak",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Mantle",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_cloak_t4",
+    "roleGroup": "tank",
+    "slot": "cloak",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Mantle",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_cloak_t5",
+    "roleGroup": "tank",
+    "slot": "cloak",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Mantle",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_gloves_t1",
+    "roleGroup": "tank",
+    "slot": "gloves",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Gauntlets",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_gloves_t2",
+    "roleGroup": "tank",
+    "slot": "gloves",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Gauntlets",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_gloves_t3",
+    "roleGroup": "tank",
+    "slot": "gloves",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Gauntlets",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_gloves_t4",
+    "roleGroup": "tank",
+    "slot": "gloves",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Gauntlets",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_gloves_t5",
+    "roleGroup": "tank",
+    "slot": "gloves",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Gauntlets",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_ring1_t1",
+    "roleGroup": "tank",
+    "slot": "ring1",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Band",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_ring1_t2",
+    "roleGroup": "tank",
+    "slot": "ring1",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Band",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_ring1_t3",
+    "roleGroup": "tank",
+    "slot": "ring1",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Band",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_ring1_t4",
+    "roleGroup": "tank",
+    "slot": "ring1",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Band",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_ring1_t5",
+    "roleGroup": "tank",
+    "slot": "ring1",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Band",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_ring2_t1",
+    "roleGroup": "tank",
+    "slot": "ring2",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Loop",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_ring2_t2",
+    "roleGroup": "tank",
+    "slot": "ring2",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Loop",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_ring2_t3",
+    "roleGroup": "tank",
+    "slot": "ring2",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Loop",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_ring2_t4",
+    "roleGroup": "tank",
+    "slot": "ring2",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Loop",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_ring2_t5",
+    "roleGroup": "tank",
+    "slot": "ring2",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Loop",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "tank_boots_t1",
+    "roleGroup": "tank",
+    "slot": "boots",
+    "armorType": "plate",
+    "tier": 1,
+    "nameStem": "Iron Treads",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "tank_boots_t2",
+    "roleGroup": "tank",
+    "slot": "boots",
+    "armorType": "plate",
+    "tier": 2,
+    "nameStem": "Steel Treads",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "tank_boots_t3",
+    "roleGroup": "tank",
+    "slot": "boots",
+    "armorType": "plate",
+    "tier": 3,
+    "nameStem": "Mithril Treads",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "tank_boots_t4",
+    "roleGroup": "tank",
+    "slot": "boots",
+    "armorType": "plate",
+    "tier": 4,
+    "nameStem": "Adamant Treads",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "tank_boots_t5",
+    "roleGroup": "tank",
+    "slot": "boots",
+    "armorType": "plate",
+    "tier": 5,
+    "nameStem": "Voidforged Treads",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_weapon_t1",
+    "roleGroup": "healer",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Focus",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_weapon_t2",
+    "roleGroup": "healer",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Focus",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_weapon_t3",
+    "roleGroup": "healer",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Focus",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_weapon_t4",
+    "roleGroup": "healer",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Focus",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_weapon_t5",
+    "roleGroup": "healer",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Focus",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_armor_t1",
+    "roleGroup": "healer",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Vestments",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_armor_t2",
+    "roleGroup": "healer",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Vestments",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_armor_t3",
+    "roleGroup": "healer",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Vestments",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_armor_t4",
+    "roleGroup": "healer",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Vestments",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_armor_t5",
+    "roleGroup": "healer",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Vestments",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_accessory_t1",
+    "roleGroup": "healer",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Relic",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_accessory_t2",
+    "roleGroup": "healer",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Relic",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_accessory_t3",
+    "roleGroup": "healer",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Relic",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_accessory_t4",
+    "roleGroup": "healer",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Relic",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_accessory_t5",
+    "roleGroup": "healer",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Relic",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_helm_t1",
+    "roleGroup": "healer",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Greathelm",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_helm_t2",
+    "roleGroup": "healer",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Greathelm",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_helm_t3",
+    "roleGroup": "healer",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Greathelm",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_helm_t4",
+    "roleGroup": "healer",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Greathelm",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_helm_t5",
+    "roleGroup": "healer",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Greathelm",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_cloak_t1",
+    "roleGroup": "healer",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Mantle",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_cloak_t2",
+    "roleGroup": "healer",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Mantle",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_cloak_t3",
+    "roleGroup": "healer",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Mantle",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_cloak_t4",
+    "roleGroup": "healer",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Mantle",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_cloak_t5",
+    "roleGroup": "healer",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Mantle",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_gloves_t1",
+    "roleGroup": "healer",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Gauntlets",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_gloves_t2",
+    "roleGroup": "healer",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Gauntlets",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_gloves_t3",
+    "roleGroup": "healer",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Gauntlets",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_gloves_t4",
+    "roleGroup": "healer",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Gauntlets",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_gloves_t5",
+    "roleGroup": "healer",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Gauntlets",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_ring1_t1",
+    "roleGroup": "healer",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Band",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_ring1_t2",
+    "roleGroup": "healer",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Band",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_ring1_t3",
+    "roleGroup": "healer",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Band",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_ring1_t4",
+    "roleGroup": "healer",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Band",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_ring1_t5",
+    "roleGroup": "healer",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Band",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_ring2_t1",
+    "roleGroup": "healer",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Loop",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_ring2_t2",
+    "roleGroup": "healer",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Loop",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_ring2_t3",
+    "roleGroup": "healer",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Loop",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_ring2_t4",
+    "roleGroup": "healer",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Loop",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_ring2_t5",
+    "roleGroup": "healer",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Loop",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "healer_boots_t1",
+    "roleGroup": "healer",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Treads",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "healer_boots_t2",
+    "roleGroup": "healer",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Treads",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "healer_boots_t3",
+    "roleGroup": "healer",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Treads",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "healer_boots_t4",
+    "roleGroup": "healer",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Treads",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "healer_boots_t5",
+    "roleGroup": "healer",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Treads",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_weapon_t1",
+    "roleGroup": "melee",
+    "slot": "weapon",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Blade",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_weapon_t2",
+    "roleGroup": "melee",
+    "slot": "weapon",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Blade",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_weapon_t3",
+    "roleGroup": "melee",
+    "slot": "weapon",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Blade",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_weapon_t4",
+    "roleGroup": "melee",
+    "slot": "weapon",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Blade",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_weapon_t5",
+    "roleGroup": "melee",
+    "slot": "weapon",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Blade",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_armor_t1",
+    "roleGroup": "melee",
+    "slot": "armor",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Harness",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_armor_t2",
+    "roleGroup": "melee",
+    "slot": "armor",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Harness",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_armor_t3",
+    "roleGroup": "melee",
+    "slot": "armor",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Harness",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_armor_t4",
+    "roleGroup": "melee",
+    "slot": "armor",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Harness",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_armor_t5",
+    "roleGroup": "melee",
+    "slot": "armor",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Harness",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_accessory_t1",
+    "roleGroup": "melee",
+    "slot": "accessory",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Charm",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_accessory_t2",
+    "roleGroup": "melee",
+    "slot": "accessory",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Charm",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_accessory_t3",
+    "roleGroup": "melee",
+    "slot": "accessory",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Charm",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_accessory_t4",
+    "roleGroup": "melee",
+    "slot": "accessory",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Charm",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_accessory_t5",
+    "roleGroup": "melee",
+    "slot": "accessory",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Charm",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_helm_t1",
+    "roleGroup": "melee",
+    "slot": "helm",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Greathelm",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_helm_t2",
+    "roleGroup": "melee",
+    "slot": "helm",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Greathelm",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_helm_t3",
+    "roleGroup": "melee",
+    "slot": "helm",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Greathelm",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_helm_t4",
+    "roleGroup": "melee",
+    "slot": "helm",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Greathelm",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_helm_t5",
+    "roleGroup": "melee",
+    "slot": "helm",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Greathelm",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_cloak_t1",
+    "roleGroup": "melee",
+    "slot": "cloak",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Mantle",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_cloak_t2",
+    "roleGroup": "melee",
+    "slot": "cloak",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Mantle",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_cloak_t3",
+    "roleGroup": "melee",
+    "slot": "cloak",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Mantle",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_cloak_t4",
+    "roleGroup": "melee",
+    "slot": "cloak",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Mantle",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_cloak_t5",
+    "roleGroup": "melee",
+    "slot": "cloak",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Mantle",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_gloves_t1",
+    "roleGroup": "melee",
+    "slot": "gloves",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Gauntlets",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_gloves_t2",
+    "roleGroup": "melee",
+    "slot": "gloves",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Gauntlets",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_gloves_t3",
+    "roleGroup": "melee",
+    "slot": "gloves",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Gauntlets",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_gloves_t4",
+    "roleGroup": "melee",
+    "slot": "gloves",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Gauntlets",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_gloves_t5",
+    "roleGroup": "melee",
+    "slot": "gloves",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Gauntlets",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_ring1_t1",
+    "roleGroup": "melee",
+    "slot": "ring1",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Band",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_ring1_t2",
+    "roleGroup": "melee",
+    "slot": "ring1",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Band",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_ring1_t3",
+    "roleGroup": "melee",
+    "slot": "ring1",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Band",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_ring1_t4",
+    "roleGroup": "melee",
+    "slot": "ring1",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Band",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_ring1_t5",
+    "roleGroup": "melee",
+    "slot": "ring1",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Band",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_ring2_t1",
+    "roleGroup": "melee",
+    "slot": "ring2",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Loop",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_ring2_t2",
+    "roleGroup": "melee",
+    "slot": "ring2",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Loop",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_ring2_t3",
+    "roleGroup": "melee",
+    "slot": "ring2",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Loop",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_ring2_t4",
+    "roleGroup": "melee",
+    "slot": "ring2",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Loop",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_ring2_t5",
+    "roleGroup": "melee",
+    "slot": "ring2",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Loop",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "melee_boots_t1",
+    "roleGroup": "melee",
+    "slot": "boots",
+    "armorType": "leather",
+    "tier": 1,
+    "nameStem": "Hide Treads",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "melee_boots_t2",
+    "roleGroup": "melee",
+    "slot": "boots",
+    "armorType": "leather",
+    "tier": 2,
+    "nameStem": "Scale Treads",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "melee_boots_t3",
+    "roleGroup": "melee",
+    "slot": "boots",
+    "armorType": "leather",
+    "tier": 3,
+    "nameStem": "Dragonhide Treads",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "melee_boots_t4",
+    "roleGroup": "melee",
+    "slot": "boots",
+    "armorType": "leather",
+    "tier": 4,
+    "nameStem": "Wyvern Treads",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "melee_boots_t5",
+    "roleGroup": "melee",
+    "slot": "boots",
+    "armorType": "leather",
+    "tier": 5,
+    "nameStem": "Voidleather Treads",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_weapon_t1",
+    "roleGroup": "caster",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Staff",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_weapon_t2",
+    "roleGroup": "caster",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Staff",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_weapon_t3",
+    "roleGroup": "caster",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Staff",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_weapon_t4",
+    "roleGroup": "caster",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Staff",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_weapon_t5",
+    "roleGroup": "caster",
+    "slot": "weapon",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Staff",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_armor_t1",
+    "roleGroup": "caster",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Robes",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_armor_t2",
+    "roleGroup": "caster",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Robes",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_armor_t3",
+    "roleGroup": "caster",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Robes",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_armor_t4",
+    "roleGroup": "caster",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Robes",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_armor_t5",
+    "roleGroup": "caster",
+    "slot": "armor",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Robes",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_accessory_t1",
+    "roleGroup": "caster",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Orb",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_accessory_t2",
+    "roleGroup": "caster",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Orb",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_accessory_t3",
+    "roleGroup": "caster",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Orb",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_accessory_t4",
+    "roleGroup": "caster",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Orb",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_accessory_t5",
+    "roleGroup": "caster",
+    "slot": "accessory",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Orb",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_helm_t1",
+    "roleGroup": "caster",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Greathelm",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_helm_t2",
+    "roleGroup": "caster",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Greathelm",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_helm_t3",
+    "roleGroup": "caster",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Greathelm",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_helm_t4",
+    "roleGroup": "caster",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Greathelm",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_helm_t5",
+    "roleGroup": "caster",
+    "slot": "helm",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Greathelm",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_cloak_t1",
+    "roleGroup": "caster",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Mantle",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_cloak_t2",
+    "roleGroup": "caster",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Mantle",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_cloak_t3",
+    "roleGroup": "caster",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Mantle",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_cloak_t4",
+    "roleGroup": "caster",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Mantle",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_cloak_t5",
+    "roleGroup": "caster",
+    "slot": "cloak",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Mantle",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_gloves_t1",
+    "roleGroup": "caster",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Gauntlets",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_gloves_t2",
+    "roleGroup": "caster",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Gauntlets",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_gloves_t3",
+    "roleGroup": "caster",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Gauntlets",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_gloves_t4",
+    "roleGroup": "caster",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Gauntlets",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_gloves_t5",
+    "roleGroup": "caster",
+    "slot": "gloves",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Gauntlets",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_ring1_t1",
+    "roleGroup": "caster",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Band",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_ring1_t2",
+    "roleGroup": "caster",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Band",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_ring1_t3",
+    "roleGroup": "caster",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Band",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_ring1_t4",
+    "roleGroup": "caster",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Band",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_ring1_t5",
+    "roleGroup": "caster",
+    "slot": "ring1",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Band",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_ring2_t1",
+    "roleGroup": "caster",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Loop",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_ring2_t2",
+    "roleGroup": "caster",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Loop",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_ring2_t3",
+    "roleGroup": "caster",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Loop",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_ring2_t4",
+    "roleGroup": "caster",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Loop",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_ring2_t5",
+    "roleGroup": "caster",
+    "slot": "ring2",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Loop",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  },
+  {
+    "id": "caster_boots_t1",
+    "roleGroup": "caster",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 1,
+    "nameStem": "Linen Treads",
+    "ilvlBand": {
+      "min": 1,
+      "max": 23
+    }
+  },
+  {
+    "id": "caster_boots_t2",
+    "roleGroup": "caster",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 2,
+    "nameStem": "Wool Treads",
+    "ilvlBand": {
+      "min": 21,
+      "max": 46
+    }
+  },
+  {
+    "id": "caster_boots_t3",
+    "roleGroup": "caster",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 3,
+    "nameStem": "Silk Treads",
+    "ilvlBand": {
+      "min": 41,
+      "max": 69
+    }
+  },
+  {
+    "id": "caster_boots_t4",
+    "roleGroup": "caster",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 4,
+    "nameStem": "Mageweave Treads",
+    "ilvlBand": {
+      "min": 61,
+      "max": 92
+    }
+  },
+  {
+    "id": "caster_boots_t5",
+    "roleGroup": "caster",
+    "slot": "boots",
+    "armorType": "cloth",
+    "tier": 5,
+    "nameStem": "Starweave Treads",
+    "ilvlBand": {
+      "min": 81,
+      "max": 115
+    }
+  }
+]
