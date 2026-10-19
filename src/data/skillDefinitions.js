@@ -38,7 +38,7 @@ const tankTemplates = [
   { name: 'Shield Mastery', effect: SKILL_EFFECT_TYPES.STAT_BOOST, stat: 'defense', baseValue: 4, description: '+4% defense per rank' },
   { name: 'Threat Generation', effect: SKILL_EFFECT_TYPES.STAT_BOOST, stat: 'attack', baseValue: 2, description: '+2% attack per rank (threat)' },
   { name: 'Last Stand', effect: SKILL_EFFECT_TYPES.DEFENSE_MULTIPLIER, baseValue: 5, description: 'Bonus damage reduction (+5% DR per rank)' },
-  { name: 'Taunt Mastery', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 8, description: '−8% active cooldown per rank (capped)' },
+  { name: 'Taunt Mastery', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 4, description: '−4% active cooldown per rank (capped)' },
   { name: 'Armor Expertise', effect: SKILL_EFFECT_TYPES.STAT_BOOST, stat: 'defense', baseValue: 6, description: '+6% defense per rank' },
   { name: 'Guardian Stance', effect: SKILL_EFFECT_TYPES.DEFENSE_MULTIPLIER, baseValue: 4, description: '+4% DR per rank' },
   { name: 'Unbreakable', effect: SKILL_EFFECT_TYPES.HP_PERCENT_MAX, baseValue: 3, description: '+3% max HP per rank' },
@@ -47,13 +47,13 @@ const tankTemplates = [
 
 const healerTemplates = [
   { name: 'Healing Touch', effect: SKILL_EFFECT_TYPES.HEALING_MULTIPLIER, baseValue: 5, description: '+5% healing per rank' },
-  { name: 'Mana Efficiency', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 8, description: '−8% cooldown per rank (capped)' },
+  { name: 'Mana Efficiency', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 4, description: '−4% cooldown per rank (capped)' },
   { name: 'Divine Grace', effect: SKILL_EFFECT_TYPES.DOUBLE_HEAL_PROC, baseValue: 6, description: '6% chance per rank to double a heal (requires this skill)' },
-  { name: 'Rapid Recovery', effect: SKILL_EFFECT_TYPES.SPEED_BOOST, baseValue: 10, description: '+10% cast speed per rank' },
+  { name: 'Rapid Recovery', effect: SKILL_EFFECT_TYPES.SPEED_BOOST, baseValue: 14, description: '+14% haste per rank (escalating)' },
   { name: 'Group Heal', effect: SKILL_EFFECT_TYPES.HEALING_MULTIPLIER, baseValue: 6, description: '+6% AoE healing per rank' },
-  { name: 'Cleanse', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 10, description: '−10% cleanse cooldown per rank (capped)' },
+  { name: 'Cleanse', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 3, description: '−3% cleanse cooldown per rank (capped)' },
   { name: 'Overheal', effect: SKILL_EFFECT_TYPES.HEALING_MULTIPLIER, baseValue: 5, description: '+5% healing per rank (overheal → shield when wired on client)' },
-  { name: 'Resurrection Mastery', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 12, description: '−12% res cooldown per rank (capped)' },
+  { name: 'Resurrection Mastery', effect: SKILL_EFFECT_TYPES.COOLDOWN_REDUCTION, baseValue: 3, description: '−3% res cooldown per rank (capped)' },
   { name: 'Divine Shield', effect: SKILL_EFFECT_TYPES.STAT_BOOST, stat: 'defense', baseValue: 3, description: '+3% defense per rank' },
   { name: 'Master Healer', effect: SKILL_EFFECT_TYPES.HEALING_MULTIPLIER, baseValue: 8, description: 'Ultimate: +8% healing per rank' }
 ];
@@ -63,7 +63,7 @@ const dpsTemplates = [
   { name: 'Critical Hit', effect: SKILL_EFFECT_TYPES.CRIT_CHANCE, baseValue: 3, description: '+3% crit chance per rank (capped)' },
   { name: 'Lethal Blow', effect: SKILL_EFFECT_TYPES.CRIT_DAMAGE, baseValue: 10, description: '+10% crit damage bonus per rank (over ×2 base)' },
   { name: 'Combat Mastery', effect: SKILL_EFFECT_TYPES.STAT_BOOST, stat: 'attack', baseValue: 4, description: '+4% attack per rank' },
-  { name: 'Fury', effect: SKILL_EFFECT_TYPES.SPEED_BOOST, baseValue: 8, description: '+8% attack speed per rank' },
+  { name: 'Fury', effect: SKILL_EFFECT_TYPES.SPEED_BOOST, baseValue: 12, description: '+12% attack speed per rank (escalating)' },
   { name: 'Execution', effect: SKILL_EFFECT_TYPES.DAMAGE_MULTIPLIER, baseValue: 6, description: '+6% damage per rank' },
   { name: 'Precision', effect: SKILL_EFFECT_TYPES.CRIT_CHANCE, baseValue: 5, description: '+5% crit chance per rank (capped)' },
   { name: 'Berserker Rage', effect: SKILL_EFFECT_TYPES.DAMAGE_MULTIPLIER, baseValue: 7, description: '+7% damage per rank' },
@@ -212,8 +212,11 @@ function templatesForCategory(cat) {
   return dpsTemplates;
 }
 
+/** Escalating per-rank returns so each point matters through rank 5. */
 export function valueAtRank(baseValue, rank) {
-  return rank * baseValue;
+  const r = Math.max(0, Math.min(MAX_SKILL_RANK, Math.floor(rank || 0)));
+  if (r === 0) return 0;
+  return baseValue * r * (1 + 0.1 * (r - 1));
 }
 
 function buildClassSkills(className, displayName, category) {

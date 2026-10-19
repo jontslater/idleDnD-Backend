@@ -106,6 +106,7 @@ async function runTests() {
   try {
     await db.collection('heroes').doc(HERO_ID).update({
       level: 12,
+      gold: 500,
       skillPoints: 0,
       skillPointsEarned: 4,
       skills: { berserker_skill_1: { points: 3 }, berserker_skill_2: { points: 1 } }

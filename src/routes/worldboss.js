@@ -2,7 +2,15 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 
-import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer } from '../middleware/auth.js';
+import {
+  requireAuth,
+  requireOwnership,
+  requireAdmin,
+  requireGuildMembership,
+  requireGuildOfficer,
+  requireAdminOrStreamerKey
+} from '../middleware/auth.js';
+import { buildWorldBossDocument, maxPlausibleDamageReport } from '../utils/worldBossFactory.js';
 
 const router = express.Router();
 
@@ -121,7 +129,7 @@ router.post('/:bossId/join', requireAuth, async (req, res) => {
 router.post('/:bossId/damage', requireAuth, async (req, res) => {
   try {
     const { bossId } = req.params;
-    const { userId, damageDealt, healingDone, damageBlocked, newHp } = req.body;
+    const { userId, damageDealt, healingDone, damageBlocked } = req.body;
     
     if (!userId) {
       return res.status(400).json({ error: 'userId is required' });
@@ -148,36 +156,45 @@ router.post('/:bossId/damage', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Participant not found. Join the fight first.' });
     }
     
-    participants[participantIndex].damageDealt += (damageDealt || 0);
-    participants[participantIndex].healingDone += (healingDone || 0);
-    participants[participantIndex].damageBlocked += (damageBlocked || 0);
-    
-    // Update boss HP if provided
+    const heroDoc = await db.collection('heroes').doc(userId).get();
+    const heroLevel = heroDoc.exists ? heroDoc.data().level || 1 : 1;
+    const classKey = heroDoc.exists ? heroDoc.data().role || 'berserker' : 'berserker';
+    const maxHit = maxPlausibleDamageReport(heroLevel, classKey);
+
+    const dmg = Math.min(Math.max(0, Math.floor(Number(damageDealt) || 0)), maxHit);
+    const heal = Math.min(Math.max(0, Math.floor(Number(healingDone) || 0)), maxHit);
+    const blocked = Math.min(Math.max(0, Math.floor(Number(damageBlocked) || 0)), maxHit);
+
+    participants[participantIndex].damageDealt += dmg;
+    participants[participantIndex].healingDone += heal;
+    participants[participantIndex].damageBlocked += blocked;
+
+    const currentHp = boss.hp ?? boss.maxHp ?? 0;
+    const newHp = Math.max(0, currentHp - dmg);
+
     const updateData = {
-      participants: participants,
+      participants,
+      hp: newHp,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    
-    if (newHp !== undefined) {
-      updateData.hp = Math.max(0, newHp);
-      
-      // Check if boss is defeated
-      if (newHp <= 0) {
-        updateData.status = 'completed';
-        updateData.results = {
-          winners: participants.sort((a, b) => b.damageDealt - a.damageDealt).slice(0, 10),
-          totalDamage: participants.reduce((sum, p) => sum + p.damageDealt, 0),
-          duration: Date.now() - boss.startedAt,
-          completedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-      }
+
+    if (newHp <= 0) {
+      updateData.status = 'completed';
+      updateData.results = {
+        winners: participants.sort((a, b) => b.damageDealt - a.damageDealt).slice(0, 10),
+        totalDamage: participants.reduce((sum, p) => sum + p.damageDealt, 0),
+        duration: Date.now() - (boss.startedAt || Date.now()),
+        completedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
     }
-    
+
     await bossRef.update(updateData);
-    
-    res.json({ 
-      success: true, 
-      bossHp: updateData.hp || boss.hp,
+
+    res.json({
+      success: true,
+      bossHp: newHp,
+      damageApplied: dmg,
+      cappedAt: maxHit,
       defeated: updateData.status === 'completed'
     });
   } catch (error) {
@@ -367,32 +384,20 @@ router.post('/:bossId/complete', requireAuth, async (req, res) => {
 });
 
 // Create a new world boss event (admin only - for testing)
-router.post('/create', requireAuth, async (req, res) => {
+router.post('/create', requireAdminOrStreamerKey, async (req, res) => {
   try {
-    const { name, hp, attack, level, mechanics, duration, rewards } = req.body;
-    
+    const level = Math.min(100, Math.max(1, Math.floor(Number(req.body.level) || 60)));
     const worldBoss = {
-      name: name || 'Test World Boss',
-      hp: hp || 1000000,
-      maxHp: hp || 1000000,
-      attack: attack || 300,
-      level: level || 60,
-      mechanics: mechanics || ['Enrage at 20%', 'AoE damage every 30s'],
+      ...buildWorldBossDocument({
+        name: req.body.name,
+        level,
+        duration: req.body.duration
+      }),
       scheduledTime: admin.firestore.FieldValue.serverTimestamp(),
-      duration: duration || 3600000, // 1 hour
-      rewards: rewards || {
-        gold: 5000,
-        tokens: 100,
-        guaranteedLoot: 'legendary',
-        xpBonus: 50000
-      },
-      participants: [],
-      status: 'active',
-      startedAt: Date.now(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    
+
     const bossRef = await db.collection('worldBoss').add(worldBoss);
     
     res.json({

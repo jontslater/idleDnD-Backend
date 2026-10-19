@@ -8,6 +8,138 @@ import { requireAuth, requireOwnership, requireAdmin } from '../middleware/auth.
 
 const router = express.Router();
 
+/**
+ * Adventure / overlay progress (browser-source-unified) — no XP/gold/gear.
+ * For XP/gold batches use POST /api/overlay/sync with streamer key.
+ */
+router.post('/:userId/progress-sync', requireAuth, requireOwnership, async (req, res) => {
+  try {
+    const heroId = req.params.userId;
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const {
+      currentWave,
+      highestWave,
+      winStreak,
+      difficultyPercent,
+      lastAdventureSyncAt,
+      adventureState
+    } = req.body;
+
+    const patch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+
+    if (currentWave !== undefined) {
+      patch.currentWave = Math.min(999, Math.max(0, Math.floor(Number(currentWave) || 0)));
+    }
+    if (highestWave !== undefined) {
+      patch.highestWave = Math.min(999, Math.max(0, Math.floor(Number(highestWave) || 0)));
+    }
+    if (winStreak !== undefined) {
+      patch.winStreak = Math.min(50, Math.max(0, Math.floor(Number(winStreak) || 0)));
+    }
+    if (difficultyPercent !== undefined) {
+      const d = Number(difficultyPercent) || 100;
+      patch.difficultyPercent = Math.min(125, Math.max(40, Math.floor(d)));
+    }
+    if (lastAdventureSyncAt !== undefined) {
+      patch.lastAdventureSyncAt = Math.floor(Number(lastAdventureSyncAt) || Date.now());
+    }
+    if (adventureState && typeof adventureState === 'object' && !Array.isArray(adventureState)) {
+      const safe = {};
+      for (const key of ['phase', 'subPhase', 'targetEnemyId', 'inCombat']) {
+        if (adventureState[key] !== undefined) safe[key] = adventureState[key];
+      }
+      if (Object.keys(safe).length > 0) {
+        patch.adventureState = safe;
+      }
+    }
+
+    if (Object.keys(patch).length === 1) {
+      return res.status(400).json({ error: 'No valid progress fields to update' });
+    }
+
+    await heroRef.update(patch);
+    const updated = await heroRef.get();
+    res.json({ success: true, hero: { id: updated.id, ...updated.data() } });
+  } catch (error) {
+    console.error('Error syncing progress:', error);
+    res.status(500).json({ error: 'Failed to sync progress' });
+  }
+});
+
+/** Bulk vendor sell — server prices, removes items from inventory atomically. */
+router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'itemIds array is required' });
+    }
+    if (itemIds.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 items per sell request' });
+    }
+
+    const { getVendorSellPrice } = await import('../utils/vendorPrice.js');
+    const heroRef = db.collection('heroes').doc(userId);
+    const doc = await heroRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found' });
+    }
+
+    const hero = doc.data();
+    const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
+    const equippedIds = new Set(
+      Object.values(hero.equipment || {})
+        .filter(Boolean)
+        .map((i) => i.id)
+    );
+
+    const idSet = new Set(itemIds.map((id) => String(id)));
+    let goldGained = 0;
+    const sold = [];
+    const remaining = [];
+
+    for (const item of inventory) {
+      if (!item?.id || !idSet.has(item.id)) {
+        remaining.push(item);
+        continue;
+      }
+      if (equippedIds.has(item.id)) {
+        return res.status(400).json({ error: `Cannot sell equipped item: ${item.id}` });
+      }
+      const price = getVendorSellPrice(item);
+      goldGained += price;
+      sold.push({ id: item.id, name: item.name, gold: price });
+      idSet.delete(item.id);
+    }
+
+    if (sold.length === 0) {
+      return res.status(400).json({ error: 'No matching inventory items to sell' });
+    }
+
+    await heroRef.update({
+      inventory: remaining,
+      gold: (hero.gold || 0) + goldGained,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({
+      success: true,
+      goldGained,
+      newGold: (hero.gold || 0) + goldGained,
+      soldCount: sold.length,
+      sold
+    });
+  } catch (error) {
+    console.error('Error bulk selling inventory:', error);
+    res.status(500).json({ error: 'Failed to sell items' });
+  }
+});
+
 // Track wave completion for periodic chat updates
 router.post('/:userId/track-wave', requireAuth, requireOwnership, async (req, res) => {
   try {
@@ -803,10 +935,11 @@ router.get('/create/cost-info', async (req, res) => {
   }
 });
 
-// Create new hero (legacy endpoint) — server template; client may only set name/class/cosmetics
+// Create new hero (legacy endpoint) — same slot/cap checks as POST /create
 router.post('/', requireAuth, async (req, res) => {
   try {
     const { pickHeroCreateInput, buildNewHeroDocument } = await import('../utils/heroCreation.js');
+    const { assertHeroCreationAllowed } = await import('../utils/heroSlotLimits.js');
     const { picked, rejected } = pickHeroCreateInput(req.body);
 
     if (rejected.length > 0) {
@@ -824,25 +957,51 @@ router.post('/', requireAuth, async (req, res) => {
     if (twitchUserId && req.user.twitchUserId && twitchUserId !== req.user.twitchUserId) {
       return res.status(403).json({ error: 'Forbidden: twitchUserId mismatch' });
     }
-    if (!twitchUserId && !tiktokUserId) {
-      return res.status(400).json({ error: 'Twitch or TikTok user ID required' });
+
+    const gate = await assertHeroCreationAllowed({ twitchUserId, tiktokUserId });
+    if (!gate.ok) {
+      return res.status(gate.status).json(gate.body);
     }
 
     const { role: _r, class: _c, name, heroName, twitchUsername, ...cosmetic } = picked;
+    const { existingHeroes } = gate;
+
+    let founderPackTier = null;
+    let founderPackTierLevel = null;
+    let inheritedUsername = twitchUsername || req.user.twitchUsername || null;
+    if (existingHeroes.length > 0) {
+      const first = existingHeroes[0];
+      if (first.founderPackTier) {
+        founderPackTier = first.founderPackTier;
+        founderPackTierLevel = first.founderPackTierLevel;
+      }
+      if (!inheritedUsername && first.twitchUsername) {
+        inheritedUsername = first.twitchUsername;
+      }
+    }
 
     const heroData = buildNewHeroDocument({
       classKey,
       name: name || heroName,
       twitchUserId: twitchUserId || null,
       tiktokUserId,
-      twitchUsername: twitchUsername || req.user.twitchUsername || null,
-      cosmetic
+      twitchUsername: inheritedUsername,
+      founderPackTier,
+      founderPackTierLevel,
+      cosmetic,
+      battlefieldId: req.body.battlefieldId
     });
 
     const docRef = await db.collection('heroes').add(heroData);
     const doc = await docRef.get();
 
-    res.status(201).json({ ...doc.data(), id: doc.id });
+    const { MAX_HEROES } = await import('../utils/heroSlotLimits.js');
+    res.status(201).json({
+      ...doc.data(),
+      id: doc.id,
+      heroCount: gate.heroCount + 1,
+      maxHeroes: MAX_HEROES
+    });
   } catch (error) {
     console.error('Error creating hero:', error);
     res.status(500).json({ error: 'Failed to create hero' });

@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { requireAuth, requireOwnership } from '../middleware/auth.js';
+import { getVendorSellPrice } from '../utils/vendorPrice.js';
 
 const router = express.Router();
 
@@ -67,31 +68,6 @@ router.get('/listings', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch listings' });
   }
 });
-
-// Calculate vendor sell price (estimated based on rarity and type)
-function getVendorSellPrice(item) {
-  const rarityMultipliers = {
-    common: 1,
-    uncommon: 5,
-    rare: 20,
-    epic: 100,
-    legendary: 500
-  };
-  
-  const basePrice = rarityMultipliers[item.rarity || 'common'] || 1;
-  
-  // Adjust by item type
-  if (item.slot) {
-    // Gear: higher value
-    return basePrice * 10;
-  } else if (item.type === 'potion' || item.type === 'buff' || item.name?.toLowerCase().includes('potion')) {
-    // Consumables: moderate value
-    return basePrice * 2;
-  } else {
-    // Materials: lower value
-    return basePrice;
-  }
-}
 
 // Create listing
 router.post('/list', requireAuth, async (req, res) => {

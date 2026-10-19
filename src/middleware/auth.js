@@ -111,6 +111,53 @@ export const requireAdmin = (req, res, next) => {
 };
 
 /**
+ * Admin key (X-Admin-Key) or valid overlay streamer key (X-Streamer-Key + streamerId query/body).
+ */
+export const requireAdminOrStreamerKey = async (req, res, next) => {
+  const adminKey = req.headers['x-admin-key'];
+  const expectedKey = process.env.ADMIN_KEY;
+
+  if (expectedKey && adminKey) {
+    try {
+      const isValid = crypto.timingSafeEqual(Buffer.from(adminKey), Buffer.from(expectedKey));
+      if (isValid) {
+        req.authType = 'admin';
+        return next();
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const streamerId = req.body?.streamerId || req.query?.streamerId;
+  const streamerKey = req.headers['x-streamer-key'];
+  if (!streamerId || !streamerKey) {
+    return res.status(401).json({ error: 'Admin or streamer overlay authentication required' });
+  }
+
+  try {
+    const settingsDoc = await db.collection('streamerSettings').doc(String(streamerId)).get();
+    if (!settingsDoc.exists) {
+      return res.status(403).json({ error: 'Invalid streamer' });
+    }
+    const storedKey = settingsDoc.data().overlayKey;
+    if (!storedKey) {
+      return res.status(403).json({ error: 'Streamer overlay key not configured' });
+    }
+    const isValid = crypto.timingSafeEqual(Buffer.from(streamerKey), Buffer.from(storedKey));
+    if (!isValid) {
+      return res.status(403).json({ error: 'Invalid streamer key' });
+    }
+    req.streamer = { twitchId: String(streamerId), battlefieldId: `twitch:${streamerId}` };
+    req.authType = 'streamer-key';
+    return next();
+  } catch (error) {
+    console.error('[Auth] requireAdminOrStreamerKey:', error);
+    return res.status(500).json({ error: 'Authentication error' });
+  }
+};
+
+/**
  * Verify streamer/overlay access for streamer-scoped routes
  * Checks X-Streamer-Key header or streamer ownership
  * Uses timing-safe comparison for key validation

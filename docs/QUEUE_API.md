@@ -122,6 +122,18 @@ The authenticated user's Twitch id is taken from the JWT only (never from the bo
 }
 ```
 
+## Hero progress & inventory (browser-source-unified)
+
+These replace blocked `PUT /api/heroes/:userId` fields for adventure/inventory flows.
+
+| Route | Auth | Body |
+|-------|------|------|
+| `POST /api/heroes/:userId/progress-sync` | Bearer (hero owner) | `currentWave`, `highestWave`, `winStreak`, `difficultyPercent` (40–125), optional `adventureState` |
+| `POST /api/heroes/:userId/inventory/sell` | Bearer (hero owner) | `{ "itemIds": ["id1", "id2"] }` — server vendor prices, max 50 ids |
+| `POST /api/overlay/sync` | Streamer key / owner | XP & gold batches (see `docs/BALANCE.md`) |
+
+Equip gear with `POST /api/professions/:userId/equip` and `{ slot, itemId }` (item must be in inventory; stats are server-side).
+
 ## Instance status
 
 Launched instances use `status: "in-progress"` with `battlefieldId`, `participantIds` (Twitch user ids), and real `dungeonId` / `raidId`. Heroes keep `currentBattlefieldId` on the streamer battlefield and get `activeInstance`.

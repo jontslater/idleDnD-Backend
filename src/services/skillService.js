@@ -10,8 +10,8 @@ import {
 } from '../data/skills.js';
 import { SKILL_BALANCE_CAPS } from '../data/skillDefinitions.js';
 
-// TODO(jonathan): economy for player respec (gold cost / cooldown); default is free.
-export const DEFAULT_PLAYER_RESPEC_GOLD_COST = 0;
+/** Server-fixed respec cost (client cannot override). */
+export const DEFAULT_PLAYER_RESPEC_GOLD_COST = 250;
 
 function runTx(updateFn) {
   if (typeof db.runTransaction === 'function') {
@@ -207,9 +207,8 @@ async function resetSkillsCore(userId, { goldCost = 0, tokenCost = 0, useTokens 
 }
 
 /** Player respec — refunds all points (unspent + spent = earned). */
-export async function respecSkillsForPlayer(userId, options = {}) {
-  const goldCost = options.goldCost ?? DEFAULT_PLAYER_RESPEC_GOLD_COST;
-  return resetSkillsCore(userId, { goldCost, useTokens: false });
+export async function respecSkillsForPlayer(userId) {
+  return resetSkillsCore(userId, { goldCost: DEFAULT_PLAYER_RESPEC_GOLD_COST, useTokens: false });
 }
 
 /** Admin reset — no premium token spend (cosmetic-only policy). */

@@ -1168,31 +1168,21 @@ router.post('/:userId/use', requireAuth, requireOwnership, async (req, res) => {
  */
 router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) => {
   try {
-    const { slot, item } = req.body;
+    const { slot, itemId, item: _clientItem } = req.body;
     const { userId } = req.params;
-
-    console.log(`⚔️ Equip request: userId=${userId}, slot=${slot}, item.slot=${item?.slot}, item.id=${item?.id}`);
+    const resolvedItemId = itemId || _clientItem?.id;
 
     if (!slot) {
       return res.status(400).json({ error: 'Slot is required' });
     }
 
-    if (!item) {
-      return res.status(400).json({ error: 'Item is required' });
+    if (!resolvedItemId) {
+      return res.status(400).json({ error: 'itemId is required (item must exist in inventory)' });
     }
 
-    if (!['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'boots', 'ring1', 'ring2'].includes(slot)) {
-      return res.status(400).json({ error: `Invalid equipment slot: ${slot}. Valid slots are: weapon, armor, accessory, shield, helm, cloak, gloves, boots, ring1, ring2` });
-    }
-
-    // Validate that item slot matches the target slot (if item has a slot property)
-    if (item.slot && item.slot !== slot) {
-      console.warn(`⚠️ Item slot (${item.slot}) doesn't match target slot (${slot}), but proceeding anyway`);
-    }
-
-    // Validate item has required properties
-    if (!item.id) {
-      return res.status(400).json({ error: 'Item must have an id property' });
+    const validSlots = ['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'boots', 'ring1', 'ring2'];
+    if (!validSlots.includes(slot)) {
+      return res.status(400).json({ error: `Invalid equipment slot: ${slot}. Valid slots are: ${validSlots.join(', ')}` });
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -1238,12 +1228,29 @@ router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) =>
       }
     }
 
-    // Remove the item from inventory if it's being equipped from inventory
-    // Find the item in inventory by ID
-    const itemIndex = hero.inventory.findIndex(invItem => invItem && invItem.id === item.id);
-    if (itemIndex !== -1) {
-      hero.inventory.splice(itemIndex, 1);
+    const itemIndex = hero.inventory.findIndex((invItem) => invItem && invItem.id === resolvedItemId);
+    if (itemIndex === -1) {
+      return res.status(400).json({
+        error: 'Item not found in inventory. Equip only items you own; stats cannot be supplied by the client.'
+      });
     }
+
+    const item = { ...hero.inventory[itemIndex] };
+    delete item.heroId;
+    delete item.heroName;
+    delete item.displayName;
+    delete item.stackKey;
+    delete item.allItems;
+
+    const itemSlot = item.slot || slot;
+    if (itemSlot !== slot && !['ring1', 'ring2'].includes(slot)) {
+      return res.status(400).json({ error: `Item belongs in slot ${itemSlot}, not ${slot}` });
+    }
+    if (['ring1', 'ring2'].includes(slot) && item.slot && !['ring', 'ring1', 'ring2', 'accessory'].includes(item.slot)) {
+      return res.status(400).json({ error: 'Item cannot be equipped in a ring slot' });
+    }
+
+    hero.inventory.splice(itemIndex, 1);
 
     // Clean up enchantedItems for the old item if it was replaced
     if (currentItem && hero.enchantedItems) {

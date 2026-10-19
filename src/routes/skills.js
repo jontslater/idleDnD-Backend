@@ -151,8 +151,7 @@ router.post('/:userId/allocate', requireAuth, requireOwnership, async (req, res)
 
 router.post('/:userId/respec', requireAuth, requireOwnership, async (req, res) => {
   try {
-    const goldCost = req.body.goldCost ?? DEFAULT_PLAYER_RESPEC_GOLD_COST;
-    const result = await respecSkillsForPlayer(req.params.userId, { goldCost });
+    const result = await respecSkillsForPlayer(req.params.userId);
     res.json(result);
   } catch (error) {
     console.error('Error respeccing skills:', error);

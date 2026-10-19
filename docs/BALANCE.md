@@ -105,3 +105,13 @@ Flat **2.5 tokens/hour** for all players; founder tier does not change the rate.
 - `tests/monetization.test.js` — founder neutrality, token pack no gold, cosmetic sink policy.
 
 Regenerate JSON after formula edits: `npm run export-balance`.
+
+## Client sync routes (security)
+
+| Purpose | Route | Auth |
+|---------|-------|------|
+| XP / gold batches (overlay) | `POST /api/overlay/sync` | Streamer key or streamer JWT |
+| Adventure progress only (wave, streak, difficulty) | `POST /api/heroes/:userId/progress-sync` | Hero owner JWT |
+| Bulk vendor sell | `POST /api/heroes/:userId/inventory/sell` | Hero owner JWT (`itemIds[]`, server prices) |
+
+Combat XP from the overlay must use `POST /api/battlefields/:battlefieldId/combat/xp` with **X-Streamer-Key** (player JWT is rejected). Immediate awards are rate-limited and capped via `combatXpLimiter.js` + `balance.js`.

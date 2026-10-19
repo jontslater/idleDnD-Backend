@@ -5,6 +5,14 @@ import { getBattlefieldCache } from '../utils/battlefieldCache.js';
 
 import { requireAuth, requireOwnership, requireAdmin, requireGuildMembership, requireGuildOfficer, optionalAuth } from '../middleware/auth.js';
 import { requireInternal } from '../middleware/requireInternal.js';
+import { requireAuthOrStreamerKey } from '../middleware/requireAuthOrStreamerKey.js';
+import {
+  checkCombatXpRateLimit,
+  maxImmediateCombatXpForLevel,
+  normalizeKillXp,
+  parseBattlefieldStreamerId,
+  clampEnemyLevel
+} from '../utils/combatXpLimiter.js';
 
 const router = express.Router();
 
@@ -565,12 +573,31 @@ router.post('/:battlefieldId/combat/xp/accumulate', requireInternal, async (req,
 // Award XP to heroes when enemies are killed (supports single or batch)
 // This is the IMMEDIATE award endpoint - use for important events (level-ups, etc.)
 // For regular enemy kills, use /accumulate instead to reduce API calls
-router.post('/:battlefieldId/combat/xp', requireAuth, async (req, res) => {
+router.post('/:battlefieldId/combat/xp', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { battlefieldId } = req.params;
-    const { baseXP, enemyLevel, enemyName, heroIds, immediate = false } = req.body;
-    
-    // If immediate=false, use accumulator instead
+    const { baseXP, enemyLevel, enemyName, heroIds, immediate = false, enemyKind = 'normal' } = req.body;
+
+    if (req.authType === 'jwt') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Combat XP must be awarded with the streamer overlay key, not a player JWT'
+      });
+    }
+
+    const streamerFromBf = parseBattlefieldStreamerId(battlefieldId);
+    if (req.authType === 'streamer-key' && streamerFromBf && req.streamer?.twitchId !== streamerFromBf) {
+      return res.status(403).json({ error: 'Battlefield does not belong to authenticated streamer' });
+    }
+
+    const rate = checkCombatXpRateLimit(battlefieldId);
+    if (!rate.allowed) {
+      return res.status(429).json({
+        error: 'Too many combat XP requests',
+        retryAfterMs: rate.retryAfterMs
+      });
+    }
+
     if (!immediate) {
       // Redirect to accumulate endpoint
       const { accumulateEnemyKill, accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
@@ -593,32 +620,40 @@ router.post('/:battlefieldId/combat/xp', requireAuth, async (req, res) => {
       });
     }
     
-    if (!baseXP || !enemyLevel) {
-      return res.status(400).json({ 
-        error: 'baseXP and enemyLevel are required' 
-      });
+    if (!enemyLevel) {
+      return res.status(400).json({ error: 'enemyLevel is required' });
     }
-    
-    // Validate single or array values
-    const baseXPArray = Array.isArray(baseXP) ? baseXP : [baseXP];
+
     const enemyLevelArray = Array.isArray(enemyLevel) ? enemyLevel : [enemyLevel];
-    
-    if (baseXPArray.some(xp => xp <= 0) || enemyLevelArray.some(level => level <= 0)) {
-      return res.status(400).json({ 
-        error: 'baseXP and enemyLevel must be positive numbers' 
+    if (enemyLevelArray.some((level) => clampEnemyLevel(level) <= 0)) {
+      return res.status(400).json({ error: 'enemyLevel must be positive' });
+    }
+
+    const normalizedLevels = enemyLevelArray.map((l) => clampEnemyLevel(l));
+    const baseXPArray = normalizedLevels.map((l) => normalizeKillXp(l, enemyKind));
+    const avgLevel = Math.floor(
+      normalizedLevels.reduce((a, b) => a + b, 0) / normalizedLevels.length
+    );
+    const totalXp = baseXPArray.reduce((a, b) => a + b, 0);
+    const maxBatch = maxImmediateCombatXpForLevel(avgLevel, enemyKind);
+    if (totalXp > maxBatch) {
+      return res.status(400).json({
+        error: 'XP batch exceeds server cap for this level',
+        maxAllowed: maxBatch,
+        requested: totalXp
       });
     }
-    
+
     const { awardCombatXP } = await import('../services/xpDistributionService.js');
-    
-    // Pass arrays or single values - service handles both
+
     const result = await awardCombatXP(
       battlefieldId,
-      baseXP,
-      enemyLevel,
+      baseXPArray.length === 1 ? baseXPArray[0] : baseXPArray,
+      normalizedLevels.length === 1 ? normalizedLevels[0] : normalizedLevels,
       {
         enemyName: enemyName || 'Unknown Enemy',
-        specificHeroIds: heroIds || null
+        specificHeroIds: heroIds || null,
+        enemyKind
       }
     );
     

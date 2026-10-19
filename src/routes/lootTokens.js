@@ -52,7 +52,7 @@ router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
  * POST /api/loot-tokens/award
  * Award loot tokens to a user (called after raid/dungeon completion)
  */
-router.post('/award', requireAuth, async (req, res) => {
+router.post('/award', requireInternal, async (req, res) => {
   try {
     const { userId, raidId, difficulty, amount } = req.body;
 
@@ -60,13 +60,18 @@ router.post('/award', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    // Calculate token amount
-    let tokenAmount = amount;
-    if (!tokenAmount && raidId && difficulty) {
+    let tokenAmount;
+    if (amount !== undefined && amount !== null) {
+      tokenAmount = Math.floor(Number(amount));
+      if (!Number.isFinite(tokenAmount) || tokenAmount <= 0) {
+        return res.status(400).json({ error: 'amount must be a positive integer' });
+      }
+    } else if (raidId && difficulty) {
       tokenAmount = LOOT_TOKEN_REWARDS[difficulty] || LOOT_TOKEN_REWARDS.normal;
-    }
-    if (!tokenAmount) {
-      tokenAmount = LOOT_TOKEN_REWARDS.normal;
+    } else {
+      return res.status(400).json({
+        error: 'Provide positive amount or raidId+difficulty for server-derived award'
+      });
     }
 
     const userRef = db.collection('users').doc(userId);
