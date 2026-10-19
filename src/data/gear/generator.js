@@ -1,5 +1,5 @@
 import { GEAR_RARITY_R } from '../balance.js';
-import { itemBudget, STAT_COST, GEAR_SECONDARY_CAPS } from './budget.js';
+import { itemBudget, STAT_COST, GEAR_SECONDARY_CAPS, budgetFromStats } from './budget.js';
 import { pickBaseForRoll } from './bases.js';
 import { PREFIXES, suffixesForRole } from './affixes.js';
 import { ilvlFromSource } from './ilvl.js';
@@ -52,6 +52,16 @@ function allocateStats(budget, roleGroup, rnd) {
       stats[key] += val;
     }
     remaining -= val * cost;
+  }
+  const spent = budgetFromStats(stats);
+  if (spent > 0) {
+    const scale = budget / spent;
+    for (const key of Object.keys(stats)) {
+      stats[key] *= scale;
+      if (key === 'crit' || key === 'haste' || key === 'recovery') {
+        stats[key] = Math.min(GEAR_SECONDARY_CAPS[key], stats[key]);
+      }
+    }
   }
   return stats;
 }
@@ -131,6 +141,17 @@ export function generateGearItem(opts) {
 
   let stats = allocateStats(budget, roleGroup, rnd);
   const affixes = applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd);
+  const spent = budgetFromStats(stats);
+  if (spent > 0 && spent > budget * 1.05) {
+    const scale = budget / spent;
+    for (const key of Object.keys(stats)) {
+      if (key === 'crit' || key === 'haste' || key === 'recovery') {
+        stats[key] *= scale;
+      } else {
+        stats[key] *= scale;
+      }
+    }
+  }
 
   let legendary = null;
   if (legendaryId) {

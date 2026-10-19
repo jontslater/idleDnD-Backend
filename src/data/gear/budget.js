@@ -70,3 +70,16 @@ export function fullSetBudget(roleGroup, ilvl, rarity) {
 export function setBonusBudgetCap(roleGroup, ilvl, rarity) {
   return fullSetBudget(roleGroup, ilvl, rarity) * SET_BONUS_TOTAL_BUDGET_FRACTION;
 }
+
+/** Rough budget from rolled stats object (matches generator accounting). */
+export function budgetFromStats(stats) {
+  return (
+    (stats.power || 0) * STAT_COST.power +
+    (stats.spellPower || 0) * STAT_COST.spellPower +
+    (stats.armor || 0) * STAT_COST.armor +
+    (stats.stamina || 0) * STAT_COST.stamina +
+    (stats.crit || 0) * 100 * STAT_COST.crit +
+    (stats.haste || 0) * 100 * STAT_COST.haste +
+    (stats.recovery || 0) * 100 * STAT_COST.recovery
+  );
+}
