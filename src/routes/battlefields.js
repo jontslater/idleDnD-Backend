@@ -25,6 +25,18 @@ async function getBattlefieldHeroLevels(battlefieldId) {
   return snap.docs.map((d) => d.data().level || 1);
 }
 
+async function tryStartChatListenerForHero(hero) {
+  if (!hero?.twitchUserId) return false;
+  const { getTokensForTwitchUser } = await import('../utils/twitchTokenAccess.js');
+  const tokens = await getTokensForTwitchUser(db, hero.twitchUserId);
+  if (!tokens?.accessToken) return false;
+  const username = String(hero.twitchUsername || hero.name || hero.internalName || '').toLowerCase();
+  if (!username) return false;
+  const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
+  await initializeStreamerChatListener(username, tokens.accessToken, tokens.refreshToken);
+  return true;
+}
+
 // Get all heroes in a specific battlefield
 router.get('/:battlefieldId/heroes', async (req, res) => {
   try {
@@ -193,7 +205,7 @@ router.post('/register', requireAuth, async (req, res) => {
           // Look for a hero with a token (likely the streamer)
           for (const doc of battlefieldHeroes.docs) {
             const hero = doc.data();
-            if (hero.twitchAccessToken) {
+            if (hero.twitchUserId) {
               heroWithToken = { id: doc.id, ...hero };
               console.log(`   Found hero with token: ${hero.twitchUsername || hero.name || 'unknown'} (docId: ${doc.id})`);
               break;
@@ -207,7 +219,7 @@ router.post('/register', requireAuth, async (req, res) => {
               const heroDoc = await db.collection('heroes').doc(userId).get();
               if (heroDoc.exists) {
                 const hero = heroDoc.data();
-                if (hero.twitchAccessToken) {
+                if (hero.twitchUserId) {
                   heroWithToken = { id: heroDoc.id, ...hero };
                   console.log(`   Found hero by userId doc ID: ${hero.twitchUsername || hero.name || 'unknown'}`);
                 }
@@ -223,7 +235,7 @@ router.post('/register', requireAuth, async (req, res) => {
                 const hero = doc.data();
                 // Check if this hero belongs to the user (by checking if doc ID matches or other fields)
                 if (doc.id === userId || hero.userId === userId) {
-                  if (hero.twitchAccessToken) {
+                  if (hero.twitchUserId) {
                     heroWithToken = { id: doc.id, ...hero };
                     break;
                   }
@@ -235,16 +247,11 @@ router.post('/register', requireAuth, async (req, res) => {
           console.error(`   Error querying battlefield heroes:`, err);
         }
         
-        if (heroWithToken && heroWithToken.twitchAccessToken) {
-          // Get username from twitchUsername, name, or internalName
+        if (heroWithToken?.twitchUserId) {
           const actualUsername = (heroWithToken.twitchUsername || heroWithToken.name || heroWithToken.internalName || 'unknown').toLowerCase();
-          console.log(`✅ Found hero with token: ${actualUsername} (docId: ${heroWithToken.id})`);
-          console.log(`   twitchUsername: ${heroWithToken.twitchUsername || 'not set'}, name: ${heroWithToken.name || 'not set'}, internalName: ${heroWithToken.internalName || 'not set'}`);
-          
-          // Use the actual username for chat listener
-          const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
+          console.log(`✅ Found streamer hero: ${actualUsername} (docId: ${heroWithToken.id})`);
           try {
-            await initializeStreamerChatListener(actualUsername, heroWithToken.twitchAccessToken, heroWithToken.twitchRefreshToken);
+            await tryStartChatListenerForHero(heroWithToken);
             console.log(`✅ Chat listener initialized for ${actualUsername} via browser source registration`);
           } catch (err) {
             console.error(`⚠️  Failed to initialize chat listener:`, err.message || err);
@@ -270,9 +277,8 @@ router.post('/register', requireAuth, async (req, res) => {
           
           if (!heroesSnapshot.empty) {
             const hero = heroesSnapshot.docs[0].data();
-            if (hero.twitchAccessToken) {
-              const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
-              await initializeStreamerChatListener(streamerUsername, hero.twitchAccessToken, hero.twitchRefreshToken);
+            if (hero.twitchUserId) {
+              await tryStartChatListenerForHero(hero);
               console.log(`✅ Chat listener initialized for ${streamerUsername} via browser source registration`);
             } else {
               console.log(`ℹ️  Hero found for ${streamerUsername} but no token stored - streamer needs to log in via OAuth`);
@@ -288,15 +294,14 @@ router.post('/register', requireAuth, async (req, res) => {
           let heroWithToken = null;
           for (const doc of battlefieldHeroes.docs) {
             const hero = doc.data();
-            if (hero.twitchAccessToken && hero.twitchUsername === streamerUsername) {
+            if (hero.twitchUserId && hero.twitchUsername === streamerUsername) {
               heroWithToken = hero;
               break;
             }
           }
           
-          if (heroWithToken && heroWithToken.twitchAccessToken) {
-            const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
-            await initializeStreamerChatListener(streamerUsername, heroWithToken.twitchAccessToken, heroWithToken.twitchRefreshToken);
+          if (heroWithToken?.twitchUserId) {
+            await tryStartChatListenerForHero(heroWithToken);
             console.log(`✅ Chat listener initialized for ${streamerUsername} via browser source registration`);
           } else {
             console.log(`ℹ️  No hero with token found for ${streamerUsername} - chat listener not initialized`);
