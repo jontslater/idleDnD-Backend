@@ -11,6 +11,7 @@ import {
   maxImmediateCombatXpForLevel,
   normalizeKillXp,
   parseBattlefieldStreamerId,
+  streamerOwnsBattlefield,
   clampEnemyLevel,
   clampEnemyLevelToParty,
   capAccumulatedXpForMinute
@@ -593,8 +594,7 @@ router.post('/:battlefieldId/combat/xp', requireAuthOrStreamerKey, async (req, r
       });
     }
 
-    const streamerFromBf = parseBattlefieldStreamerId(battlefieldId);
-    if (req.authType === 'streamer-key' && streamerFromBf && req.streamer?.twitchId !== streamerFromBf) {
+    if (req.authType === 'streamer-key' && !streamerOwnsBattlefield(battlefieldId, req.streamer?.twitchId)) {
       return res.status(403).json({ error: 'Battlefield does not belong to authenticated streamer' });
     }
 
@@ -666,11 +666,22 @@ router.post('/:battlefieldId/combat/xp', requireAuthOrStreamerKey, async (req, r
       });
     }
 
+    const { allowedXp, dropped } = capAccumulatedXpForMinute(battlefieldId, avgLevel, totalXp);
+    if (allowedXp <= 0) {
+      return res.status(429).json({
+        error: 'Combat XP per-minute cap reached for this battlefield',
+        dropped
+      });
+    }
+
+    const scale = allowedXp / totalXp;
+    const scaledXpArray = baseXPArray.map((x) => Math.floor(x * scale));
+
     const { awardCombatXP } = await import('../services/xpDistributionService.js');
 
     const result = await awardCombatXP(
       battlefieldId,
-      baseXPArray.length === 1 ? baseXPArray[0] : baseXPArray,
+      scaledXpArray.length === 1 ? scaledXpArray[0] : scaledXpArray,
       normalizedLevels.length === 1 ? normalizedLevels[0] : normalizedLevels,
       {
         enemyName: enemyName || 'Unknown Enemy',

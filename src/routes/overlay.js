@@ -62,8 +62,9 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
       return res.status(400).json({ error: 'batchId is required (client-generated UUID)' });
     }
     
-    if (!Array.isArray(deltas) || deltas.length === 0) {
-      return res.status(400).json({ error: 'deltas array is required' });
+    const hasKills = Array.isArray(kills) && kills.length > 0;
+    if ((!Array.isArray(deltas) || deltas.length === 0) && !hasKills) {
+      return res.status(400).json({ error: 'deltas or kills array is required' });
     }
 
     const batchRate = checkOverlayBatchRateLimit(String(streamerId));
@@ -75,7 +76,7 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
     }
 
     const dedupedByHero = new Map();
-    for (const delta of deltas) {
+    for (const delta of deltas || []) {
       if (!delta?.heroId) continue;
       const prev = dedupedByHero.get(delta.heroId) || { heroId: delta.heroId, xpGained: 0, goldGained: 0 };
       prev.xpGained += Number(delta.xpGained) || 0;
@@ -202,32 +203,14 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
     }
     
     const drops = [];
-    if (Array.isArray(kills) && kills.length > 0) {
-      const { rollLootForKill } = await import('../services/lootRollService.js');
+    if (hasKills) {
+      const { rollIdleKillLoot } = await import('../services/idleKillLootService.js');
       const maxKills = Math.min(kills.length, 30);
       for (let i = 0; i < maxKills; i++) {
-        const kill = kills[i];
-        const heroId = kill.heroId;
-        if (!heroId) continue;
-        const heroRef = db.collection('heroes').doc(heroId);
-        const heroDoc = await heroRef.get();
-        if (!heroDoc.exists) continue;
-        const hero = { id: heroDoc.id, ...heroDoc.data() };
-        if (hero.currentBattlefieldId !== battlefieldId) continue;
-        const roll = rollLootForKill(hero, kill, {
-          lootPity: hero.lootPity || {},
-          setCollection: hero.setCollection || {}
-        });
-        if (!roll.dropped || !roll.item) continue;
-        const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
-        inventory.push(roll.item);
-        await heroRef.update({
-          inventory,
-          lootPity: roll.pity,
-          setCollection: roll.setCollection,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        drops.push({ heroId, item: roll.item });
+        const result = await rollIdleKillLoot(db, battlefieldId, kills[i]);
+        if (result.ok && result.dropped && result.item) {
+          drops.push({ heroId: result.heroId, item: result.item });
+        }
       }
     }
 
@@ -289,6 +272,37 @@ router.get('/sync/:batchId', requireStreamerAccess, async (req, res) => {
   } catch (error) {
     console.error('[Overlay Sync] Error checking batch status:', error);
     res.status(500).json({ error: 'Failed to check batch status', details: error.message });
+  }
+});
+
+/**
+ * @deprecated Use POST /api/battlefields/:battlefieldId/loot/roll (canonical).
+ */
+router.post('/loot-roll', requireStreamerAccess, async (req, res) => {
+  try {
+    const { streamerId, battlefieldId, kills } = req.body;
+    const bf = battlefieldId || (streamerId ? `twitch:${streamerId}` : null);
+    if (!bf) {
+      return res.status(400).json({ error: 'battlefieldId or streamerId required' });
+    }
+    if (!Array.isArray(kills) || kills.length === 0) {
+      return res.status(400).json({ error: 'kills array is required' });
+    }
+    const { rollIdleKillLoot } = await import('../services/idleKillLootService.js');
+    const drops = [];
+    for (const kill of kills.slice(0, 30)) {
+      const result = await rollIdleKillLoot(db, bf, kill);
+      if (result.ok && result.dropped && result.item) {
+        drops.push({ heroId: result.heroId, item: result.item });
+      }
+      if (!result.ok && result.code === 'BOSS_LOOT_SERVER_ONLY') {
+        return res.status(403).json(result);
+      }
+    }
+    res.json({ success: true, drops, deprecated: true, canonical: `/api/battlefields/${bf}/loot/roll` });
+  } catch (e) {
+    console.error('[overlay loot-roll]', e);
+    res.status(500).json({ error: 'Failed to roll loot' });
   }
 });
 

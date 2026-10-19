@@ -283,9 +283,17 @@ router.post('/test/create', requireAdmin, async (req, res) => {
   }
 });
 
-// Get all heroes
-router.get('/', async (req, res) => {
+// Get all heroes — disabled (was leaking full hero documents)
+router.get('/', requireAuth, async (req, res) => {
   try {
+    const { requireInternal } = await import('../middleware/requireInternal.js');
+    const internalKey = req.headers['x-internal-key'];
+    if (!internalKey || internalKey !== process.env.INTERNAL_API_KEY) {
+      return res.status(403).json({
+        error: 'Listing all heroes is disabled. Use GET /api/heroes/:userId or /api/heroes/twitch/:twitchUserId',
+        code: 'HERO_LIST_DISABLED'
+      });
+    }
     const snapshot = await db.collection('heroes').get();
     const heroes = snapshot.docs.map(doc => {
       const data = { ...doc.data(), id: doc.id };
@@ -1022,6 +1030,10 @@ router.post('/', requireAuth, async (req, res) => {
     });
 
     const docRef = await db.collection('heroes').add(heroData);
+    if (twitchUserId) {
+      const { applyAccountFounderToHero } = await import('../services/cosmeticsService.js');
+      await applyAccountFounderToHero(db, twitchUserId, docRef, heroData);
+    }
     const doc = await docRef.get();
 
     const { MAX_HEROES } = await import('../utils/heroSlotLimits.js');

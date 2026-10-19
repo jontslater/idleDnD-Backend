@@ -122,46 +122,7 @@ export async function ensureFreshToken(heroId) {
       }
     }
 
-    const { twitchAccessToken, twitchRefreshToken, twitchTokenExpiresAt } = hero;
-
-    if (!twitchAccessToken || !twitchRefreshToken) {
-      return { success: false, needsRelink: false, accessToken: null };
-    }
-
-    // Check if token needs refresh (expires within margin)
-    const now = Date.now();
-    const expiresAt = twitchTokenExpiresAt || 0;
-    const needsRefresh = expiresAt - now < REFRESH_MARGIN_MS;
-
-    if (!needsRefresh) {
-      return { success: true, needsRelink: false, accessToken: twitchAccessToken };
-    }
-
-    console.log(`[Token Refresh] Refreshing token for hero ${heroId}...`);
-
-    // Attempt refresh
-    const refreshed = await refreshTwitchToken(twitchRefreshToken);
-
-    if (!refreshed) {
-      // Refresh failed - mark account as needing re-authentication
-      console.warn(`[Token Refresh] Failed to refresh token for hero ${heroId} - marking as needing re-link`);
-      await heroRef.update({
-        tokenExpired: true,
-        twitchTokenExpiresAt: 0
-      });
-      return { success: false, needsRelink: true, accessToken: null };
-    }
-
-    // Update stored tokens
-    await heroRef.update({
-      twitchAccessToken: refreshed.accessToken,
-      twitchRefreshToken: refreshed.refreshToken,
-      twitchTokenExpiresAt: refreshed.expiresAt,
-      tokenExpired: false
-    });
-
-    console.log(`[Token Refresh] Successfully refreshed token for hero ${heroId}`);
-    return { success: true, needsRelink: false, accessToken: refreshed.accessToken };
+    return { success: false, needsRelink: true, accessToken: null };
 
   } catch (error) {
     console.error('[Token Refresh] Error ensuring fresh token (details not logged for security)');

@@ -45,6 +45,12 @@ export function parseBattlefieldStreamerId(battlefieldId) {
   return m ? m[1] : null;
 }
 
+export function streamerOwnsBattlefield(battlefieldId, streamerTwitchId) {
+  const owner = parseBattlefieldStreamerId(battlefieldId);
+  if (!owner || !streamerTwitchId) return false;
+  return String(owner).toLowerCase() === String(streamerTwitchId).toLowerCase();
+}
+
 /** Clamp reported enemy level to a reasonable band around party levels. */
 export function clampEnemyLevelToParty(heroLevels, enemyLevel, margin = 15) {
   const base = clampEnemyLevel(enemyLevel);

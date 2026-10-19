@@ -493,15 +493,15 @@ router.post('/initialize', requireAuth, async (req, res) => {
     }
 
     const hero = heroesSnapshot.docs[0].data();
-    const storedToken = hero.twitchAccessToken;
+    const { getTokensForTwitchUser } = await import('../utils/twitchTokenAccess.js');
+    const tokens = await getTokensForTwitchUser(db, hero.twitchUserId);
 
-    if (!storedToken) {
+    if (!tokens?.accessToken) {
       return res.status(400).json({ error: 'No Twitch token found. Streamer needs to log in via OAuth.' });
     }
 
-    // Initialize chat listener with stored token
     const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
-    await initializeStreamerChatListener(normalizedUsername, storedToken, hero.twitchRefreshToken);
+    await initializeStreamerChatListener(normalizedUsername, tokens.accessToken, tokens.refreshToken);
 
     return res.json({
       success: true,
@@ -552,9 +552,10 @@ router.get('/status', requireAuth, async (req, res) => {
       }
 
       const hero = heroesSnapshot.docs[0].data();
-      const storedToken = hero.twitchAccessToken;
+      const { getTokensForTwitchUser } = await import('../utils/twitchTokenAccess.js');
+      const tokens = await getTokensForTwitchUser(db, hero.twitchUserId);
 
-      if (!storedToken) {
+      if (!tokens?.accessToken) {
         return res.json({
           connected: false,
           streamerUsername: normalizedUsername,
@@ -562,10 +563,9 @@ router.get('/status', requireAuth, async (req, res) => {
         });
       }
 
-      // Try to initialize
       const { initializeStreamerChatListener } = await import('../websocket/twitch-events.js');
       try {
-        await initializeStreamerChatListener(normalizedUsername, storedToken, hero.twitchRefreshToken);
+        await initializeStreamerChatListener(normalizedUsername, tokens.accessToken, tokens.refreshToken);
         return res.json({
           connected: true,
           streamerUsername: normalizedUsername,

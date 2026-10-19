@@ -5,7 +5,7 @@
     "slot": "weapon",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Warhammer",
+    "nameStem": "Warhammer",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -17,7 +17,7 @@
     "slot": "weapon",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Warhammer",
+    "nameStem": "Warhammer",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -29,7 +29,7 @@
     "slot": "weapon",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Warhammer",
+    "nameStem": "Warhammer",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -41,7 +41,7 @@
     "slot": "weapon",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Warhammer",
+    "nameStem": "Warhammer",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -53,7 +53,7 @@
     "slot": "weapon",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Warhammer",
+    "nameStem": "Warhammer",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -65,7 +65,7 @@
     "slot": "armor",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Plate",
+    "nameStem": "Plate",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -77,7 +77,7 @@
     "slot": "armor",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Plate",
+    "nameStem": "Plate",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -89,7 +89,7 @@
     "slot": "armor",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Plate",
+    "nameStem": "Plate",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -101,7 +101,7 @@
     "slot": "armor",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Plate",
+    "nameStem": "Plate",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -113,7 +113,7 @@
     "slot": "armor",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Plate",
+    "nameStem": "Plate",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -125,7 +125,7 @@
     "slot": "accessory",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Sigil",
+    "nameStem": "Sigil",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -137,7 +137,7 @@
     "slot": "accessory",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Sigil",
+    "nameStem": "Sigil",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -149,7 +149,7 @@
     "slot": "accessory",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Sigil",
+    "nameStem": "Sigil",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -161,7 +161,7 @@
     "slot": "accessory",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Sigil",
+    "nameStem": "Sigil",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -173,7 +173,7 @@
     "slot": "accessory",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Sigil",
+    "nameStem": "Sigil",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -185,7 +185,7 @@
     "slot": "shield",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Bulwark",
+    "nameStem": "Bulwark",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -197,7 +197,7 @@
     "slot": "shield",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Bulwark",
+    "nameStem": "Bulwark",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -209,7 +209,7 @@
     "slot": "shield",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Bulwark",
+    "nameStem": "Bulwark",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -221,7 +221,7 @@
     "slot": "shield",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Bulwark",
+    "nameStem": "Bulwark",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -233,7 +233,7 @@
     "slot": "shield",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Bulwark",
+    "nameStem": "Bulwark",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -245,7 +245,7 @@
     "slot": "helm",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -257,7 +257,7 @@
     "slot": "helm",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -269,7 +269,7 @@
     "slot": "helm",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -281,7 +281,7 @@
     "slot": "helm",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -293,7 +293,7 @@
     "slot": "helm",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -305,7 +305,7 @@
     "slot": "cloak",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -317,7 +317,7 @@
     "slot": "cloak",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -329,7 +329,7 @@
     "slot": "cloak",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -341,7 +341,7 @@
     "slot": "cloak",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -353,7 +353,7 @@
     "slot": "cloak",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -365,7 +365,7 @@
     "slot": "gloves",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -377,7 +377,7 @@
     "slot": "gloves",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -389,7 +389,7 @@
     "slot": "gloves",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -401,7 +401,7 @@
     "slot": "gloves",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -413,7 +413,7 @@
     "slot": "gloves",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -425,7 +425,7 @@
     "slot": "ring1",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -437,7 +437,7 @@
     "slot": "ring1",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -449,7 +449,7 @@
     "slot": "ring1",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -461,7 +461,7 @@
     "slot": "ring1",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -473,7 +473,7 @@
     "slot": "ring1",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -485,7 +485,7 @@
     "slot": "ring2",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -497,7 +497,7 @@
     "slot": "ring2",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -509,7 +509,7 @@
     "slot": "ring2",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -521,7 +521,7 @@
     "slot": "ring2",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -533,7 +533,7 @@
     "slot": "ring2",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -545,7 +545,7 @@
     "slot": "boots",
     "armorType": "plate",
     "tier": 1,
-    "nameStem": "Iron Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -557,7 +557,7 @@
     "slot": "boots",
     "armorType": "plate",
     "tier": 2,
-    "nameStem": "Steel Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -569,7 +569,7 @@
     "slot": "boots",
     "armorType": "plate",
     "tier": 3,
-    "nameStem": "Mithril Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -581,7 +581,7 @@
     "slot": "boots",
     "armorType": "plate",
     "tier": 4,
-    "nameStem": "Adamant Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -593,7 +593,7 @@
     "slot": "boots",
     "armorType": "plate",
     "tier": 5,
-    "nameStem": "Voidforged Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -605,7 +605,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Focus",
+    "nameStem": "Focus",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -617,7 +617,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Focus",
+    "nameStem": "Focus",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -629,7 +629,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Focus",
+    "nameStem": "Focus",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -641,7 +641,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Focus",
+    "nameStem": "Focus",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -653,7 +653,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Focus",
+    "nameStem": "Focus",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -665,7 +665,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Vestments",
+    "nameStem": "Vestments",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -677,7 +677,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Vestments",
+    "nameStem": "Vestments",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -689,7 +689,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Vestments",
+    "nameStem": "Vestments",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -701,7 +701,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Vestments",
+    "nameStem": "Vestments",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -713,7 +713,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Vestments",
+    "nameStem": "Vestments",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -725,7 +725,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Relic",
+    "nameStem": "Relic",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -737,7 +737,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Relic",
+    "nameStem": "Relic",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -749,7 +749,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Relic",
+    "nameStem": "Relic",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -761,7 +761,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Relic",
+    "nameStem": "Relic",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -773,7 +773,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Relic",
+    "nameStem": "Relic",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -785,7 +785,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -797,7 +797,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -809,7 +809,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -821,7 +821,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -833,7 +833,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -845,7 +845,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -857,7 +857,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -869,7 +869,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -881,7 +881,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -893,7 +893,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -905,7 +905,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -917,7 +917,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -929,7 +929,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -941,7 +941,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -953,7 +953,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -965,7 +965,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -977,7 +977,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -989,7 +989,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1001,7 +1001,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1013,7 +1013,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1025,7 +1025,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1037,7 +1037,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1049,7 +1049,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1061,7 +1061,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1073,7 +1073,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1085,7 +1085,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1097,7 +1097,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1109,7 +1109,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1121,7 +1121,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1133,7 +1133,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1145,7 +1145,7 @@
     "slot": "weapon",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Blade",
+    "nameStem": "Blade",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1157,7 +1157,7 @@
     "slot": "weapon",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Blade",
+    "nameStem": "Blade",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1169,7 +1169,7 @@
     "slot": "weapon",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Blade",
+    "nameStem": "Blade",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1181,7 +1181,7 @@
     "slot": "weapon",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Blade",
+    "nameStem": "Blade",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1193,7 +1193,7 @@
     "slot": "weapon",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Blade",
+    "nameStem": "Blade",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1205,7 +1205,7 @@
     "slot": "armor",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Harness",
+    "nameStem": "Harness",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1217,7 +1217,7 @@
     "slot": "armor",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Harness",
+    "nameStem": "Harness",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1229,7 +1229,7 @@
     "slot": "armor",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Harness",
+    "nameStem": "Harness",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1241,7 +1241,7 @@
     "slot": "armor",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Harness",
+    "nameStem": "Harness",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1253,7 +1253,7 @@
     "slot": "armor",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Harness",
+    "nameStem": "Harness",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1265,7 +1265,7 @@
     "slot": "accessory",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Charm",
+    "nameStem": "Charm",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1277,7 +1277,7 @@
     "slot": "accessory",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Charm",
+    "nameStem": "Charm",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1289,7 +1289,7 @@
     "slot": "accessory",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Charm",
+    "nameStem": "Charm",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1301,7 +1301,7 @@
     "slot": "accessory",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Charm",
+    "nameStem": "Charm",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1313,7 +1313,7 @@
     "slot": "accessory",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Charm",
+    "nameStem": "Charm",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1325,7 +1325,7 @@
     "slot": "helm",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1337,7 +1337,7 @@
     "slot": "helm",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1349,7 +1349,7 @@
     "slot": "helm",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1361,7 +1361,7 @@
     "slot": "helm",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1373,7 +1373,7 @@
     "slot": "helm",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1385,7 +1385,7 @@
     "slot": "cloak",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1397,7 +1397,7 @@
     "slot": "cloak",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1409,7 +1409,7 @@
     "slot": "cloak",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1421,7 +1421,7 @@
     "slot": "cloak",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1433,7 +1433,7 @@
     "slot": "cloak",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1445,7 +1445,7 @@
     "slot": "gloves",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1457,7 +1457,7 @@
     "slot": "gloves",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1469,7 +1469,7 @@
     "slot": "gloves",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1481,7 +1481,7 @@
     "slot": "gloves",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1493,7 +1493,7 @@
     "slot": "gloves",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1505,7 +1505,7 @@
     "slot": "ring1",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1517,7 +1517,7 @@
     "slot": "ring1",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1529,7 +1529,7 @@
     "slot": "ring1",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1541,7 +1541,7 @@
     "slot": "ring1",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1553,7 +1553,7 @@
     "slot": "ring1",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1565,7 +1565,7 @@
     "slot": "ring2",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1577,7 +1577,7 @@
     "slot": "ring2",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1589,7 +1589,7 @@
     "slot": "ring2",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1601,7 +1601,7 @@
     "slot": "ring2",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1613,7 +1613,7 @@
     "slot": "ring2",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1625,7 +1625,7 @@
     "slot": "boots",
     "armorType": "leather",
     "tier": 1,
-    "nameStem": "Hide Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1637,7 +1637,7 @@
     "slot": "boots",
     "armorType": "leather",
     "tier": 2,
-    "nameStem": "Scale Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1649,7 +1649,7 @@
     "slot": "boots",
     "armorType": "leather",
     "tier": 3,
-    "nameStem": "Dragonhide Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1661,7 +1661,7 @@
     "slot": "boots",
     "armorType": "leather",
     "tier": 4,
-    "nameStem": "Wyvern Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1673,7 +1673,7 @@
     "slot": "boots",
     "armorType": "leather",
     "tier": 5,
-    "nameStem": "Voidleather Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1685,7 +1685,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Staff",
+    "nameStem": "Staff",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1697,7 +1697,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Staff",
+    "nameStem": "Staff",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1709,7 +1709,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Staff",
+    "nameStem": "Staff",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1721,7 +1721,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Staff",
+    "nameStem": "Staff",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1733,7 +1733,7 @@
     "slot": "weapon",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Staff",
+    "nameStem": "Staff",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1745,7 +1745,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Robes",
+    "nameStem": "Robes",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1757,7 +1757,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Robes",
+    "nameStem": "Robes",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1769,7 +1769,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Robes",
+    "nameStem": "Robes",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1781,7 +1781,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Robes",
+    "nameStem": "Robes",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1793,7 +1793,7 @@
     "slot": "armor",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Robes",
+    "nameStem": "Robes",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1805,7 +1805,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Orb",
+    "nameStem": "Orb",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1817,7 +1817,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Orb",
+    "nameStem": "Orb",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1829,7 +1829,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Orb",
+    "nameStem": "Orb",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1841,7 +1841,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Orb",
+    "nameStem": "Orb",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1853,7 +1853,7 @@
     "slot": "accessory",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Orb",
+    "nameStem": "Orb",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1865,7 +1865,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1877,7 +1877,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1889,7 +1889,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1901,7 +1901,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1913,7 +1913,7 @@
     "slot": "helm",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Greathelm",
+    "nameStem": "Greathelm",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1925,7 +1925,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1937,7 +1937,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -1949,7 +1949,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -1961,7 +1961,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -1973,7 +1973,7 @@
     "slot": "cloak",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Mantle",
+    "nameStem": "Mantle",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -1985,7 +1985,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -1997,7 +1997,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -2009,7 +2009,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -2021,7 +2021,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -2033,7 +2033,7 @@
     "slot": "gloves",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Gauntlets",
+    "nameStem": "Gauntlets",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -2045,7 +2045,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -2057,7 +2057,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -2069,7 +2069,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -2081,7 +2081,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -2093,7 +2093,7 @@
     "slot": "ring1",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Band",
+    "nameStem": "Band",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -2105,7 +2105,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -2117,7 +2117,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -2129,7 +2129,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -2141,7 +2141,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -2153,7 +2153,7 @@
     "slot": "ring2",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Loop",
+    "nameStem": "Loop",
     "ilvlBand": {
       "min": 81,
       "max": 115
@@ -2165,7 +2165,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 1,
-    "nameStem": "Linen Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 1,
       "max": 23
@@ -2177,7 +2177,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 2,
-    "nameStem": "Wool Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 21,
       "max": 46
@@ -2189,7 +2189,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 3,
-    "nameStem": "Silk Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 41,
       "max": 69
@@ -2201,7 +2201,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 4,
-    "nameStem": "Mageweave Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 61,
       "max": 92
@@ -2213,7 +2213,7 @@
     "slot": "boots",
     "armorType": "cloth",
     "tier": 5,
-    "nameStem": "Starweave Treads",
+    "nameStem": "Treads",
     "ilvlBand": {
       "min": 81,
       "max": 115

@@ -111,7 +111,78 @@ async function runTests() {
     console.log('  ✗ Failed:', e.message);
   }
 
-  console.log('\nTest 6: raidLoot module imports');
+  console.log('\nTest 6: L50 epic tank set legacy defense ~900-1300');
+  try {
+    const slots = ['weapon', 'armor', 'shield', 'helm', 'cloak', 'gloves', 'boots', 'ring1', 'ring2'];
+    let defenseSum = 0;
+    for (const slot of slots) {
+      const it = generateGearItem({
+        roleGroup: 'tank',
+        slot,
+        rarity: 'epic',
+        ilvl: 50,
+        source: { type: 'idle', enemyLevel: 50 },
+        seed: `set50-${slot}`
+      });
+      defenseSum += it.defense || it.stats.armor || 0;
+    }
+    assert.ok(defenseSum >= 900 && defenseSum <= 1400, `defenseSum=${defenseSum}`);
+    passed++;
+    console.log('  ✓ Passed', defenseSum);
+  } catch (e) {
+    failed++;
+    console.log('  ✗ Failed:', e.message);
+  }
+
+  console.log('\nTest 7: monotonic rarity at same ilvl');
+  try {
+    const slot = 'armor';
+    const ilvl = 40;
+    const rarities = ['common', 'uncommon', 'rare', 'epic'];
+    const totals = rarities.map((rarity) => {
+      const it = generateGearItem({
+        roleGroup: 'tank',
+        slot,
+        rarity,
+        ilvl,
+        source: { type: 'idle', enemyLevel: ilvl },
+        seed: `mono-${rarity}`
+      });
+      return totalStatBudgetFromItem(it);
+    });
+    for (let i = 1; i < totals.length; i++) {
+      assert.ok(totals[i] >= totals[i - 1], `rarity order broken at ${rarities[i]}`);
+    }
+    passed++;
+    console.log('  ✓ Passed');
+  } catch (e) {
+    failed++;
+    console.log('  ✗ Failed:', e.message);
+  }
+
+  console.log('\nTest 8: gear names have no duplicate words');
+  try {
+    for (let i = 0; i < 50; i++) {
+      const it = generateGearItem({
+        roleGroup: 'tank',
+        slot: 'helm',
+        rarity: 'epic',
+        ilvl: 30 + i,
+        source: { type: 'idle', enemyLevel: 30 + i },
+        seed: `name-${i}`
+      });
+      const words = it.name.toLowerCase().split(/\s+/);
+      const uniq = new Set(words);
+      assert.equal(words.length, uniq.size, it.name);
+    }
+    passed++;
+    console.log('  ✓ Passed');
+  } catch (e) {
+    failed++;
+    console.log('  ✗ Failed:', e.message);
+  }
+
+  console.log('\nTest 9: raidLoot module imports');
   try {
     const { generateRaidLoot } = await import('../src/data/raidLoot.js');
     const item = generateRaidLoot('corrupted_temple', 'normal', 'tank', 'weapon', 30);

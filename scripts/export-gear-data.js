@@ -26,6 +26,24 @@ fs.writeFileSync(
   `${JSON.stringify({ bindings: ITEM_BINDINGS, rules: BINDING_RULES }, null, 2)}\n`
 );
 fs.writeFileSync(
+  path.join(outDir, 'gear-set-bonuses.json'),
+  `${JSON.stringify(
+    GEAR_SETS.map((s) => ({
+      id: s.id,
+      name: s.name,
+      roleGroup: s.roleGroup,
+      kind: s.kind,
+      tier: s.tier,
+      ilvlBand: s.ilvlBand,
+      slots: s.slots,
+      bonuses: s.bonuses,
+      defaultBinding: 'bop'
+    })),
+    null,
+    2
+  )}\n`
+);
+fs.writeFileSync(
   path.join(outDir, 'gear-affixes.json'),
   `${JSON.stringify({ prefixes: PREFIXES, suffixes: SUFFIXES }, null, 2)}\n`
 );

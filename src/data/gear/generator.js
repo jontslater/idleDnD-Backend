@@ -18,8 +18,11 @@ const RARITY_COLORS = {
   mythic: '#e60000'
 };
 
-function primarySecondaryPlan(roleGroup) {
+function primarySecondaryPlan(roleGroup, slot = 'armor') {
   if (roleGroup === 'tank') {
+    if (ARMOR_SLOTS.has(slot)) {
+      return { primary: ['armor', 'stamina'], secondary: ['power', 'haste', 'recovery', 'crit'] };
+    }
     return { primary: ['stamina', 'armor'], secondary: ['power', 'haste', 'recovery', 'crit'] };
   }
   if (roleGroup === 'healer') {
@@ -31,8 +34,13 @@ function primarySecondaryPlan(roleGroup) {
   return { primary: ['power'], secondary: ['crit', 'haste', 'stamina'] };
 }
 
-function allocateStats(budget, roleGroup, rnd) {
-  const plan = primarySecondaryPlan(roleGroup);
+const ARMOR_SLOTS = new Set(['armor', 'shield', 'helm', 'cloak', 'gloves', 'boots']);
+
+/** Maps stat budget to legacy defense/attack fields the FE sums (BALANCE_PLAN scale). */
+const LEGACY_BUDGET_TO_DEFENSE = 13.1 / STAT_COST.armor;
+
+function allocateStats(budget, roleGroup, rnd, slot = 'armor') {
+  const plan = primarySecondaryPlan(roleGroup, slot);
   const stats = { power: 0, spellPower: 0, armor: 0, stamina: 0, crit: 0, haste: 0, recovery: 0 };
   let remaining = budget;
   const primShare = 0.6;
@@ -89,17 +97,44 @@ function applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd) {
   return affixes;
 }
 
-function toLegacyCombatFields(stats, roleGroup) {
+function toLegacyCombatFields(stats, roleGroup, budget, slot) {
   const attack = Math.floor(roleGroup === 'healer' ? stats.spellPower * 0.5 : stats.power);
-  const defense = Math.floor(stats.armor);
+  let defense = Math.floor(stats.armor || 0);
+  if (roleGroup === 'tank' && ARMOR_SLOTS.has(slot)) {
+    defense = Math.max(defense, Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE));
+  } else if (roleGroup === 'tank') {
+    defense = Math.max(defense, Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE * 0.35));
+  }
   const hp = Math.floor(stats.stamina * 10);
   return { attack, defense, hp };
+}
+
+function enforceBudgetFloor(stats, budget) {
+  const spent = budgetFromStats(stats);
+  if (spent <= 0 || spent >= budget * 0.92) return stats;
+  const scale = (budget * 0.95) / spent;
+  const out = { ...stats };
+  for (const key of Object.keys(out)) {
+    out[key] *= scale;
+    if (key === 'crit' || key === 'haste' || key === 'recovery') {
+      out[key] = Math.min(GEAR_SECONDARY_CAPS[key], out[key]);
+    }
+  }
+  return out;
 }
 
 function buildName(base, prefix, suffix, material) {
   const parts = [];
   if (prefix) parts.push(prefix.label);
-  parts.push(`${material} ${base.nameStem}`);
+  const stem = `${material} ${base.nameStem}`.trim();
+  const words = new Set();
+  for (const token of stem.split(/\s+/)) {
+    const lower = token.toLowerCase();
+    if (!words.has(lower)) {
+      words.add(lower);
+      parts.push(token);
+    }
+  }
   if (suffix) parts.push(`of ${suffix.label}`);
   return parts.join(' ');
 }
@@ -140,8 +175,9 @@ export function generateGearItem(opts) {
     budget *= 0.94;
   }
 
-  let stats = allocateStats(budget, roleGroup, rnd);
+  let stats = allocateStats(budget, roleGroup, rnd, slot);
   const affixes = applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd);
+  stats = enforceBudgetFloor(stats, budget);
   const spent = budgetFromStats(stats);
   if (spent > 0 && spent > budget * 1.05) {
     const scale = budget / spent;
@@ -164,7 +200,7 @@ export function generateGearItem(opts) {
   const set = setId ? getSetById(setId) : null;
   const legendaryResolved = legendary?.id || legendaryId || null;
   const name = buildName(base, prefix, suffix, material);
-  const legacy = toLegacyCombatFields(stats, roleGroup);
+  const legacy = toLegacyCombatFields(stats, roleGroup, budget, slot);
   const id = `gear_${seed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`;
   const binding = bindingForGeneratedGear({
     source,

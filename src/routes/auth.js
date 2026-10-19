@@ -102,7 +102,7 @@ router.post('/twitch', async (req, res) => {
       });
     }
 
-    const { access_token, refresh_token } = await twitchTokenResponse.json();
+    const { access_token, refresh_token, expires_in } = await twitchTokenResponse.json();
     console.log('[Twitch Auth] Token exchange successful');
 
     // Get Twitch user info
@@ -184,18 +184,18 @@ router.post('/twitch', async (req, res) => {
         // Removed updatedAt to reduce writes - only update when data changes
       };
       
-      // Store Twitch access token for chat listener (encrypted at rest by Firebase)
-      // This allows the backend to listen to the streamer's chat automatically
+      updateData.twitchUsername = twitchUser.login.toLowerCase();
+
       if (access_token) {
-        updateData.twitchAccessToken = access_token;
-        if (refresh_token) {
-          updateData.twitchRefreshToken = refresh_token;
-        }
-        updateData.twitchTokenExpiresAt = Date.now() + (60 * 60 * 1000); // 1 hour from now
-        updateData.twitchUsername = twitchUser.login.toLowerCase(); // Store username for lookup
-      } else {
-        // Even without token, update twitchUsername for Founders Hall display
-        updateData.twitchUsername = twitchUser.login.toLowerCase();
+        const { saveTwitchCredentials, stripTwitchTokensFromHeroes, TWITCH_VIEWER_SCOPES } =
+          await import('../utils/twitchCredentialStore.js');
+        await saveTwitchCredentials(db, twitchUser.id, {
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          expiresAt: Date.now() + (expires_in ? expires_in * 1000 : 3600_000),
+          scopes: TWITCH_VIEWER_SCOPES
+        });
+        await stripTwitchTokensFromHeroes(db, twitchUser.id);
       }
       
       // Update all user's heroes with twitchUsername

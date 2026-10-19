@@ -2028,7 +2028,11 @@ async function handleRecipesCommand(hero, args, username) {
       'basic_elixir',
       'powerful_elixir',
       'superior_elixir',
-      'legendary_elixir'
+      'legendary_elixir',
+      'restoration_draught',
+      'vigor_tonic',
+      'mana_draught',
+      'champions_flask'
     ],
     mining: [
       'iron_whetstone',

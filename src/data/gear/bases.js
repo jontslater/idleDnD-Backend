@@ -38,7 +38,7 @@ function buildBases() {
           slot,
           armorType: ARMOR_TYPES[roleGroup],
           tier,
-          nameStem: `${material} ${variant}`,
+          nameStem: variant,
           ilvlBand: { min: (tier - 1) * 20 + 1, max: Math.min(115, tier * 23) }
         });
       }

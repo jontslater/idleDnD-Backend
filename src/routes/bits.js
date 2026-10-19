@@ -51,11 +51,17 @@ router.post('/purchase', verifyTwitchToken, async (req, res) => {
   try {
     const { type, item, transactionId, channelId } = req.body;
 
-    const userId = verifiedBitsUserId(req) || req.body.userId;
+    const userId = verifiedBitsUserId(req);
     const bits = verifiedBitsAmount(req);
 
     if (!transactionId || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: 'Missing required fields (extension JWT must include user id)' });
+    }
+
+    const { assertBitsJwtMatchesRequest } = await import('../utils/bitsReceipt.js');
+    const receipt = assertBitsJwtMatchesRequest(req, { transactionId, channelId });
+    if (!receipt.ok) {
+      return res.status(receipt.status).json({ error: receipt.error, code: receipt.code });
     }
 
     if (type === 'gear') {
@@ -91,12 +97,11 @@ router.post('/purchase', verifyTwitchToken, async (req, res) => {
     const hero = heroDoc.data();
     let message = '';
 
-    if (type === 'consumable' && item === 'health_potion') {
-      await heroDoc.ref.update({
-        'potions.health': admin.firestore.FieldValue.increment(1),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    if (type === 'consumable') {
+      return res.status(410).json({
+        error: 'Bits consumables are disabled. Use Bits for cosmetic effects only.',
+        code: 'BITS_CONSUMABLE_DISABLED'
       });
-      message = `Unlocked Health Potion with ${bits} Bits!`;
     } else if (type === 'cosmetic') {
       return res.status(501).json({
         error: 'Bits cosmetic unlocks are not configured yet',

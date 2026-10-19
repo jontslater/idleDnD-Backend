@@ -1,5 +1,29 @@
 # Battlefield queue API (chat + portal)
 
+## Idle loot (server rolls)
+
+**Canonical:** `POST /api/battlefields/:battlefieldId/loot/roll`  
+**Auth:** `X-Streamer-Key` (same as overlay sync)
+
+**Body**
+
+```json
+{
+  "kills": [
+    { "heroId": "hero-doc-id", "enemyLevel": 42, "kind": "normal" }
+  ]
+}
+```
+
+- `kind`: `normal` | `elite` (boss kinds `raidBoss`, `dungeonBoss`, `worldboss` are rejected — raid/dungeon loot only from instance completion).
+- Drop rate caps match idle plan (~8% normal, per-hero per-minute limits).
+
+`POST /api/overlay/loot-roll` remains as a deprecated alias (same payload plus `streamerId` or `battlefieldId`).
+
+`POST /api/overlay/sync` may include `kills[]` in the same batch as `deltas[]` (one rate-limit tick per batch, many heroes allowed).
+
+---
+
 Chat (`!dungeon` / `!raid`, `!qdungeon` / `!qraid`, `!qleave`, `!qstatus`, `!qstart`, `!qcancel`) and these REST routes share the same `battlefieldQueues` documents and `queueService` logic.
 
 ## Queue keys → content IDs

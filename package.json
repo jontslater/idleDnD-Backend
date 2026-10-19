@@ -14,6 +14,7 @@
     "export-skills": "node scripts/export-skill-definitions.js",
     "export-balance": "node scripts/export-balance.js",
     "export-gear": "node scripts/export-gear-data.js",
+    "export-craft-recipes": "node scripts/export-craft-recipes.js",
     "audit-routes": "node scripts/audit-routes.js",
     "sync-heroes": "node scripts/sync-heroes.js",
     "test-hero": "node scripts/sync-heroes.js --test",

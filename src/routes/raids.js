@@ -897,6 +897,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     const { getRaidById } = await import('../data/raids.js');
     const { generateRaidLoot } = await import('../data/raidLoot.js');
     const raidData = getRaidById(instance.raidId);
+    if (!raidData) {
+      return res.status(400).json({ error: 'Unknown raid configuration', raidId: instance.raidId });
+    }
     
     // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
     // Don't blindly trust client's success flag - verify boss defeated and team survived
@@ -906,7 +909,11 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       // Validate success criteria:
       // 1. Boss must be defeated (bossHp <= 0)
       // 2. At least one participant must be alive
-      const bossHp = instance.bossHp || instance.boss?.hp || raidData.boss.hp;
+      const bossHp =
+        instance.bossHp ??
+        instance.boss?.hp ??
+        raidData?.boss?.hp ??
+        0;
       const aliveParticipants = (finalParticipants || instance.participants || []).filter(p => p.isAlive);
       
       if (bossHp > 0) {
