@@ -1204,28 +1204,11 @@ export async function handleClaimCommand(hero, username) {
   const lastClaim = hero.lastTokenClaim || hero.joinedAt || now;
   const timeSinceClaim = now - lastClaim;
   
-  // Base idle tokens: 2.5 per hour
-  let tokensPerHour = 2.5;
-  
-  // Founder pack bonuses (add to base rate)
-  const founderTier = hero.founderPackTier || null;
-  const founderBonuses = {
-    'bronze': 0.5,   // +0.5 tokens/hour (total: 3.0)
-    'silver': 1.0,   // +1.0 tokens/hour (total: 3.5)
-    'gold': 1.5,     // +1.5 tokens/hour (total: 4.0)
-    'platinum': 2.0  // +2.0 tokens/hour (total: 4.5)
-  };
-  
-  if (founderTier) {
-    const bonus = founderBonuses[founderTier.toLowerCase()] || 0;
-    if (bonus > 0) {
-      tokensPerHour += bonus;
-      console.log(`[Claim] ${username} has ${founderTier} founder pack: +${bonus} tokens/hour (total: ${tokensPerHour}/hr)`);
-    }
-  }
-  
+  const { getIdleTokensPerHour, computeIdleClaimTokens } = await import('../utils/monetization.js');
+  const tokensPerHour = getIdleTokensPerHour(hero);
+
   const hoursSinceClaim = timeSinceClaim / (1000 * 60 * 60);
-  const tokensToClaim = Math.floor(hoursSinceClaim * tokensPerHour);
+  const tokensToClaim = computeIdleClaimTokens(hoursSinceClaim, hero);
   
   if (tokensToClaim <= 0) {
     const minutesUntilNext = Math.ceil((3600000 - timeSinceClaim) / 60000);
@@ -1235,9 +1218,7 @@ export async function handleClaimCommand(hero, username) {
     };
   }
 
-  // Cap at reasonable amount (e.g., 24 hours worth based on boosted rate)
-  const maxTokens = Math.floor(tokensPerHour * 24); // 24 hours worth of tokens at current rate
-  const actualTokens = Math.min(tokensToClaim, maxTokens);
+  const actualTokens = tokensToClaim;
   
   const newTokens = (hero.tokens || 0) + actualTokens;
   const newTotalIdleTokens = (hero.totalIdleTokens || 0) + actualTokens;
@@ -1251,13 +1232,7 @@ export async function handleClaimCommand(hero, username) {
   });
 
   const hours = Math.floor(hoursSinceClaim);
-  let message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
-  
-  // Show founder bonus in message if applicable
-  if (founderTier && founderBonuses[founderTier.toLowerCase()]) {
-    const tierName = founderTier.charAt(0).toUpperCase() + founderTier.slice(1);
-    message += ` [${tierName} Founder: ${tokensPerHour.toFixed(1)}/hr]`;
-  }
+  const message = `@${username} claimed ${actualTokens} idle tokens! (Total: ${newTokens} tokens)`;
 
   return {
     success: true,

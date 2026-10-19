@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-19T08:08:07.593Z
+**Generated**: 2026-10-19T08:26:04.741Z
 
 ## Summary
 
@@ -249,14 +249,14 @@ All routes are properly protected!
 | GET | /status/:purchaseId | requireAuth | 119 |
 | GET | /founders | ✅ PUBLIC | 149 |
 | POST | /set-founder | requireAdmin | 482 |
-| POST | /remove-founder | requireAdmin | 657 |
-| POST | /token-pack | requireAuth | 740 |
-| POST | /complete-token-pack | ✅ PUBLIC | 806 |
-| POST | /create-checkout-session | requireAuth | 896 |
-| GET | /success | ✅ PUBLIC | 998 |
-| GET | /cancel | ✅ PUBLIC | 1010 |
-| GET | /history/:userId | requireAuth, requireOwnership | 1022 |
-| GET | /:purchaseId/details | requireAuth | 1134 |
+| POST | /remove-founder | requireAdmin | 638 |
+| POST | /token-pack | requireAuth | 721 |
+| POST | /complete-token-pack | ✅ PUBLIC | 787 |
+| POST | /create-checkout-session | requireAuth | 877 |
+| GET | /success | ✅ PUBLIC | 979 |
+| GET | /cancel | ✅ PUBLIC | 991 |
+| GET | /history/:userId | requireAuth, requireOwnership | 1003 |
+| GET | /:purchaseId/details | requireAuth | 1115 |
 
 ### quests.js (11 routes)
 

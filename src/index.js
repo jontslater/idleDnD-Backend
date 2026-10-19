@@ -155,31 +155,14 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
           .get();
 
         if (!heroesSnapshot.empty) {
-          const packConfig = PACK_TIERS[purchase.packTier];
           const tierLevel = TIER_LEVELS[purchase.packTier];
+          const { buildFounderPackCosmeticUpdate } = await import('./utils/monetization.js');
           const batch = db.batch();
 
           heroesSnapshot.docs.forEach(heroDoc => {
             const heroRef = db.collection('heroes').doc(heroDoc.id);
             const hero = heroDoc.data();
-            
-            // Build hero update with founder pack benefits
-            const heroUpdate = {
-              founderPackTier: purchase.packTier,
-              founderPackTierLevel: tierLevel, // Fixed: use founderPackTierLevel (not founderPackLevel)
-              tokens: (hero.tokens || 0) + packConfig.premiumCurrency,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-
-            // Auto-unlock founder title if not already unlocked
-            if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
-              heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
-              // Set as active title if no title is currently selected
-              if (!hero.activeTitle) {
-                heroUpdate.activeTitle = 'Founder';
-              }
-            }
-
+            const heroUpdate = buildFounderPackCosmeticUpdate(hero, purchase.packTier, tierLevel);
             batch.update(heroRef, heroUpdate);
           });
 

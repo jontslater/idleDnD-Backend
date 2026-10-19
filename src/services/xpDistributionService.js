@@ -13,6 +13,7 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { processLevelUps } from '../utils/levelUpHelper.js';
+import { getPaidGameplayRewardMultiplier } from '../utils/monetization.js';
 
 /**
  * Configuration for XP distribution
@@ -175,8 +176,9 @@ export function calculateXPDistribution(baseXP, enemyLevel, heroes) {
     // Calculate base XP with level penalty
     let xpGained = Math.floor(baseXPSplit * levelMultiplier);
     
-    // Apply XP buffs
+    // Apply XP buffs (shop/guild/rested — not founder tier)
     xpGained = Math.floor(xpGained * buffMultiplier);
+    xpGained = Math.floor(xpGained * getPaidGameplayRewardMultiplier(hero, 'xp'));
     
     // Ensure minimum XP (scaled for high-level players)
     const heroLevel = hero.level || 1;

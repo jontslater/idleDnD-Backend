@@ -9,7 +9,7 @@ const router = express.Router();
 // Initialize Stripe
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
-// Pack tier configurations
+// Pack tier configurations (premiumCurrency retained on purchase records only — not granted to heroes)
 const PACK_TIERS = {
   bronze: { price: 5, premiumCurrency: 25, name: 'Bronze Founder' },
   silver: { price: 10, premiumCurrency: 75, name: 'Silver Founder' },
@@ -603,31 +603,12 @@ router.post('/set-founder', requireAdmin, async (req, res) => {
     const batch = db.batch();
     const updates = [];
 
-    const packConfig = PACK_TIERS[tierLower];
+    const { buildFounderPackCosmeticUpdate } = await import('../utils/monetization.js');
 
     heroesSnapshot.docs.forEach(heroDoc => {
       const heroRef = db.collection('heroes').doc(heroDoc.id);
       const hero = heroDoc.data();
-
-      const heroUpdate = {
-        founderPackTier: tierLower,
-        founderPackTierLevel: tierLevel,
-        // Grant premium tokens (only if hero doesn't already have this tier to avoid double-granting)
-        tokens: hero.founderPackTier !== tierLower 
-          ? (hero.tokens || 0) + packConfig.premiumCurrency
-          : (hero.tokens || 0),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-
-      // Auto-unlock founder title if not already unlocked
-      if (!hero.unlockedTitles || !hero.unlockedTitles.includes('Founder')) {
-        heroUpdate.unlockedTitles = admin.firestore.FieldValue.arrayUnion('Founder');
-        // Set as active title if no title is currently selected
-        if (!hero.activeTitle) {
-          heroUpdate.activeTitle = 'Founder';
-        }
-      }
-
+      const heroUpdate = buildFounderPackCosmeticUpdate(hero, tierLower, tierLevel);
       batch.update(heroRef, heroUpdate);
       updates.push({ heroId: heroDoc.id, heroName: hero.name || hero.username });
     });
@@ -939,7 +920,7 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
       const packConfig = PACK_TIERS[purchase.packTier];
       serverPrice = packConfig.price; // Use server-side config price
       productName = `${packConfig.name} Pack`;
-      productDescription = `Founder's Pack - ${packConfig.premiumCurrency} Tokens`;
+      productDescription = `Founder's Pack (${packConfig.name}) — cosmetic entitlements`;
     } else if (purchase.packType) {
       const packConfig = TOKEN_PACKS[purchase.packType];
       serverPrice = packConfig.price; // Use server-side config price

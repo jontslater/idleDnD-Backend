@@ -158,26 +158,14 @@ router.post('/purchase', verifyTwitchToken, async (req, res) => {
           break;
           
         case 'token_bundle':
-          await heroDoc.ref.update({
-            tokens: admin.firestore.FieldValue.increment(5),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          return res.status(410).json({
+            error: 'Bits token bundles are disabled. Progression perks are cosmetic-only; use the token shop for currency.'
           });
-          message = `Purchased 5 tokens for ${bits} Bits!`;
-          break;
-          
+
         case 'xp_boost':
-          // Add buff to hero
-          const buffExpiry = Date.now() + (30 * 60 * 1000); // 30 minutes
-          await heroDoc.ref.update({
-            [`activeBuffs.xpBonus`]: {
-              value: 0.5,
-              expiresAt: buffExpiry,
-              name: 'XP Boost'
-            },
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          return res.status(410).json({
+            error: 'Bits XP boosts are disabled. Progression perks are cosmetic-only.'
           });
-          message = `Purchased XP Boost for ${bits} Bits! +50% XP for 30 minutes`;
-          break;
           
         default:
           return res.status(400).json({ error: 'Unknown item' });

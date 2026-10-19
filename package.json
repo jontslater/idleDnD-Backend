@@ -10,7 +10,7 @@
     "deploy": "firebase deploy --only functions",
     "deploy-indexes": "firebase deploy --only firestore:indexes",
     "serve": "firebase emulators:start",
-    "test": "node scripts/audit-routes.js && node tests/middleware.test.js && node tests/auth.test.js && node tests/middleware-auth-firestore.test.js && node tests/route-protection.test.js && node tests/queue-flow.test.js && node tests/instance-lifecycle.test.js && node tests/skills.test.js && node tests/hero-guild-write.test.js",
+    "test": "node scripts/audit-routes.js && node tests/middleware.test.js && node tests/auth.test.js && node tests/middleware-auth-firestore.test.js && node tests/route-protection.test.js && node tests/queue-flow.test.js && node tests/instance-lifecycle.test.js && node tests/skills.test.js && node tests/hero-guild-write.test.js && node tests/monetization.test.js",
     "export-skills": "node scripts/export-skill-definitions.js",
     "audit-routes": "node scripts/audit-routes.js",
     "sync-heroes": "node scripts/sync-heroes.js",
