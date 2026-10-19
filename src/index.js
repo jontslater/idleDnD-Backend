@@ -534,6 +534,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Only start server if not in test mode
 if (process.env.NODE_ENV !== 'test') {
+  const { ensureSkillDefinitionsExported } = await import('./routes/skills.js');
+  ensureSkillDefinitionsExported();
   const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗

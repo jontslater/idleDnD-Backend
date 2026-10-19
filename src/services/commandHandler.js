@@ -2169,8 +2169,19 @@ async function handleElixirsCommand(hero, username) {
 async function handleSkillsCommand(hero, username) {
   const skillPoints = hero.skillPoints || 0;
   const skills = hero.skills || {};
-  
-  const message = `${username}: Skill Points: ${skillPoints} | Skills system coming soon! Check the website.`;
+  const { getSkillById } = await import('../data/skills.js');
+
+  const ranked = Object.entries(skills)
+    .filter(([, data]) => (data?.points || 0) > 0)
+    .map(([id, data]) => {
+      const def = getSkillById(id);
+      const label = def?.name || id.replace(/_skill_\d+$/, '');
+      return `${label} ${data.points}/5`;
+    })
+    .slice(0, 6);
+
+  const rankSummary = ranked.length > 0 ? ranked.join(', ') : 'no ranks yet';
+  const message = `${username}: SP ${skillPoints} | ${rankSummary} — full tree on the website.`;
 
   return {
     success: true,

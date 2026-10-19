@@ -5,6 +5,7 @@
  */
 
 import { ROLE_CONFIG } from '../data/roleConfig.js';
+import { calculateSkillPoints } from '../data/skills.js';
 
 /**
  * Calculate maxXp for a given level
@@ -35,6 +36,30 @@ export function calculateMaxXp(level) {
  * @param {number} newXp - New XP value (hero.xp + gained XP)
  * @returns {Object} Update object with level, xp, maxXp, and stat changes
  */
+/**
+ * Idempotent skill-point grant when level increases (same Firestore write as level-up).
+ * @param {Object} hero - hero before level-up
+ * @param {number} newLevel - level after XP processing
+ */
+export function skillPointPatchForLevelUp(hero, newLevel) {
+  const previousLevel = hero.level || 1;
+  if (newLevel <= previousLevel) return {};
+
+  const targetEarned = calculateSkillPoints(newLevel);
+  const currentEarned =
+    hero.skillPointsEarned != null
+      ? hero.skillPointsEarned
+      : calculateSkillPoints(previousLevel);
+
+  if (targetEarned <= currentEarned) return {};
+
+  const delta = targetEarned - currentEarned;
+  return {
+    skillPoints: (hero.skillPoints || 0) + delta,
+    skillPointsEarned: targetEarned
+  };
+}
+
 export function processLevelUps(hero, newXp) {
   const currentLevel = hero.level || 1;
   let currentXp = Math.max(0, newXp); // Clamp to non-negative
@@ -98,6 +123,8 @@ export function processLevelUps(hero, newXp) {
       // Maintain HP ratio (heal proportionally)
       updates.hp = Math.floor(updates.maxHp * hpRatio);
     }
+
+    Object.assign(updates, skillPointPatchForLevelUp(hero, newLevel));
   }
   
   return {

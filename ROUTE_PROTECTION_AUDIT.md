@@ -1,12 +1,12 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-15T16:48:54.529Z
+**Generated**: 2026-10-19T08:05:30.942Z
 
 ## Summary
 
-- **Total Routes**: 226
-- **Protected**: 179
-- **Public (whitelisted)**: 47
+- **Total Routes**: 228
+- **Protected**: 180
+- **Public (whitelisted)**: 48
 - **Unprotected**: 0 ✅
 
 ## ✅ NO VIOLATIONS
@@ -158,21 +158,21 @@ All routes are properly protected!
 | GET | /create/cost-info | ✅ PUBLIC | 895 |
 | POST | / | requireAuth | 950 |
 | PUT | /:userId | requireAuth, requireOwnership | 970 |
-| POST | /:userId/pin | requireAuth, requireOwnership | 1131 |
-| DELETE | /:heroId | requireAuth, requireOwnership | 1157 |
-| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 1192 |
-| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1308 |
-| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1472 |
-| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1614 |
-| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1743 |
-| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1786 |
-| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1830 |
-| POST | /:userId/port | requireAuth, requireOwnership | 1920 |
-| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 2027 |
-| POST | /:userId/admin/give-item | requireAdmin | 2070 |
-| POST | /:userId/prestige | requireAuth, requireOwnership | 2115 |
-| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 2265 |
-| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2365 |
+| POST | /:userId/pin | requireAuth, requireOwnership | 1030 |
+| DELETE | /:heroId | requireAuth, requireOwnership | 1056 |
+| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 1091 |
+| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1207 |
+| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1371 |
+| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1513 |
+| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1642 |
+| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1685 |
+| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1729 |
+| POST | /:userId/port | requireAuth, requireOwnership | 1819 |
+| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 1926 |
+| POST | /:userId/admin/give-item | requireAdmin | 1969 |
+| POST | /:userId/prestige | requireAuth, requireOwnership | 2014 |
+| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 2164 |
+| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2264 |
 
 ### leaderboards.js (3 routes)
 
@@ -321,16 +321,18 @@ All routes are properly protected!
 | GET | /:reportId | requireAdmin | 155 |
 | PATCH | /:reportId | requireAuth | 195 |
 
-### skills.js (6 routes)
+### skills.js (8 routes)
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| GET | / | ✅ PUBLIC | 12 |
-| POST | /retroactive-points/:userId | requireAuth, requireOwnership | 24 |
-| GET | /class/:className | ✅ PUBLIC | 98 |
-| GET | /:userId | requireAuth, requireOwnership | 110 |
-| POST | /:userId/allocate | requireAuth, requireOwnership | 124 |
-| POST | /:userId/reset | requireAdmin | 140 |
+| GET | /definitions | ✅ PUBLIC | 23 |
+| GET | / | ✅ PUBLIC | 38 |
+| POST | /retroactive-points/:userId | requireAuth, requireOwnership | 49 |
+| GET | /class/:className | ✅ PUBLIC | 113 |
+| GET | /:userId | requireAuth, requireOwnership | 124 |
+| POST | /:userId/allocate | requireAuth, requireOwnership | 137 |
+| POST | /:userId/respec | requireAuth, requireOwnership | 152 |
+| POST | /:userId/reset | requireAdmin | 163 |
 
 ### streamSettings.js (5 routes)
 

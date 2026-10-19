@@ -66,6 +66,7 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/worldboss/:bossId',
   'GET /api/worldboss/:bossId/leaderboard',
   'GET /api/skills/',
+  'GET /api/skills/definitions',
   'GET /api/skills/class/:className',
   
   // Stripe webhooks (verified separately by Stripe signature)

@@ -995,123 +995,22 @@ router.put('/:userId', requireAuth, requireOwnership, async (req, res) => {
       });
     }
     
-    // CRITICAL: Enforce level cap of 100
-    // This prevents heroes from leveling beyond 100, even if frontend sends invalid data
-    const MAX_LEVEL = 100;
-    const hasPrestiged = (oldHero.prestigeLevel || 0) > 0;
-    
-    if (req.body.level !== undefined) {
-      const requestedLevel = req.body.level;
-      
-      // CRITICAL: If hero has prestiged, they should NEVER be above level 100
-      // Also, if they're at level 1 after prestige, don't allow setting to a high level
-      if (hasPrestiged) {
-        if (requestedLevel > MAX_LEVEL) {
-          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${requestedLevel}, capping at ${MAX_LEVEL}`);
-          req.body.level = MAX_LEVEL;
-        } else if (oldHero.level === 1 && requestedLevel > 100) {
-          // Hero just prestiged (level 1), don't allow setting to high level
-          console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) at level 1 attempted to set level ${requestedLevel}, blocking update`);
-          delete req.body.level; // Remove level from update to prevent overwrite
-        }
-      } else if (requestedLevel > MAX_LEVEL) {
-        // Non-prestiged hero, just cap at 100
-        console.warn(`⚠️ [Update Hero] Attempted to set level ${requestedLevel} for hero ${heroId}, capping at ${MAX_LEVEL}`);
-        req.body.level = MAX_LEVEL;
-      }
-      
-      // Cap XP at maxXp for level 100 if level was capped
-      if (req.body.level === MAX_LEVEL) {
-        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
-        req.body.maxXp = calculateMaxXp(MAX_LEVEL);
-        if (req.body.xp !== undefined && req.body.xp > req.body.maxXp) {
-          req.body.xp = req.body.maxXp;
-        }
-      }
+    const { pickPlayerEditableHeroFields } = await import('../utils/heroUpdateAllowList.js');
+    const { allowed: updateData, rejected } = pickPlayerEditableHeroFields(req.body);
+
+    if (rejected.length > 0) {
+      console.warn(
+        `⚠️ [Update Hero] Ignored non-editable fields for ${heroId}: ${rejected.slice(0, 12).join(', ')}${rejected.length > 12 ? '…' : ''}`
+      );
     }
-    
-    const updateData = {
-      ...req.body
-      // Removed updatedAt to reduce writes - only update when data changes
-    };
-    
-    // Also check existing hero level and cap it if over 100 (safety check for old data)
-    // This fixes heroes that were already over level 100 from before the cap was implemented
-    if (oldHero.level > MAX_LEVEL) {
-      // CRITICAL: If hero has prestiged, they should be at level 1, not 100
-      if (hasPrestiged) {
-        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level}, fixing to level 1`);
-        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = 1;
-        updateData.maxXp = getInitialMaxXp(1);
-        updateData.xp = 0;
-      } else {
-        console.warn(`⚠️ [Update Hero] Hero ${heroId} has level ${oldHero.level}, capping at ${MAX_LEVEL}`);
-        const { calculateMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = MAX_LEVEL;
-        updateData.maxXp = calculateMaxXp(MAX_LEVEL);
-        if (updateData.xp === undefined && oldHero.xp > updateData.maxXp) {
-          updateData.xp = updateData.maxXp;
-        } else if (updateData.xp !== undefined && updateData.xp > updateData.maxXp) {
-          updateData.xp = updateData.maxXp;
-        }
-      }
+
+    if (Object.keys(updateData).length === 0) {
+      const updated = await heroRef.get();
+      return res.json({ ...updated.data(), id: updated.id });
     }
-    
-    // CRITICAL: If hero has prestiged, protect against ANY invalid level updates
-    // Prestiged heroes should always be between 1 and 100
-    if (hasPrestiged && updateData.level !== undefined) {
-      if (updateData.level > MAX_LEVEL) {
-        console.error(`🚨 [Update Hero] BLOCKED: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) attempted to set level ${updateData.level}. Forcing to level 1.`);
-        const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-        updateData.level = 1;
-        updateData.xp = 0;
-        updateData.maxXp = getInitialMaxXp(1);
-      } else if (updateData.level < 1) {
-        console.warn(`⚠️ [Update Hero] Prestiged hero ${heroId} attempted to set level ${updateData.level}, forcing to 1.`);
-        updateData.level = 1;
-      }
-    }
-    
-    // CRITICAL: Additional check - if prestiged hero's current level in DB is > 100, force reset
-    if (hasPrestiged && oldHero.level > MAX_LEVEL) {
-      console.error(`🚨 [Update Hero] CRITICAL: Prestiged hero ${heroId} (P${oldHero.prestigeLevel}) has level ${oldHero.level} in database. Forcing reset to level 1.`);
-      const { getInitialMaxXp } = await import('../utils/levelUpHelper.js');
-      updateData.level = 1;
-      updateData.xp = 0;
-      updateData.maxXp = getInitialMaxXp(1);
-    }
-    
-    // Track stats for periodic chat updates
-    try {
-      const { trackXpGained, trackLevelUp } = await import('../services/streamStatsService.js');
-      const twitchId = oldHero.twitchUserId || oldHero.twitchId;
-      
-      if (twitchId) {
-        // Track XP gain (if XP increased)
-        if (req.body.xp !== undefined && oldHero.xp !== undefined) {
-          const xpDelta = req.body.xp - oldHero.xp;
-          if (xpDelta > 0) {
-            await trackXpGained(twitchId, xpDelta);
-          }
-        }
-        
-        // Track level up (if level increased)
-        if (req.body.level !== undefined && oldHero.level !== undefined) {
-          const levelDelta = req.body.level - oldHero.level;
-          if (levelDelta > 0) {
-            // Track each level up
-            for (let i = 0; i < levelDelta; i++) {
-              await trackLevelUp(twitchId);
-            }
-          }
-        }
-      }
-    } catch (statsError) {
-      // Don't fail the hero update if stats tracking fails
-      console.error('[Update Hero] Error tracking stats:', statsError);
-    }
-    
+
+    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
     await heroRef.update(updateData);
     
     // Invalidate cache after update
