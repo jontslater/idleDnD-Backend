@@ -77,6 +77,11 @@ router.post('/list', requireAuth, async (req, res) => {
     if (!sellerId || !item || !startingPrice) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, sellerId))) {
+      return;
+    }
     
     if (currency === 'tokens') {
       const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
@@ -246,6 +251,11 @@ router.post('/:listingId/bid', requireAuth, async (req, res) => {
     if (!userId || !amount) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
+    }
     
     const listingRef = db.collection('auctionListings').doc(listingId);
     const listingDoc = await listingRef.get();
@@ -381,6 +391,11 @@ router.post('/:listingId/buyout', requireAuth, async (req, res) => {
     
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
     }
     
     const listingRef = db.collection('auctionListings').doc(listingId);
@@ -546,6 +561,11 @@ router.post('/:listingId/cancel', requireAuth, async (req, res) => {
     
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { requireJwtActor } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, userId))) {
+      return;
     }
     
     const listingRef = db.collection('auctionListings').doc(listingId);

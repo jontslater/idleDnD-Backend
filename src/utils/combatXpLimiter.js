@@ -1,6 +1,7 @@
 import { combatKillBaseXp, maxXpGainPerMinute } from '../data/balance.js';
 
 const battlefieldWindows = new Map();
+const battlefieldXpPerMinute = new Map();
 
 const WINDOW_MS = 60_000;
 const MAX_IMMEDIATE_CALLS_PER_WINDOW = 30;
@@ -42,4 +43,33 @@ export function checkCombatXpRateLimit(battlefieldId) {
 export function parseBattlefieldStreamerId(battlefieldId) {
   const m = String(battlefieldId || '').match(/^twitch:(.+)$/);
   return m ? m[1] : null;
+}
+
+/** Clamp reported enemy level to a reasonable band around party levels. */
+export function clampEnemyLevelToParty(heroLevels, enemyLevel, margin = 15) {
+  const base = clampEnemyLevel(enemyLevel);
+  if (!Array.isArray(heroLevels) || heroLevels.length === 0) {
+    return base;
+  }
+  const minL = Math.min(...heroLevels.map((l) => clampEnemyLevel(l)));
+  const maxL = Math.max(...heroLevels.map((l) => clampEnemyLevel(l)));
+  return clampEnemyLevel(Math.min(maxL + margin, Math.max(minL - margin, base)));
+}
+
+/**
+ * Cap total XP entering the accumulator per battlefield per minute.
+ * @returns {{ allowedXp: number, dropped: number }}
+ */
+export function capAccumulatedXpForMinute(battlefieldId, heroLevel, xpToAdd) {
+  const cap = maxXpGainPerMinute(clampEnemyLevel(heroLevel));
+  const now = Date.now();
+  let entry = battlefieldXpPerMinute.get(battlefieldId);
+  if (!entry || now - entry.windowStart > WINDOW_MS) {
+    entry = { windowStart: now, total: 0 };
+    battlefieldXpPerMinute.set(battlefieldId, entry);
+  }
+  const remaining = Math.max(0, cap - entry.total);
+  const allowedXp = Math.min(Math.max(0, xpToAdd), remaining);
+  entry.total += allowedXp;
+  return { allowedXp, dropped: Math.max(0, xpToAdd - allowedXp) };
 }

@@ -175,9 +175,9 @@ router.post('/:userId/profession', requireAuth, requireOwnership, async (req, re
  * POST /api/professions/:userId/craft
  */
 router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) => {
+  const { userId } = req.params;
+  const { recipeKey } = req.body;
   try {
-    const { recipeKey } = req.body;
-    const { userId } = req.params;
 
     console.log(`🔨 Craft request: userId=${userId}, recipe=${recipeKey}`);
 
@@ -205,10 +205,13 @@ router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) =>
     console.log(`📦 Current inventory:`, hero.inventory.length, 'items');
     console.log(`💎 Current materials:`, JSON.stringify(profession.materials));
 
-    // Get recipe costs from req.body
-    const recipeCost = req.body.cost || {};
-    const quantity = req.body.quantity || 1;
-    console.log(`🔨 Crafting ${quantity}x ${recipeKey} with cost:`, JSON.stringify(recipeCost));
+    const quantity = Math.max(1, Math.floor(Number(req.body.quantity) || 1));
+    const { getServerRecipeCost } = await import('../data/craftRecipes.js');
+    const recipeCost = getServerRecipeCost(profession.type, recipeKey);
+    if (!recipeCost) {
+      return res.status(400).json({ error: `Unknown recipe: ${recipeKey}` });
+    }
+    console.log(`🔨 Crafting ${quantity}x ${recipeKey} with server cost:`, JSON.stringify(recipeCost));
 
     // Ensure materials object exists
     if (!profession.materials) {
@@ -250,8 +253,8 @@ router.post('/:userId/craft', requireAuth, requireOwnership, async (req, res) =>
     }
     
     // Special handling for gem_socket recipe (requires gold)
-    if (recipeKey === 'gem_socket') {
-      const socketCost = 500; // Cost when crafting socket item
+    if (recipeKey === 'gem_socket' || recipeCost.gold) {
+      const socketCost = recipeCost.gold || 500;
       const heroGold = hero.gold || 0;
       if (heroGold < socketCost * quantity) {
         return res.status(400).json({ error: `Not enough gold. Need ${socketCost * quantity}g, have ${heroGold}g` });
@@ -1167,10 +1170,11 @@ router.post('/:userId/use', requireAuth, requireOwnership, async (req, res) => {
  * POST /api/heroes/:userId/equip
  */
 router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) => {
+  const { userId } = req.params;
+  const { slot, itemId, item: _clientItem } = req.body;
+  const resolvedItemId = itemId || _clientItem?.id;
+  let equippedItem;
   try {
-    const { slot, itemId, item: _clientItem } = req.body;
-    const { userId } = req.params;
-    const resolvedItemId = itemId || _clientItem?.id;
 
     if (!slot) {
       return res.status(400).json({ error: 'Slot is required' });
@@ -1235,7 +1239,8 @@ router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) =>
       });
     }
 
-    const item = { ...hero.inventory[itemIndex] };
+    equippedItem = { ...hero.inventory[itemIndex] };
+    const item = equippedItem;
     delete item.heroId;
     delete item.heroName;
     delete item.displayName;
@@ -1287,9 +1292,9 @@ router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) =>
     console.error('Error details:', {
       userId,
       slot,
-      itemId: item?.id,
-      itemSlot: item?.slot,
-      itemName: item?.name
+      itemId: equippedItem?.id || resolvedItemId,
+      itemSlot: equippedItem?.slot,
+      itemName: equippedItem?.name
     });
     res.status(500).json({ 
       error: 'Failed to equip item',

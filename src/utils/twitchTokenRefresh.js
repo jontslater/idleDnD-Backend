@@ -73,6 +73,38 @@ export async function refreshTwitchToken(refreshToken) {
  * @param {string} heroId - The hero document ID
  * @returns {Promise<{accessToken: string, success: boolean, needsRelink: boolean}>}
  */
+export async function ensureFreshTokenForTwitchUser(twitchUserId) {
+  try {
+    const { getTwitchCredentials, saveTwitchCredentials } = await import('./twitchCredentialStore.js');
+    const creds = await getTwitchCredentials(db, twitchUserId);
+    if (!creds?.accessToken || !creds.refreshToken) {
+      return { success: false, needsRelink: true, accessToken: null, refreshToken: null };
+    }
+    const now = Date.now();
+    if ((creds.expiresAt || 0) - now >= REFRESH_MARGIN_MS) {
+      return { success: true, needsRelink: false, accessToken: creds.accessToken, refreshToken: creds.refreshToken };
+    }
+    const refreshed = await refreshTwitchToken(creds.refreshToken);
+    if (!refreshed) {
+      return { success: false, needsRelink: true, accessToken: null, refreshToken: null };
+    }
+    await saveTwitchCredentials(db, twitchUserId, {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      scopes: creds.scopes
+    });
+    return {
+      success: true,
+      needsRelink: false,
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken
+    };
+  } catch {
+    return { success: false, needsRelink: false, accessToken: null, refreshToken: null };
+  }
+}
+
 export async function ensureFreshToken(heroId) {
   try {
     const heroRef = db.collection('heroes').doc(heroId);
@@ -83,9 +115,15 @@ export async function ensureFreshToken(heroId) {
     }
 
     const hero = heroDoc.data();
+    if (hero.twitchUserId) {
+      const fromStore = await ensureFreshTokenForTwitchUser(hero.twitchUserId);
+      if (fromStore.success && fromStore.accessToken) {
+        return { success: true, needsRelink: false, accessToken: fromStore.accessToken };
+      }
+    }
+
     const { twitchAccessToken, twitchRefreshToken, twitchTokenExpiresAt } = hero;
 
-    // No tokens stored
     if (!twitchAccessToken || !twitchRefreshToken) {
       return { success: false, needsRelink: false, accessToken: null };
     }

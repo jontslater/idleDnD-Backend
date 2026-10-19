@@ -8,6 +8,8 @@ import {
   clampRewards,
   assertStreamerInstanceAccess,
   assertParticipantsOnStreamerBattlefield,
+  assertJwtInstanceParticipant,
+  resolveInstanceParticipants,
   assertActorOnStreamerBattlefield
 } from '../middleware/requireAuthOrStreamerKey.js';
 import { isInstanceInProgress, INSTANCE_STATUS } from '../constants/instanceStatus.js';
@@ -231,7 +233,17 @@ router.get('/:raidId', async (req, res) => {
 // Sign up for world boss (must be before /:raidId/signup so "worldboss" is not captured as raidId)
 router.post('/worldboss/signup', requireAuth, async (req, res) => {
   try {
-    const { userId, username, heroLevel, heroRole } = req.body;
+    const { userId, username } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId (hero id) is required' });
+    }
+    const heroDoc = await db.collection('heroes').doc(userId).get();
+    if (!heroDoc.exists || heroDoc.data().twitchUserId !== req.user.twitchUserId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const hero = heroDoc.data();
+    const heroLevel = hero.level || 1;
+    const heroRole = hero.role || 'berserker';
     
     const snapshot = await db.collection('worldBoss')
       .where('status', '==', 'upcoming')
@@ -633,13 +645,15 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     if (!assertStreamerInstanceAccess(req, res, instance)) {
       return;
     }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
     
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Raid instance is already finished' });
     }
     
-    // Use provided participants or fallback to existing ones
-    const participantsToUse = participants || instance.participants || [];
+    const participantsToUse = resolveInstanceParticipants(req, instance, participants);
     
     if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsToUse))) {
       return;
@@ -852,7 +866,7 @@ router.get('/instance/:instanceId/status', async (req, res) => {
 router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (req, res) => {
   try {
     const { instanceId } = req.params;
-    const { success, finalParticipants, finalCombatLog } = req.body;
+    const { success, finalParticipants: clientParticipants, finalCombatLog } = req.body;
     
     const instanceRef = db.collection('raidInstances').doc(instanceId);
     const doc = await instanceRef.get();
@@ -866,13 +880,16 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     if (!assertStreamerInstanceAccess(req, res, instance)) {
       return;
     }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
     
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Raid instance is already finished' });
     }
     
-    const participantsForValidation = finalParticipants || instance.participants || [];
-    if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsForValidation))) {
+    const finalParticipants = resolveInstanceParticipants(req, instance, clientParticipants);
+    if (!(await assertParticipantsOnStreamerBattlefield(req, res, finalParticipants))) {
       return;
     }
     

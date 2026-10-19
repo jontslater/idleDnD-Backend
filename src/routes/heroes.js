@@ -90,53 +90,77 @@ router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req
       return res.status(404).json({ error: 'Hero not found' });
     }
 
-    const hero = doc.data();
-    const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
-    const equippedIds = new Set(
-      Object.values(hero.equipment || {})
-        .filter(Boolean)
-        .map((i) => i.id)
-    );
-
-    const idSet = new Set(itemIds.map((id) => String(id)));
-    let goldGained = 0;
-    const sold = [];
-    const remaining = [];
-
-    for (const item of inventory) {
-      if (!item?.id || !idSet.has(item.id)) {
-        remaining.push(item);
-        continue;
-      }
-      if (equippedIds.has(item.id)) {
-        return res.status(400).json({ error: `Cannot sell equipped item: ${item.id}` });
-      }
-      const price = getVendorSellPrice(item);
-      goldGained += price;
-      sold.push({ id: item.id, name: item.name, gold: price });
-      idSet.delete(item.id);
+    const sellCounts = new Map();
+    for (const rawId of itemIds) {
+      const id = String(rawId);
+      sellCounts.set(id, (sellCounts.get(id) || 0) + 1);
     }
 
-    if (sold.length === 0) {
-      return res.status(400).json({ error: 'No matching inventory items to sell' });
-    }
+    const result = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(heroRef);
+      if (!fresh.exists) {
+        throw Object.assign(new Error('Hero not found'), { status: 404 });
+      }
+      const hero = fresh.data();
+      const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
+      const equippedIds = new Set(
+        Object.values(hero.equipment || {})
+          .filter(Boolean)
+          .map((i) => i.id)
+      );
 
-    await heroRef.update({
-      inventory: remaining,
-      gold: (hero.gold || 0) + goldGained,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      let goldGained = 0;
+      const sold = [];
+      const remaining = [...inventory];
+
+      for (const [itemId, qty] of sellCounts.entries()) {
+        let left = qty;
+        for (let i = remaining.length - 1; i >= 0 && left > 0; i--) {
+          const item = remaining[i];
+          if (!item?.id || item.id !== itemId) continue;
+          if (equippedIds.has(item.id)) {
+            throw Object.assign(new Error(`Cannot sell equipped item: ${item.id}`), { status: 400 });
+          }
+          const stackQty = Math.max(1, Number(item.quantity) || 1);
+          if (stackQty <= left) {
+            const price = getVendorSellPrice(item) * stackQty;
+            goldGained += price;
+            sold.push({ id: item.id, name: item.name, gold: price, quantity: stackQty });
+            remaining.splice(i, 1);
+            left -= stackQty;
+          } else {
+            const price = getVendorSellPrice(item) * left;
+            goldGained += price;
+            sold.push({ id: item.id, name: item.name, gold: price, quantity: left });
+            item.quantity = stackQty - left;
+            left = 0;
+          }
+        }
+        if (left > 0) {
+          throw Object.assign(new Error(`Not enough quantity to sell for item ${itemId}`), { status: 400 });
+        }
+      }
+
+      const newGold = (hero.gold || 0) + goldGained;
+      tx.update(heroRef, {
+        inventory: remaining,
+        gold: newGold,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      return { goldGained, newGold, sold };
     });
 
     res.json({
       success: true,
-      goldGained,
-      newGold: (hero.gold || 0) + goldGained,
-      soldCount: sold.length,
-      sold
+      goldGained: result.goldGained,
+      newGold: result.newGold,
+      soldCount: result.sold.length,
+      sold: result.sold
     });
   } catch (error) {
-    console.error('Error bulk selling inventory:', error);
-    res.status(500).json({ error: 'Failed to sell items' });
+    const status = error.status || 500;
+    if (status >= 500) console.error('Error bulk selling inventory:', error);
+    res.status(status).json({ error: error.message || 'Failed to sell items' });
   }
 });
 

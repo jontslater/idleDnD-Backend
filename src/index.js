@@ -235,6 +235,7 @@ import reportsRoutes from './routes/reports.js';
 import overlayRoutes from './routes/overlay.js';
 import queueRoutes from './routes/queues.js';
 import balanceRoutes from './routes/balance.js';
+import cosmeticsRoutes from './routes/cosmetics.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -267,6 +268,7 @@ app.use('/api/stream/settings', streamSettingsRoutes);
 app.use('/api/overlay', overlayRoutes);
 app.use('/api/queues', queueRoutes);
 app.use('/api/balance', balanceRoutes);
+app.use('/api/cosmetics', cosmeticsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

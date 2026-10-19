@@ -126,6 +126,11 @@ router.post('/spend', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'userId and positive amount are required' });
     }
 
+    const { jwtOwnsTwitchUserId } = await import('../utils/requestOwnership.js');
+    if (!jwtOwnsTwitchUserId(req, userId)) {
+      return res.status(403).json({ error: 'Forbidden: userId must match authenticated user' });
+    }
+
     const userRef = db.collection('users').doc(userId);
     const userDoc = await userRef.get();
 

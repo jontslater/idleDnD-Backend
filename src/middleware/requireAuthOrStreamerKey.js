@@ -198,8 +198,60 @@ export function assertStreamerInstanceAccess(req, res, instance) {
   return true;
 }
 
+function jwtUserIsInstanceParticipant(req, instance) {
+  if (req.authType !== 'jwt' || !req.user) return false;
+  const ids = instance?.participantIds || [];
+  const { userId, twitchUserId } = req.user;
+  return ids.includes(userId) || ids.includes(twitchUserId);
+}
+
+/** JWT players may not complete instances unless they are registered participants. */
+export function assertJwtInstanceParticipant(req, res, instance) {
+  if (req.authType !== 'jwt') {
+    return true;
+  }
+  if (!jwtUserIsInstanceParticipant(req, instance)) {
+    res.status(403).json({ error: 'Forbidden: you are not a participant in this instance' });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * When using player JWT, ignore client-supplied participant rosters (anti-spoof).
+ * Streamer overlay key may send full participant updates.
+ */
+export function resolveInstanceParticipants(req, instance, clientParticipants) {
+  if (req.authType === 'streamer-key' && Array.isArray(clientParticipants)) {
+    return clientParticipants;
+  }
+  return instance.participants || [];
+}
+
 /** @returns {boolean} false if response already sent */
 export async function assertParticipantsOnStreamerBattlefield(req, res, participants) {
+  if (req.authType === 'jwt') {
+    if (!Array.isArray(participants)) {
+      return true;
+    }
+    for (const p of participants) {
+      if (!p || typeof p !== 'object') continue;
+      const claimed = p.userId || p.heroId;
+      const twitchId = p.twitchUserId;
+      if (twitchId && twitchId !== req.user.twitchUserId) {
+        res.status(403).json({ error: 'Forbidden: cannot modify other players in instance' });
+        return false;
+      }
+      if (claimed && claimed !== req.user.userId && claimed !== req.user.twitchUserId) {
+        const heroDoc = await db.collection('heroes').doc(claimed).get();
+        if (heroDoc.exists && heroDoc.data().twitchUserId !== req.user.twitchUserId) {
+          res.status(403).json({ error: 'Forbidden: cannot modify other players in instance' });
+          return false;
+        }
+      }
+    }
+    return true;
+  }
   if (req.authType !== 'streamer-key' || !Array.isArray(participants)) {
     return true;
   }

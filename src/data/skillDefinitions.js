@@ -127,8 +127,8 @@ export const ROLE_ACTIVE_ABILITIES = {
     role: 'healer',
     cooldownMs: 30000,
     effect: {
-      type: 'aoe_heal_percent_caster_max_hp',
-      healPercentOfCasterMaxHp: 25,
+      type: 'aoe_heal_percent_each_ally_max_hp',
+      healPercentOfEachAllyMaxHp: 25,
       scalesWithHealingMultiplier: true
     }
   },

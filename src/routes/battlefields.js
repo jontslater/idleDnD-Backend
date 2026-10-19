@@ -11,10 +11,18 @@ import {
   maxImmediateCombatXpForLevel,
   normalizeKillXp,
   parseBattlefieldStreamerId,
-  clampEnemyLevel
+  clampEnemyLevel,
+  clampEnemyLevelToParty,
+  capAccumulatedXpForMinute
 } from '../utils/combatXpLimiter.js';
 
 const router = express.Router();
+
+async function getBattlefieldHeroLevels(battlefieldId) {
+  const snap = await db.collection('heroes').where('currentBattlefieldId', '==', battlefieldId).limit(40).get();
+  if (snap.empty) return [1];
+  return snap.docs.map((d) => d.data().level || 1);
+}
 
 // Get all heroes in a specific battlefield
 router.get('/:battlefieldId/heroes', async (req, res) => {
@@ -599,24 +607,38 @@ router.post('/:battlefieldId/combat/xp', requireAuthOrStreamerKey, async (req, r
     }
 
     if (!immediate) {
-      // Redirect to accumulate endpoint
       const { accumulateEnemyKill, accumulateEnemyKills } = await import('../services/xpAccumulatorService.js');
-      
+      const heroLevels = await getBattlefieldHeroLevels(battlefieldId);
+      const avgHeroLevel = Math.floor(heroLevels.reduce((a, b) => a + b, 0) / heroLevels.length);
+
+      const normalizeKill = (rawLevel, kind) => {
+        const level = clampEnemyLevelToParty(heroLevels, rawLevel);
+        const xp = normalizeKillXp(level, kind);
+        const { allowedXp } = capAccumulatedXpForMinute(battlefieldId, avgHeroLevel, xp);
+        return { baseXP: allowedXp, level, name: enemyName || 'Unknown Enemy' };
+      };
+
+      let accumulated = 0;
       if (Array.isArray(baseXP)) {
-        const enemies = baseXP.map((xp, i) => ({
-          baseXP: xp,
-          level: Array.isArray(enemyLevel) ? enemyLevel[i] : enemyLevel,
-          name: Array.isArray(enemyName) ? enemyName[i] : (enemyName || 'Unknown')
-        }));
-        accumulateEnemyKills(battlefieldId, enemies);
+        const enemies = baseXP.map((_, i) => {
+          const rawLevel = Array.isArray(enemyLevel) ? enemyLevel[i] : enemyLevel;
+          const k = normalizeKill(rawLevel, enemyKind);
+          if (k.baseXP > 0) accumulated += 1;
+          return { ...k, name: Array.isArray(enemyName) ? enemyName[i] : (enemyName || 'Unknown') };
+        }).filter((e) => e.baseXP > 0);
+        if (enemies.length) accumulateEnemyKills(battlefieldId, enemies);
       } else {
-        accumulateEnemyKill(battlefieldId, baseXP, enemyLevel, enemyName || 'Unknown Enemy');
+        const k = normalizeKill(enemyLevel, enemyKind);
+        if (k.baseXP > 0) {
+          accumulateEnemyKill(battlefieldId, k.baseXP, k.level, enemyName || 'Unknown Enemy');
+          accumulated = 1;
+        }
       }
-      
+
       return res.json({
         success: true,
         message: 'Enemy kill(s) accumulated (will be awarded periodically)',
-        accumulated: Array.isArray(baseXP) ? baseXP.length : 1
+        accumulated
       });
     }
     

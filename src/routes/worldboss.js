@@ -11,8 +11,20 @@ import {
   requireAdminOrStreamerKey
 } from '../middleware/auth.js';
 import { buildWorldBossDocument, maxPlausibleDamageReport } from '../utils/worldBossFactory.js';
-
+import { resolveWorldBossRewards } from '../utils/worldbossRewards.js';
+import { checkCombatXpRateLimit } from '../utils/combatXpLimiter.js';
 const router = express.Router();
+
+async function heroSnapshotForJwtUser(req, heroDocId) {
+  const heroRef = db.collection('heroes').doc(heroDocId);
+  const doc = await heroRef.get();
+  if (!doc.exists) return null;
+  const hero = doc.data();
+  if (hero.twitchUserId !== req.user.twitchUserId && doc.id !== req.user.userId) {
+    return null;
+  }
+  return { ref: heroRef, id: doc.id, hero };
+}
 
 // Get active world boss
 router.get('/active', async (req, res) => {
@@ -73,11 +85,19 @@ router.get('/:bossId', async (req, res) => {
 router.post('/:bossId/join', requireAuth, async (req, res) => {
   try {
     const { bossId } = req.params;
-    const { userId, username, heroLevel, heroRole } = req.body;
+    const { userId, username } = req.body;
     
-    if (!userId || !username || !heroLevel || !heroRole) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!userId) {
+      return res.status(400).json({ error: 'userId (hero id) is required' });
     }
+
+    const snap = await heroSnapshotForJwtUser(req, userId);
+    if (!snap) {
+      return res.status(403).json({ error: 'Forbidden: hero does not belong to authenticated user' });
+    }
+    const heroLevel = snap.hero.level || 1;
+    const heroRole = snap.hero.role || 'berserker';
+    const displayName = username || snap.hero.name || snap.hero.twitchUsername || 'Hero';
     
     const bossRef = db.collection('worldBoss').doc(bossId);
     const doc = await bossRef.get();
@@ -104,7 +124,7 @@ router.post('/:bossId/join', requireAuth, async (req, res) => {
     
     const participant = {
       userId,
-      username,
+      username: displayName,
       heroLevel,
       heroRole,
       damageDealt: 0,
@@ -134,6 +154,16 @@ router.post('/:bossId/damage', requireAuth, async (req, res) => {
     if (!userId) {
       return res.status(400).json({ error: 'userId is required' });
     }
+
+    const snap = await heroSnapshotForJwtUser(req, userId);
+    if (!snap) {
+      return res.status(403).json({ error: 'Forbidden: hero does not belong to authenticated user' });
+    }
+
+    const rate = checkCombatXpRateLimit(`worldboss:${bossId}:${userId}`);
+    if (!rate.allowed) {
+      return res.status(429).json({ error: 'Too many damage reports', retryAfterMs: rate.retryAfterMs });
+    }
     
     const bossRef = db.collection('worldBoss').doc(bossId);
     const doc = await bossRef.get();
@@ -156,9 +186,8 @@ router.post('/:bossId/damage', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Participant not found. Join the fight first.' });
     }
     
-    const heroDoc = await db.collection('heroes').doc(userId).get();
-    const heroLevel = heroDoc.exists ? heroDoc.data().level || 1 : 1;
-    const classKey = heroDoc.exists ? heroDoc.data().role || 'berserker' : 'berserker';
+    const heroLevel = snap.hero.level || 1;
+    const classKey = snap.hero.role || 'berserker';
     const maxHit = maxPlausibleDamageReport(heroLevel, classKey);
 
     const dmg = Math.min(Math.max(0, Math.floor(Number(damageDealt) || 0)), maxHit);
@@ -178,16 +207,6 @@ router.post('/:bossId/damage', requireAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    if (newHp <= 0) {
-      updateData.status = 'completed';
-      updateData.results = {
-        winners: participants.sort((a, b) => b.damageDealt - a.damageDealt).slice(0, 10),
-        totalDamage: participants.reduce((sum, p) => sum + p.damageDealt, 0),
-        duration: Date.now() - (boss.startedAt || Date.now()),
-        completedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-    }
-
     await bossRef.update(updateData);
 
     res.json({
@@ -195,7 +214,7 @@ router.post('/:bossId/damage', requireAuth, async (req, res) => {
       bossHp: newHp,
       damageApplied: dmg,
       cappedAt: maxHit,
-      defeated: updateData.status === 'completed'
+      defeated: newHp <= 0
     });
   } catch (error) {
     console.error('Error submitting world boss damage:', error);
@@ -270,15 +289,17 @@ router.post('/:bossId/complete', requireAuth, async (req, res) => {
     
     const boss = doc.data();
     
-    if (boss.status === 'completed') {
-      return res.status(400).json({ error: 'World boss is already completed' });
+    if (boss.status === 'completed' && boss.rewardsDistributed) {
+      return res.json({ success: true, message: 'Rewards already distributed', alreadyCompleted: true });
     }
     
-    if (boss.hp > 0) {
+    const currentHp = boss.hp ?? boss.maxHp ?? 0;
+    if (currentHp > 0) {
       return res.status(400).json({ error: 'World boss is not defeated yet' });
     }
     
     const participants = boss.participants || [];
+    const rewardPool = resolveWorldBossRewards(boss);
     
     // Sort by damage for rewards
     const sortedParticipants = [...participants].sort((a, b) => b.damageDealt - a.damageDealt);
@@ -293,9 +314,9 @@ router.post('/:bossId/complete', requireAuth, async (req, res) => {
         
         // Calculate rewards based on rank
         const rankMultiplier = index < 3 ? 2.0 : index < 10 ? 1.5 : 1.0;
-        const goldReward = Math.floor(boss.rewards.gold * rankMultiplier);
-        const tokenReward = Math.floor(boss.rewards.tokens * rankMultiplier);
-        const xpReward = Math.floor(boss.rewards.xpBonus * rankMultiplier);
+        const goldReward = Math.floor(rewardPool.gold * rankMultiplier);
+        const tokenReward = Math.floor(rewardPool.tokens * rankMultiplier);
+        const xpReward = Math.floor(rewardPool.xpBonus * rankMultiplier);
         
         // Handle level-ups (multiple level-ups if XP is high enough)
         const newXp = (hero.xp || 0) + xpReward;
@@ -359,9 +380,9 @@ router.post('/:bossId/complete', requireAuth, async (req, res) => {
     
     await Promise.all(rewardPromises);
     
-    // Mark boss as completed
     await bossRef.update({
       status: 'completed',
+      rewardsDistributed: true,
       results: {
         winners: sortedParticipants.slice(0, 10),
         totalDamage: participants.reduce((sum, p) => sum + p.damageDealt, 0),

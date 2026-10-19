@@ -8,7 +8,9 @@ import {
   requireAuthOrStreamerKey,
   clampRewards,
   assertStreamerInstanceAccess,
-  assertParticipantsOnStreamerBattlefield
+  assertParticipantsOnStreamerBattlefield,
+  assertJwtInstanceParticipant,
+  resolveInstanceParticipants
 } from '../middleware/requireAuthOrStreamerKey.js';
 
 const router = express.Router();
@@ -555,12 +557,15 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     if (!assertStreamerInstanceAccess(req, res, instance)) {
       return;
     }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
     
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
     }
     
-    const participantsToValidate = participants || instance.participants || [];
+    const participantsToValidate = resolveInstanceParticipants(req, instance, participants);
     if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsToValidate))) {
       return;
     }
@@ -612,9 +617,6 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     const { instanceId } = req.params;
     const { success, finalParticipants, participants, finalCombatLog, combatLog } = req.body;
     
-    // Support both finalParticipants and participants field names
-    const participantsData = finalParticipants || participants || [];
-    
     const instanceRef = db.collection('dungeonInstances').doc(instanceId);
     const doc = await instanceRef.get();
     
@@ -627,10 +629,19 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     if (!assertStreamerInstanceAccess(req, res, instance)) {
       return;
     }
+    if (!assertJwtInstanceParticipant(req, res, instance)) {
+      return;
+    }
     
     if (instance.status === 'completed' || instance.status === 'failed') {
       return res.status(400).json({ error: 'Dungeon instance is already finished' });
     }
+
+    const participantsData = resolveInstanceParticipants(
+      req,
+      instance,
+      finalParticipants || participants
+    );
     
     if (!(await assertParticipantsOnStreamerBattlefield(req, res, participantsData))) {
       return;

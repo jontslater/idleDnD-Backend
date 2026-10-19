@@ -11,6 +11,24 @@ import { maxXpGainPerMinute, maxGoldGainPerMinute } from '../data/balance.js';
 
 const router = express.Router();
 
+const overlayBatchWindows = new Map();
+const OVERLAY_BATCH_WINDOW_MS = 60_000;
+const OVERLAY_MAX_BATCHES_PER_WINDOW = 40;
+
+function checkOverlayBatchRateLimit(streamerId) {
+  const now = Date.now();
+  let entry = overlayBatchWindows.get(streamerId);
+  if (!entry || now - entry.windowStart > OVERLAY_BATCH_WINDOW_MS) {
+    entry = { windowStart: now, count: 0 };
+    overlayBatchWindows.set(streamerId, entry);
+  }
+  entry.count += 1;
+  if (entry.count > OVERLAY_MAX_BATCHES_PER_WINDOW) {
+    return { allowed: false, retryAfterMs: OVERLAY_BATCH_WINDOW_MS - (now - entry.windowStart) };
+  }
+  return { allowed: true };
+}
+
 /**
  * Sync overlay pending deltas (idempotent with batch ID)
  * POST /api/overlay/sync
@@ -47,6 +65,24 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
     if (!Array.isArray(deltas) || deltas.length === 0) {
       return res.status(400).json({ error: 'deltas array is required' });
     }
+
+    const batchRate = checkOverlayBatchRateLimit(String(streamerId));
+    if (!batchRate.allowed) {
+      return res.status(429).json({
+        error: 'Too many overlay sync batches',
+        retryAfterMs: batchRate.retryAfterMs
+      });
+    }
+
+    const dedupedByHero = new Map();
+    for (const delta of deltas) {
+      if (!delta?.heroId) continue;
+      const prev = dedupedByHero.get(delta.heroId) || { heroId: delta.heroId, xpGained: 0, goldGained: 0 };
+      prev.xpGained += Number(delta.xpGained) || 0;
+      prev.goldGained += Number(delta.goldGained) || 0;
+      dedupedByHero.set(delta.heroId, prev);
+    }
+    const normalizedDeltas = [...dedupedByHero.values()];
     
     // Check if this batch has already been processed (idempotency check)
     const batchRef = db.collection('overlayBatches').doc(batchId);
@@ -73,7 +109,7 @@ router.post('/sync', requireStreamerAccess, async (req, res) => {
     let successCount = 0;
     let errorCount = 0;
     
-    for (const delta of deltas) {
+    for (const delta of normalizedDeltas) {
       try {
         const { heroId, xpGained = 0, goldGained = 0 } = delta;
         

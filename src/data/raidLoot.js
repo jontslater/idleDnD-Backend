@@ -1,6 +1,8 @@
 // Raid Loot Tables
 // Raid loot has 20-30% higher stats than world drops of the same level/rarity
 
+import { SET_PIECE_RATES } from './lootConfig.js';
+
 const RAID_LOOT_BONUS = {
   normal: 1.20,    // 20% better than world drops
   heroic: 1.25,    // 25% better than world drops
@@ -312,7 +314,6 @@ function generateRaidLoot(raidId, difficulty, category, slot, bossLevel) {
   // Assign set name for raids
   // OLD VALUE: 60% (too high)
   // NEW VALUES (from lootConfig.js): normal 30%, heroic 45%, mythic 60%
-  import { SET_PIECE_RATES } from './lootConfig.js';
   const setPieceRate = SET_PIECE_RATES.raid[difficulty] || 0.30;
   const shouldBeSetPiece = Math.random() < setPieceRate;
   
@@ -442,5 +443,3 @@ export {
   generateRaidProcs,
   calculateRaidItemScore
 };
-
-export { RAID_LOOT, generateRaidLoot, generateRaidProcs, calculateRaidItemScore };

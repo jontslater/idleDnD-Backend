@@ -32,6 +32,14 @@ router.post('/send', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'senderId, senderHeroId, and recipientId required' });
     }
 
+    const { requireJwtActor, jwtOwnsTwitchUserId } = await import('../utils/requestOwnership.js');
+    if (!(await requireJwtActor(req, res, senderHeroId))) {
+      return;
+    }
+    if (!jwtOwnsTwitchUserId(req, senderId)) {
+      return res.status(403).json({ error: 'Forbidden: senderId must match authenticated user' });
+    }
+
     if (senderId === recipientId) {
       return res.status(400).json({ error: 'Cannot send mail to yourself' });
     }
@@ -95,6 +103,9 @@ router.post('/send', requireAuth, async (req, res) => {
       
       for (const itemRequest of items) {
         const requestedQuantity = itemRequest.quantity || 1;
+        if (!Number.isInteger(requestedQuantity) || requestedQuantity <= 0) {
+          return res.status(400).json({ error: 'Item quantity must be a positive integer' });
+        }
         
         // Find the item by ID first (to get item properties)
         const itemTemplate = senderInventory.find((inv) => inv.id === itemRequest.itemId);
@@ -152,6 +163,13 @@ router.post('/send', requireAuth, async (req, res) => {
 
     if (goldAmount < 0 || tokenAmount < 0) {
       return res.status(400).json({ error: 'gold and tokens cannot be negative' });
+    }
+
+    if (tokenAmount > 0) {
+      return res.status(400).json({
+        error: 'Premium tokens cannot be sent by mail',
+        code: 'TOKENS_NON_TRADEABLE'
+      });
     }
 
     // Check if sender has enough currency
