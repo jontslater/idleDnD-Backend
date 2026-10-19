@@ -50,6 +50,7 @@ export function createInMemoryFirestore(initialData = {}) {
 
   function makeDocRef(collName, id) {
     return {
+      id,
       get: async () => docSnapshot(collName, id),
       set: async (data) => {
         assertNoServerTimestampInsideArrays(data);
@@ -150,8 +151,9 @@ export function createInMemoryFirestore(initialData = {}) {
         },
         add: async (data) => {
           const id = `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          await makeDocRef(name, id).set(data);
-          return { id };
+          const ref = makeDocRef(name, id);
+          await ref.set(data);
+          return ref;
         }
       };
     },

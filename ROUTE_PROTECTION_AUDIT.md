@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-19T08:05:30.942Z
+**Generated**: 2026-10-19T08:08:07.593Z
 
 ## Summary
 
@@ -121,22 +121,22 @@ All routes are properly protected!
 | GET | /:guildId | ✅ PUBLIC | 25 |
 | GET | /member/:userId | requireAuth, requireOwnership | 41 |
 | POST | / | requireAuth | 89 |
-| PUT | /:guildId | requireAuth | 115 |
-| POST | /:guildId/join | requireAuth | 141 |
-| POST | /:guildId/apply | requireAuth | 210 |
-| POST | /:guildId/approve/:heroId | requireAuth, requireOwnership | 259 |
-| POST | /:guildId/reject/:heroId | requireAuth, requireOwnership | 313 |
-| PUT | /:guildId/settings | requireAuth | 349 |
-| POST | /:guildId/loot/assign | requireAuth | 387 |
-| GET | /:guildId/loot | requireAuth, requireGuildMembership | 463 |
-| GET | /:guildId/loot/history | requireAuth, requireGuildMembership | 483 |
-| POST | /:guildId/leave | requireAuth | 504 |
-| GET | /:guildId/members-with-heroes | requireAuth, requireGuildMembership | 526 |
-| POST | /:guildId/invite | requireAuth | 662 |
-| GET | /invite/:inviteId | ✅ PUBLIC | 746 |
-| POST | /invite/:inviteId/accept | requireAuth | 775 |
-| GET | /invites/pending/:heroId | requireAuth, requireOwnership | 857 |
-| GET | /:guildId/invites | requireAuth, requireGuildMembership | 889 |
+| PUT | /:guildId | requireAuth | 128 |
+| POST | /:guildId/join | requireAuth | 179 |
+| POST | /:guildId/apply | requireAuth | 248 |
+| POST | /:guildId/approve/:heroId | requireAuth, requireOwnership | 297 |
+| POST | /:guildId/reject/:heroId | requireAuth, requireOwnership | 351 |
+| PUT | /:guildId/settings | requireAuth | 387 |
+| POST | /:guildId/loot/assign | requireAuth | 425 |
+| GET | /:guildId/loot | requireAuth, requireGuildMembership | 501 |
+| GET | /:guildId/loot/history | requireAuth, requireGuildMembership | 521 |
+| POST | /:guildId/leave | requireAuth | 542 |
+| GET | /:guildId/members-with-heroes | requireAuth, requireGuildMembership | 564 |
+| POST | /:guildId/invite | requireAuth | 700 |
+| GET | /invite/:inviteId | ✅ PUBLIC | 784 |
+| POST | /invite/:inviteId/accept | requireAuth | 813 |
+| GET | /invites/pending/:heroId | requireAuth, requireOwnership | 895 |
+| GET | /:guildId/invites | requireAuth, requireGuildMembership | 927 |
 
 ### heroes.js (31 routes)
 
@@ -154,25 +154,25 @@ All routes are properly protected!
 | GET | /twitch/:twitchUserId | ✅ PUBLIC | 456 |
 | GET | /twitch/:twitchUserId/all | requireAuth | 547 |
 | POST | /create | requireAuth | 654 |
-| PATCH | /:heroId/rename | requireAuth, requireOwnership | 829 |
-| GET | /create/cost-info | ✅ PUBLIC | 895 |
-| POST | / | requireAuth | 950 |
-| PUT | /:userId | requireAuth, requireOwnership | 970 |
-| POST | /:userId/pin | requireAuth, requireOwnership | 1030 |
-| DELETE | /:heroId | requireAuth, requireOwnership | 1056 |
-| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 1091 |
-| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1207 |
-| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1371 |
-| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1513 |
-| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1642 |
-| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1685 |
-| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1729 |
-| POST | /:userId/port | requireAuth, requireOwnership | 1819 |
-| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 1926 |
-| POST | /:userId/admin/give-item | requireAdmin | 1969 |
-| POST | /:userId/prestige | requireAuth, requireOwnership | 2014 |
-| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 2164 |
-| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2264 |
+| PATCH | /:heroId/rename | requireAuth, requireOwnership | 768 |
+| GET | /create/cost-info | ✅ PUBLIC | 834 |
+| POST | / | requireAuth | 889 |
+| PUT | /:userId | requireAuth, requireOwnership | 936 |
+| POST | /:userId/pin | requireAuth, requireOwnership | 996 |
+| DELETE | /:heroId | requireAuth, requireOwnership | 1022 |
+| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 1057 |
+| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1173 |
+| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1337 |
+| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1479 |
+| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1608 |
+| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1651 |
+| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1695 |
+| POST | /:userId/port | requireAuth, requireOwnership | 1785 |
+| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 1892 |
+| POST | /:userId/admin/give-item | requireAdmin | 1935 |
+| POST | /:userId/prestige | requireAuth, requireOwnership | 1980 |
+| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 2130 |
+| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2230 |
 
 ### leaderboards.js (3 routes)
 

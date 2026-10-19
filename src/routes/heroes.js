@@ -737,78 +737,17 @@ router.post('/create', requireAuth, async (req, res) => {
       }
     }
     
-    const heroData = {
+    const { buildNewHeroDocument } = await import('../utils/heroCreation.js');
+    const heroData = buildNewHeroDocument({
+      classKey,
       name: heroName,
-      ...(twitchUserId && { twitchUserId }),
-      ...(tiktokUserId && { tiktokUserId }),
-      ...(twitchUsername && { twitchUsername }),
-      role: classKey,
-      level: 1,
-      hp: config.baseHp,
-      maxHp: config.baseHp,
-      xp: 0,
-      maxXp: 100,
-      attack: config.baseAttack,
-      defense: config.baseDefense,
-      gold: 0,
-      tokens: 0,
-      totalIdleTokens: 0,
-      lastTokenClaim: Date.now(),
-      lastCommandTime: Date.now(),
-      equipment: (() => {
-        const category = config.category || 'dps';
-        const defaultSlots = category === 'tank' 
-          ? ['weapon', 'armor', 'accessory', 'shield', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots']
-          : ['weapon', 'armor', 'accessory', 'helm', 'cloak', 'gloves', 'ring1', 'ring2', 'boots'];
-        
-        const equipment = {};
-        defaultSlots.forEach(slot => {
-          equipment[slot] = null;
-        });
-        return equipment;
-      })(),
-      stats: {
-        totalDamage: 0,
-        totalHealing: 0,
-        damageBlocked: 0
-      },
-      isDead: false,
-      deathTime: null,
-      potions: {
-        health: 0
-      },
-      activeBuffs: {},
-      profession: null,
-      skills: {},
-      skillPoints: 0,
-      skillPointsEarned: 0,
-      joinedAt: Date.now(),
-      // Prestige system - initialize to defaults
-      prestigeLevel: 0,
-      prestigeTokens: 0,
-      prestigeBoosts: {
-        xpGain: 1.0,
-        goldGain: 1.0,
-        idleTicketGain: 1.0,
-        statBoost: {
-          attack: 0,
-          defense: 0,
-          hp: 0
-        }
-      },
-      prestigeSlotCores: {}, // Prestige cores attached to equipment slots (not items)
-      // Inherit founder pack tier from existing heroes (applies to all user's heroes)
-      ...(founderPackTier && { founderPackTier }),
-      ...(founderPackTierLevel !== null && { founderPackTierLevel }),
-      // Set battlefield ID if provided (for streamer battlefields)
-      // Format: "twitch:channelId" or "twitch:username"
-      ...(battlefieldId && { 
-        currentBattlefieldId: battlefieldId,
-        currentBattlefieldType: battlefieldId.startsWith('twitch:') ? 'streamer' : 'world'
-      }),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+      twitchUserId,
+      tiktokUserId,
+      twitchUsername,
+      founderPackTier,
+      founderPackTierLevel,
+      battlefieldId
+    });
     
     const docRef = await db.collection('heroes').add(heroData);
     const doc = await docRef.get();
@@ -946,18 +885,45 @@ router.get('/create/cost-info', async (req, res) => {
   }
 });
 
-// Create new hero (legacy endpoint)
+// Create new hero (legacy endpoint) — server template; client may only set name/class/cosmetics
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const heroData = {
-      ...req.body,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    
+    const { pickHeroCreateInput, buildNewHeroDocument } = await import('../utils/heroCreation.js');
+    const { picked, rejected } = pickHeroCreateInput(req.body);
+
+    if (rejected.length > 0) {
+      console.warn(`[Create Hero Legacy] Ignored fields: ${rejected.join(', ')}`);
+    }
+
+    const classKey = picked.class || picked.role;
+    if (!classKey || !ROLE_CONFIG[classKey]) {
+      return res.status(400).json({ error: 'Invalid class' });
+    }
+
+    const twitchUserId = req.body.twitchUserId || req.user.twitchUserId;
+    const tiktokUserId = req.body.tiktokUserId || null;
+
+    if (twitchUserId && req.user.twitchUserId && twitchUserId !== req.user.twitchUserId) {
+      return res.status(403).json({ error: 'Forbidden: twitchUserId mismatch' });
+    }
+    if (!twitchUserId && !tiktokUserId) {
+      return res.status(400).json({ error: 'Twitch or TikTok user ID required' });
+    }
+
+    const { role: _r, class: _c, name, heroName, twitchUsername, ...cosmetic } = picked;
+
+    const heroData = buildNewHeroDocument({
+      classKey,
+      name: name || heroName,
+      twitchUserId: twitchUserId || null,
+      tiktokUserId,
+      twitchUsername: twitchUsername || req.user.twitchUsername || null,
+      cosmetic
+    });
+
     const docRef = await db.collection('heroes').add(heroData);
     const doc = await docRef.get();
-    
+
     res.status(201).json({ ...doc.data(), id: doc.id });
   } catch (error) {
     console.error('Error creating hero:', error);

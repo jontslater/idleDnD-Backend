@@ -88,22 +88,35 @@ router.get('/member/:userId', requireAuth, requireOwnership, async (req, res) =>
 // Create new guild
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!req.body.createdBy) {
+    const createdBy = req.body.createdBy;
+    if (!createdBy) {
       return res.status(400).json({ error: 'createdBy is required' });
     }
-    
-    const guildData = {
-      ...req.body,
-      memberIds: [req.body.createdBy], // Store hero ID
-      joinMode: req.body.joinMode || 'open', // Default to open, can be 'open' or 'approval'
-      pendingApplications: [], // Initialize empty applications array
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    
+
+    const { verifyHeroOwnedByAuth } = await import('../utils/verifyHeroOwnership.js');
+    const ownership = await verifyHeroOwnedByAuth(createdBy, req.user);
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error });
+    }
+
+    const { pickGuildEditableFields, buildNewGuildDocument } = await import(
+      '../utils/guildUpdateAllowList.js'
+    );
+    const { allowed, rejected } = pickGuildEditableFields(req.body);
+
+    if (!allowed.name || typeof allowed.name !== 'string' || !allowed.name.trim()) {
+      return res.status(400).json({ error: 'Guild name is required' });
+    }
+
+    if (rejected.length > 0) {
+      console.warn(`[Create Guild] Ignored fields: ${rejected.join(', ')}`);
+    }
+
+    const guildData = buildNewGuildDocument({ createdBy, editable: allowed });
+
     const docRef = await db.collection('guilds').add(guildData);
     const doc = await docRef.get();
-    
+
     res.status(201).json({ id: doc.id, ...doc.data() });
   } catch (error) {
     console.error('Error creating guild:', error);
@@ -111,24 +124,49 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// Update guild
+// Update guild (leader only; cosmetic/settings fields)
 router.put('/:guildId', requireAuth, async (req, res) => {
   try {
     const guildRef = db.collection('guilds').doc(req.params.guildId);
     const doc = await guildRef.get();
-    
+
     if (!doc.exists) {
       return res.status(404).json({ error: 'Guild not found' });
     }
-    
+
+    const guild = doc.data();
+    const heroId = req.body.heroId || req.user.userId;
+
+    if (guild.createdBy !== heroId) {
+      return res.status(403).json({ error: 'Only guild leader can update guild' });
+    }
+
+    const { verifyHeroOwnedByAuth } = await import('../utils/verifyHeroOwnership.js');
+    const ownership = await verifyHeroOwnedByAuth(heroId, req.user);
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error });
+    }
+
+    const { pickGuildEditableFields } = await import('../utils/guildUpdateAllowList.js');
+    const { allowed, rejected } = pickGuildEditableFields(req.body);
+
+    if (rejected.length > 0) {
+      console.warn(`[Update Guild] Ignored fields: ${rejected.join(', ')}`);
+    }
+
+    if (Object.keys(allowed).length === 0) {
+      const current = await guildRef.get();
+      return res.json({ id: current.id, ...current.data() });
+    }
+
     const updateData = {
-      ...req.body,
+      ...allowed,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    
+
     await guildRef.update(updateData);
     const updated = await guildRef.get();
-    
+
     res.json({ id: updated.id, ...updated.data() });
   } catch (error) {
     console.error('Error updating guild:', error);
