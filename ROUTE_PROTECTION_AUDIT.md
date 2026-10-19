@@ -1,12 +1,12 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-19T08:26:04.741Z
+**Generated**: 2026-10-19T08:33:55.467Z
 
 ## Summary
 
-- **Total Routes**: 228
-- **Protected**: 180
-- **Public (whitelisted)**: 48
+- **Total Routes**: 230
+- **Protected**: 181
+- **Public (whitelisted)**: 49
 - **Unprotected**: 0 ✅
 
 ## ✅ NO VIOLATIONS
@@ -32,12 +32,12 @@ All routes are properly protected!
 |--------|-------|------------|------|
 | GET | /listings | ✅ PUBLIC | 9 |
 | POST | /list | requireAuth | 97 |
-| POST | /:listingId/bid | requireAuth | 261 |
-| POST | /:listingId/buyout | requireAuth | 392 |
-| POST | /:listingId/cancel | requireAuth | 552 |
-| GET | /my-listings/:userId | requireAuth, requireOwnership | 638 |
-| GET | /my-bids/:userId | requireAuth, requireOwnership | 723 |
-| GET | /history/:userId | requireAuth, requireOwnership | 743 |
+| POST | /:listingId/bid | requireAuth | 265 |
+| POST | /:listingId/buyout | requireAuth | 401 |
+| POST | /:listingId/cancel | requireAuth | 566 |
+| GET | /my-listings/:userId | requireAuth, requireOwnership | 652 |
+| GET | /my-bids/:userId | requireAuth, requireOwnership | 737 |
+| GET | /history/:userId | requireAuth, requireOwnership | 757 |
 
 ### auth.js (5 routes)
 
@@ -48,6 +48,12 @@ All routes are properly protected!
 | GET | /me | verifyToken | 424 |
 | POST | /tiktok/link | verifyToken | 463 |
 | POST | /logout | ✅ PUBLIC | 488 |
+
+### balance.js (1 routes)
+
+| Method | Route | Middleware | Line |
+|--------|-------|------------|------|
+| GET | / | ✅ PUBLIC | 7 |
 
 ### battlefields.js (12 routes)
 
@@ -94,8 +100,8 @@ All routes are properly protected!
 | GET | /instance/:instanceId | ✅ PUBLIC | 522 |
 | POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 541 |
 | POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 610 |
-| GET | /:dungeonId | ✅ PUBLIC | 835 |
-| GET | /available/:userId | requireAuth, requireOwnership | 853 |
+| GET | /:dungeonId | ✅ PUBLIC | 833 |
+| GET | /available/:userId | requireAuth, requireOwnership | 851 |
 
 ### enchanting.js (4 routes)
 
@@ -138,7 +144,7 @@ All routes are properly protected!
 | GET | /invites/pending/:heroId | requireAuth, requireOwnership | 895 |
 | GET | /:guildId/invites | requireAuth, requireGuildMembership | 927 |
 
-### heroes.js (31 routes)
+### heroes.js (32 routes)
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
@@ -150,29 +156,30 @@ All routes are properly protected!
 | GET | /:userId/prestige-store | requireAuth, requireOwnership | 187 |
 | GET | /:userId | requireAuth, requireOwnership | 238 |
 | POST | /:userId/unlock-slot | requireAuth, requireOwnership | 313 |
-| GET | /:userId/slots | requireAuth, requireOwnership | 404 |
-| GET | /twitch/:twitchUserId | ✅ PUBLIC | 456 |
-| GET | /twitch/:twitchUserId/all | requireAuth | 547 |
-| POST | /create | requireAuth | 654 |
-| PATCH | /:heroId/rename | requireAuth, requireOwnership | 768 |
-| GET | /create/cost-info | ✅ PUBLIC | 834 |
-| POST | / | requireAuth | 889 |
-| PUT | /:userId | requireAuth, requireOwnership | 936 |
-| POST | /:userId/pin | requireAuth, requireOwnership | 996 |
-| DELETE | /:heroId | requireAuth, requireOwnership | 1022 |
-| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 1057 |
-| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1173 |
-| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1337 |
-| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1479 |
-| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1608 |
-| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1651 |
-| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1695 |
-| POST | /:userId/port | requireAuth, requireOwnership | 1785 |
-| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 1892 |
-| POST | /:userId/admin/give-item | requireAdmin | 1935 |
-| POST | /:userId/prestige | requireAuth, requireOwnership | 1980 |
-| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 2130 |
-| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2230 |
+| GET | /:userId/slots | requireAuth, requireOwnership | 322 |
+| GET | /twitch/:twitchUserId | ✅ PUBLIC | 374 |
+| GET | /twitch/:twitchUserId/all | requireAuth | 465 |
+| POST | /create | requireAuth | 572 |
+| PATCH | /:heroId/rename | requireAuth, requireOwnership | 686 |
+| GET | /create/cost-info | ✅ PUBLIC | 752 |
+| POST | / | requireAuth | 807 |
+| PUT | /:userId | requireAuth, requireOwnership | 854 |
+| POST | /:userId/pin | requireAuth, requireOwnership | 914 |
+| DELETE | /:heroId | requireAuth, requireOwnership | 940 |
+| POST | /:userId/purchase/gold | requireAuth, requireOwnership | 975 |
+| POST | /:userId/purchase/tokens | requireAuth, requireOwnership | 1091 |
+| POST | /:userId/purchase/cosmetic-tokens | requireAuth, requireOwnership | 1096 |
+| POST | /:userId/upgrade-item | requireAuth, requireOwnership | 1140 |
+| POST | /:userId/reforge-item | requireAuth, requireOwnership | 1282 |
+| POST | /:userId/equipment/:slot/lock | requireAuth, requireOwnership | 1411 |
+| POST | /:userId/equipment/:slot/unlock | requireAuth, requireOwnership | 1454 |
+| POST | /:userId/expand-storage | requireAuth, requireOwnership | 1498 |
+| POST | /:userId/port | requireAuth, requireOwnership | 1577 |
+| POST | /:heroId/claim-idle-rewards | requireAuth, requireOwnership | 1684 |
+| POST | /:userId/admin/give-item | requireAdmin | 1727 |
+| POST | /:userId/prestige | requireAuth, requireOwnership | 1772 |
+| POST | /:userId/prestige-store/purchase | requireAuth, requireOwnership | 1922 |
+| POST | /:userId/prestige-store/apply | requireAuth, requireOwnership | 2022 |
 
 ### leaderboards.js (3 routes)
 
@@ -205,8 +212,8 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| POST | /sync | requireStreamerAccess | 38 |
-| GET | /sync/:batchId | requireStreamerAccess | 203 |
+| POST | /sync | requireStreamerAccess | 35 |
+| GET | /sync/:batchId | requireStreamerAccess | 198 |
 
 ### parties.js (12 routes)
 
@@ -244,19 +251,19 @@ All routes are properly protected!
 
 | Method | Route | Middleware | Line |
 |--------|-------|------------|------|
-| POST | /founders-pack | requireAuth | 40 |
-| POST | /complete | ✅ PUBLIC | 107 |
-| GET | /status/:purchaseId | requireAuth | 119 |
-| GET | /founders | ✅ PUBLIC | 149 |
-| POST | /set-founder | requireAdmin | 482 |
-| POST | /remove-founder | requireAdmin | 638 |
-| POST | /token-pack | requireAuth | 721 |
-| POST | /complete-token-pack | ✅ PUBLIC | 787 |
-| POST | /create-checkout-session | requireAuth | 877 |
-| GET | /success | ✅ PUBLIC | 979 |
-| GET | /cancel | ✅ PUBLIC | 991 |
-| GET | /history/:userId | requireAuth, requireOwnership | 1003 |
-| GET | /:purchaseId/details | requireAuth | 1115 |
+| POST | /founders-pack | requireAuth | 34 |
+| POST | /complete | ✅ PUBLIC | 101 |
+| GET | /status/:purchaseId | requireAuth | 113 |
+| GET | /founders | ✅ PUBLIC | 143 |
+| POST | /set-founder | requireAdmin | 476 |
+| POST | /remove-founder | requireAdmin | 632 |
+| POST | /token-pack | requireAuth | 715 |
+| POST | /complete-token-pack | ✅ PUBLIC | 780 |
+| POST | /create-checkout-session | requireAuth | 870 |
+| GET | /success | ✅ PUBLIC | 972 |
+| GET | /cancel | ✅ PUBLIC | 984 |
+| GET | /history/:userId | requireAuth, requireOwnership | 996 |
+| GET | /:purchaseId/details | requireAuth | 1108 |
 
 ### quests.js (11 routes)
 
@@ -293,24 +300,24 @@ All routes are properly protected!
 | POST | /test-instance | requireAuth | 79 |
 | GET | /upcoming | ✅ PUBLIC | 155 |
 | GET | /:raidId | ✅ PUBLIC | 196 |
-| POST | /worldboss/signup | requireAuth | 222 |
-| POST | /:raidId/signup | requireAuth | 266 |
-| GET | /available/:userId | requireAuth, requireOwnership | 311 |
-| POST | /:raidId/start | requireAuth | 397 |
-| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 609 |
-| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 754 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 800 |
-| GET | /instance/:instanceId/status | ✅ PUBLIC | 824 |
-| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 842 |
-| POST | /schedule | requireAuth | 1065 |
-| POST | /queue/:raidId/join | requireAuth | 1112 |
-| GET | /queue/:raidId | ✅ PUBLIC | 1214 |
-| POST | /queue/:raidId/leave | requireAuth | 1259 |
-| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1744 |
-| POST | /:raidId/guild-signup | requireAuth | 1776 |
-| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1871 |
-| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1946 |
-| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2008 |
+| POST | /worldboss/signup | requireAuth | 232 |
+| POST | /:raidId/signup | requireAuth | 276 |
+| GET | /available/:userId | requireAuth, requireOwnership | 321 |
+| POST | /:raidId/start | requireAuth | 407 |
+| POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 619 |
+| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 764 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 810 |
+| GET | /instance/:instanceId/status | ✅ PUBLIC | 834 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 852 |
+| POST | /schedule | requireAuth | 1073 |
+| POST | /queue/:raidId/join | requireAuth | 1120 |
+| GET | /queue/:raidId | ✅ PUBLIC | 1222 |
+| POST | /queue/:raidId/leave | requireAuth | 1267 |
+| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1752 |
+| POST | /:raidId/guild-signup | requireAuth | 1784 |
+| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1879 |
+| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1954 |
+| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2016 |
 
 ### reports.js (4 routes)
 

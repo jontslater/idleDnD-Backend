@@ -210,7 +210,17 @@ router.get('/:raidId', async (req, res) => {
     if (!raid) {
       return res.status(404).json({ error: 'Raid not found' });
     }
-    
+
+    const partyLevel = parseInt(req.query.partyLevel, 10);
+    const partySize = parseInt(req.query.partySize, 10) || 5;
+    if (raid.boss && Number.isFinite(partyLevel) && partyLevel > 0) {
+      const { scaleRaidBoss } = await import('../data/balance.js');
+      return res.json({
+        ...raid,
+        boss: scaleRaidBoss(raid.boss, partyLevel, partySize)
+      });
+    }
+
     res.json(raid);
   } catch (error) {
     console.error('Error fetching raid:', error);
@@ -968,12 +978,12 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    let expReward = raidData.rewards.experience;
+    const { raidClearXp, XP_SOURCES } = await import('../data/balance.js');
+    const xpMinutes = raidData.rewards.xpRewardMinutes ?? XP_SOURCES.raidClearMinutes;
     let goldReward = raidData.rewards.gold;
     let tokenReward = raidData.rewards.tokens;
     if (req.authType === 'streamer-key') {
-      const clamped = clampRewards(req, { xp: expReward, gold: goldReward });
-      expReward = clamped.xp ?? expReward;
+      const clamped = clampRewards(req, { gold: goldReward });
       goldReward = clamped.gold ?? goldReward;
       if (lootDrops.length > 10) {
         lootDrops.length = 10;
@@ -992,7 +1002,7 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
         const heroRef = heroDoc.ref;
         const hero = heroDoc.data();
         
-        // Add gold, tokens, and XP
+        const expReward = raidClearXp(hero.level || 1, xpMinutes);
         const newXp = (hero.xp || 0) + expReward;
         
         // Handle level-ups (multiple level-ups if XP is high enough)
@@ -1032,19 +1042,17 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     await clearActiveInstanceForParticipants(finalParticipants || instance.participants || []);
     
     let responseRewards = {
-      gold: raidData.rewards.gold,
+      gold: goldReward,
       tokens: raidData.rewards.tokens,
-      experience: raidData.rewards.experience,
+      xpRewardMinutes: xpMinutes,
       loot: lootDrops
     };
     if (req.authType === 'streamer-key') {
       const clamped = clampRewards(req, {
         gold: responseRewards.gold,
-        xp: responseRewards.experience,
         items: lootDrops
       });
       responseRewards.gold = clamped.gold ?? responseRewards.gold;
-      responseRewards.experience = clamped.xp ?? responseRewards.experience;
       responseRewards.loot = clamped.items ?? lootDrops;
     }
     

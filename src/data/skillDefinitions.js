@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const SKILL_BALANCE_CAPS = {
   cooldownReductionPercent: 40,
-  critChancePercent: 75,
+  critChancePercent: 35,
   damageReductionPercent: 75
 };
 
@@ -114,9 +114,10 @@ export const ROLE_ACTIVE_ABILITIES = {
     role: 'tank',
     cooldownMs: 45000,
     effect: {
-      type: 'self_damage_reduction_taunt',
-      damageReductionPercent: 50,
-      durationMs: 6000,
+      type: 'shield_wall',
+      tankDamageReductionPercent: 50,
+      partyDamageReductionPercent: 20,
+      durationMs: 8000,
       taunt: true
     }
   },

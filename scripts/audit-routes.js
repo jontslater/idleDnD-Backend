@@ -68,6 +68,7 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/skills/',
   'GET /api/skills/definitions',
   'GET /api/skills/class/:className',
+  'GET /api/balance/',
   
   // Stripe webhooks (verified separately by Stripe signature)
   'POST /api/purchases/complete',

@@ -690,12 +690,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     }
     
     // Dungeon succeeded - distribute rewards
-    let rewards = { ...(dungeonData.rewards || { gold: 0, tokens: 0, experience: 0 }) };
-    if (req.authType === 'streamer-key') {
-      const clamped = clampRewards(req, { gold: rewards.gold, xp: rewards.experience });
-      rewards.gold = clamped.gold ?? rewards.gold;
-      rewards.experience = clamped.xp ?? rewards.experience;
-    }
+    let rewards = { ...(dungeonData.rewards || { gold: 0, tokens: 0 }) };
+    const { dungeonClearXp, XP_SOURCES } = await import('../data/balance.js');
+    const xpMinutes = rewards.xpRewardMinutes ?? XP_SOURCES.dungeonClearMinutes;
     
     // Update instance as completed
     // Maintain participantIds using twitchUserId if available, fallback to userId
@@ -722,8 +719,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
         const heroRef = heroDoc.ref;
         const hero = heroDoc.data();
         
-        // Add gold, tokens, and XP
-        const newXp = (hero.xp || 0) + rewards.experience;
+        const heroLevel = hero.level || 1;
+        const experienceGain = dungeonClearXp(heroLevel, xpMinutes);
+        const newXp = (hero.xp || 0) + experienceGain;
         
         // Handle level-ups (multiple level-ups if XP is high enough)
         const { processLevelUps } = await import('../utils/levelUpHelper.js');
@@ -822,7 +820,7 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       rewards: {
         gold: rewards.gold,
         tokens: rewards.tokens,
-        experience: rewards.experience
+        xpRewardMinutes: xpMinutes
       }
     });
   } catch (error) {

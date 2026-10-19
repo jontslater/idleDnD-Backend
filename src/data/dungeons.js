@@ -43,10 +43,11 @@ const DUNGEONS = {
         isBoss: true
       }
     ],
+    levelBand: { min: 10, max: 20 },
     rewards: {
       gold: 200,
       tokens: 5,
-      experience: 500,
+      xpRewardMinutes: 15,
       guaranteedLoot: ['weapon']
     },
     estimatedDuration: 120000 // 2 minutes
@@ -99,10 +100,11 @@ const DUNGEONS = {
         isBoss: true
       }
     ],
+    levelBand: { min: 15, max: 30 },
     rewards: {
       gold: 500,
       tokens: 10,
-      experience: 1500,
+      xpRewardMinutes: 15,
       guaranteedLoot: ['weapon', 'armor']
     },
     estimatedDuration: 300000 // 5 minutes
@@ -145,10 +147,11 @@ const DUNGEONS = {
         isBoss: true
       }
     ],
+    levelBand: { min: 25, max: 45 },
     rewards: {
       gold: 1000,
       tokens: 20,
-      experience: 3000,
+      xpRewardMinutes: 15,
       guaranteedLoot: ['weapon', 'armor', 'accessory']
     },
     estimatedDuration: 600000 // 10 minutes

@@ -171,13 +171,7 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
         }
       } else if (purchase.packType && purchase.heroId) {
         // Complete token pack
-        const TOKEN_PACKS = {
-          impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
-          starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
-          value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
-          premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
-        };
-        
+        const { TOKEN_PACKS } = await import('./data/tokenPacks.js');
         const packConfig = TOKEN_PACKS[purchase.packType];
         const heroRef = db.collection('heroes').doc(purchase.heroId);
         const heroDoc = await heroRef.get();
@@ -186,7 +180,6 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
           const hero = heroDoc.data();
           await heroRef.update({
             tokens: (hero.tokens || 0) + packConfig.tokens,
-            gold: (hero.gold || 0) + packConfig.gold,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           console.log(`[Stripe Webhook] Token pack ${purchase.packType} completed for hero ${purchase.heroId}`);
@@ -241,6 +234,7 @@ import streamSettingsRoutes from './routes/streamSettings.js';
 import reportsRoutes from './routes/reports.js';
 import overlayRoutes from './routes/overlay.js';
 import queueRoutes from './routes/queues.js';
+import balanceRoutes from './routes/balance.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -272,6 +266,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/stream/settings', streamSettingsRoutes);
 app.use('/api/overlay', overlayRoutes);
 app.use('/api/queues', queueRoutes);
+app.use('/api/balance', balanceRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -519,6 +514,8 @@ if (process.env.NODE_ENV !== 'production') {
 if (process.env.NODE_ENV !== 'test') {
   const { ensureSkillDefinitionsExported } = await import('./routes/skills.js');
   ensureSkillDefinitionsExported();
+  const { ensureBalanceJsonExported } = await import('./routes/balance.js');
+  ensureBalanceJsonExported();
   const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗

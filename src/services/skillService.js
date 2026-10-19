@@ -212,9 +212,9 @@ export async function respecSkillsForPlayer(userId, options = {}) {
   return resetSkillsCore(userId, { goldCost, useTokens: false });
 }
 
-/** Admin reset (token cost). */
-export async function resetSkills(userId, cost = 500) {
-  return resetSkillsCore(userId, { tokenCost: cost, useTokens: true });
+/** Admin reset — no premium token spend (cosmetic-only policy). */
+export async function resetSkills(userId, _cost = 500) {
+  return resetSkillsCore(userId, { goldCost: 0, useTokens: false });
 }
 
 // Calculate skill bonuses for a hero (capped)

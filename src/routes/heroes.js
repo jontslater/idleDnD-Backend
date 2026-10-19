@@ -311,93 +311,11 @@ router.get('/:userId', requireAuth, requireOwnership, async (req, res) => {
 
 // Unlock hero slot endpoint
 router.post('/:userId/unlock-slot', requireAuth, requireOwnership, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const { twitchUserId, tiktokUserId } = req.body;
-
-    // Get user ID (prefer Twitch, fallback to TikTok)
-    const actualUserId = twitchUserId || tiktokUserId || userId;
-    const isTwitch = !!twitchUserId || !!userId;
-
-    // Get current slots unlocked
-    const currentSlots = await getUserSlotsUnlocked(actualUserId, isTwitch);
-
-    // Check if already at max
-    if (currentSlots >= MAX_HEROES) {
-      return res.status(400).json({
-        error: `Already at maximum hero slots (${MAX_HEROES})`,
-        slotsUnlocked: currentSlots,
-        maxHeroes: MAX_HEROES
-      });
-    }
-
-    const nextSlot = currentSlots + 1;
-    const unlockCost = SLOT_UNLOCK_COSTS[nextSlot] || SLOT_UNLOCK_COSTS[20]; // Default to max cost
-
-    // Get all user's heroes to find tokens
-    let existingHeroes = [];
-    if (twitchUserId || userId) {
-      const twitchCheck = await db.collection('heroes')
-        .where('twitchUserId', '==', actualUserId)
-        .get();
-      existingHeroes = twitchCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-    
-    if (tiktokUserId && existingHeroes.length === 0) {
-      const tiktokCheck = await db.collection('heroes')
-        .where('tiktokUserId', '==', actualUserId)
-        .get();
-      existingHeroes = tiktokCheck.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-
-    // Sum tokens across all user's heroes
-    const totalTokens = existingHeroes.reduce((sum, hero) => sum + (hero.tokens || 0), 0);
-
-    if (totalTokens < unlockCost) {
-      return res.status(400).json({
-        error: `Insufficient tokens. Required: ${unlockCost}, Available: ${totalTokens}`,
-        required: unlockCost,
-        available: totalTokens,
-        nextSlot,
-        currentSlots
-      });
-    }
-
-    // Deduct tokens from the highest level hero (or first hero if same level)
-    const heroToDeduct = existingHeroes.reduce((highest, hero) => {
-      if (!highest) return hero;
-      return (hero.level || 0) > (highest.level || 0) ? hero : highest;
-    }, null);
-
-    if (heroToDeduct) {
-      const newTokens = Math.max(0, (heroToDeduct.tokens || 0) - unlockCost);
-      await db.collection('heroes').doc(heroToDeduct.id).update({
-        tokens: newTokens
-        // Removed updatedAt to reduce writes - only update when data changes
-      });
-    }
-
-    // Update user's slotsUnlocked
-    const userRef = db.collection('users').doc(actualUserId);
-    await userRef.set({
-      slotsUnlocked: nextSlot
-      // Removed updatedAt to reduce writes
-    }, { merge: true });
-
-    console.log(`[Slot Unlock] User ${actualUserId} unlocked slot ${nextSlot} for ${unlockCost} tokens`);
-
-    res.json({
-      success: true,
-      slotsUnlocked: nextSlot,
-      tokensSpent: unlockCost,
-      remainingTokens: totalTokens - unlockCost,
-      nextSlotCost: SLOT_UNLOCK_COSTS[nextSlot + 1] || null,
-      maxHeroes: MAX_HEROES
-    });
-  } catch (error) {
-    console.error('Error unlocking hero slot:', error);
-    res.status(500).json({ error: 'Failed to unlock hero slot', details: error.message });
-  }
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json({
+    ...gameplayTokenSinkResponse(),
+    message: 'Hero slot unlocks cannot be purchased with premium tokens. Use gold or Stripe hero-slot products.'
+  });
 });
 
 // Get user's slot information
@@ -1169,166 +1087,51 @@ router.post('/:userId/purchase/gold', requireAuth, requireOwnership, async (req,
   }
 });
 
-// Purchase token shop gear
+// Purchase token shop gear (disabled — premium tokens are cosmetic-only)
 router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (req, res) => {
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json(gameplayTokenSinkResponse());
+});
+
+router.post('/:userId/purchase/cosmetic-tokens', requireAuth, requireOwnership, async (req, res) => {
   try {
-    const { rarity, slot, quantity } = req.body;
+    const { itemId } = req.body;
     const { userId } = req.params;
-    
-    // Default quantity to 1 if not provided
-    const purchaseQuantity = quantity || 1;
-
-    const TOKEN_SHOP_PRICES = {
-      common: 100, // Fixed: 100t (was 50t) - higher prices so shop items don't beat drops
-      rare: 400, // Fixed: 400t (was 200t)
-      epic: 1200, // Fixed: 1200t (was 600t)
-      legendary: 5000, // Fixed: 5000t (was 2500t) - expensive so dropped legendaries are valuable
-      mythic: 20000 // Fixed: 20000t (was 10000t) - ultra-rare tier premium
-    };
-
-    if (!TOKEN_SHOP_PRICES[rarity]) {
-      return res.status(400).json({ error: 'Invalid rarity' });
+    const { COSMETIC_TOKEN_CATALOG } = await import('../utils/tokenCosmetics.js');
+    const item = COSMETIC_TOKEN_CATALOG[itemId];
+    if (!item) {
+      return res.status(400).json({ error: 'Invalid cosmetic item' });
     }
 
-    const validSlots = ['weapon', 'armor', 'accessory', 'shield'];
-    if (!validSlots.includes(slot)) {
-      return res.status(400).json({ error: 'Invalid slot' });
-    }
-
-    const costPerItem = TOKEN_SHOP_PRICES[rarity];
-    const totalCost = costPerItem * purchaseQuantity;
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ error: 'Hero not found' });
-    }
-
+    if (!doc.exists) return res.status(404).json({ error: 'Hero not found' });
     const hero = doc.data();
-    const currentTokens = hero.tokens || 0;
-
-    if (currentTokens < totalCost) {
-      return res.status(400).json({ 
-        error: `Not enough tokens! Need ${totalCost}t (${purchaseQuantity}x ${costPerItem}t), have ${currentTokens}t` 
-      });
+    const tokens = hero.tokens || 0;
+    if (tokens < item.price) {
+      return res.status(400).json({ error: `Need ${item.price} tokens, have ${tokens}` });
     }
-    
-    // Check inventory space
-    const currentInventory = hero.inventory || [];
-    const consumableGroups = new Set();
-    const professionGroups = new Set();
-    let regularItemCount = 0;
-    
-    currentInventory.forEach(item => {
-      if (item.professionItem) {
-        const key = item.recipeKey || item.id;
-        professionGroups.add(key);
-      } else if (item.type === 'potion' || item.type === 'buff' || item.itemKey) {
-        const key = item.itemKey || item.name || item.id;
-        consumableGroups.add(key);
-      } else {
-        regularItemCount++;
+
+    const update = {
+      tokens: tokens - item.price,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    if (item.grants.cosmetics) {
+      update.cosmetics = { ...(hero.cosmetics || {}), ...item.grants.cosmetics };
+    }
+    if (item.grants.unlockedTitles) {
+      update.unlockedTitles = admin.firestore.FieldValue.arrayUnion(...item.grants.unlockedTitles);
+      if (item.grants.activeTitle && !hero.activeTitle) {
+        update.activeTitle = item.grants.activeTitle;
       }
-    });
-    
-    const currentSlotsUsed = professionGroups.size + consumableGroups.size + regularItemCount;
-    const maxSlots = hero.bankSize || 50;
-    
-    // Each gear item takes 1 slot
-    if (currentSlotsUsed + purchaseQuantity > maxSlots) {
-      return res.status(400).json({ 
-        error: `Inventory full! You have ${currentSlotsUsed}/${maxSlots} slots used. Cannot add ${purchaseQuantity} more items. Sell items or expand storage.` 
-      });
     }
 
-    // Generate gear based on hero level (same logic as Electron app)
-    // Token shop mythic is weaker (3.5x) than raid/dungeon mythic (4.0x)
-    const LOOT_RARITIES = {
-      common: { statMultiplier: 1.0, color: '#9ca3af' },
-      uncommon: { statMultiplier: 1.2, color: '#10b981' },
-      rare: { statMultiplier: 1.5, color: '#3b82f6' },
-      epic: { statMultiplier: 2.0, color: '#a855f7' },
-      legendary: { statMultiplier: 3.0, color: '#eab308' },
-      mythic: { statMultiplier: 3.5, color: '#ef4444' }, // Token shop mythic (weaker than raid/dungeon)
-      artifact: { statMultiplier: 4.0, color: '#ef4444' }
-    };
-
-    const rarityData = LOOT_RARITIES[rarity];
-    if (!rarityData) {
-      return res.status(400).json({ error: `Invalid rarity: ${rarity}. Valid rarities: ${Object.keys(LOOT_RARITIES).join(', ')}` });
-    }
-
-    const heroLevel = hero.level || 1;
-    const levelMultiplier = 1 + (heroLevel * 0.1);
-
-    // Base item templates by slot
-    const templates = {
-      weapon: { name: 'Weapon', attack: 12, defense: 0, hp: 0 },
-      armor: { name: 'Armor', attack: 5, defense: 12, hp: 30 },
-      accessory: { name: 'Ring', attack: 8, defense: 4, hp: 15 },
-      shield: { name: 'Shield', attack: 0, defense: 15, hp: 30 }
-    };
-
-    const template = templates[slot];
-    if (!template) {
-      return res.status(400).json({ error: `Invalid slot: ${slot}` });
-    }
-
-    const item = {
-      id: `${rarity}_${slot}_${Date.now()}`,
-      name: `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${template.name}`,
-      slot,
-      rarity,
-      color: rarityData.color,
-      attack: Math.floor(template.attack * rarityData.statMultiplier * levelMultiplier),
-      defense: Math.floor(template.defense * rarityData.statMultiplier * levelMultiplier),
-      hp: Math.floor(template.hp * rarityData.statMultiplier * levelMultiplier)
-    };
-
-    // Initialize inventory if needed
-    if (!hero.inventory) {
-      hero.inventory = [];
-    }
-
-    // Add items to inventory (multiple if quantity > 1)
-    const itemsToAdd = [];
-    for (let i = 0; i < purchaseQuantity; i++) {
-      const itemCopy = {
-        ...item,
-        id: `${rarity}_${slot}_${Date.now()}_${i}` // Unique ID for each item
-      };
-      itemsToAdd.push(itemCopy);
-    }
-    
-    // Validate inventory space before adding
-    const { validateInventorySpace } = await import('../utils/inventoryValidator.js');
-    const validation = validateInventorySpace(hero, itemsToAdd);
-    if (!validation.valid) {
-      return res.status(400).json({ error: validation.error });
-    }
-    
-    // Add items to inventory
-    itemsToAdd.forEach(itemCopy => hero.inventory.push(itemCopy));
-
-    // Deduct tokens
-    await heroRef.update({
-      tokens: currentTokens - totalCost,
-      inventory: hero.inventory
-      // Removed updatedAt to reduce writes
-    });
-
-    console.log(`🎫 ${userId} purchased ${purchaseQuantity}x ${rarity} ${slot} for ${totalCost}t`);
-
-    res.json({ 
-      success: true, 
-      message: `Purchased ${purchaseQuantity}x ${item.name}! Tokens remaining: ${currentTokens - totalCost}t`,
-      items: itemsToAdd,
-      quantity: purchaseQuantity,
-      newTokens: currentTokens - totalCost
-    });
+    await heroRef.update(update);
+    const updated = await heroRef.get();
+    res.json({ success: true, itemId, newTokens: tokens - item.price, hero: updated.data() });
   } catch (error) {
-    console.error('Error purchasing token gear:', error);
-    res.status(500).json({ error: 'Failed to purchase gear' });
+    console.error('Error purchasing cosmetic with tokens:', error);
+    res.status(500).json({ error: 'Failed to purchase cosmetic' });
   }
 });
 
@@ -1702,9 +1505,13 @@ router.post('/:userId/expand-storage', requireAuth, requireOwnership, async (req
       return res.status(400).json({ error: 'Must expand by exactly 15 slots per purchase' });
     }
 
-    // Validate currency
-    if (currency !== 'gold' && currency !== 'tokens') {
-      return res.status(400).json({ error: 'Currency must be "gold" or "tokens"' });
+    if (currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
+    if (currency !== 'gold') {
+      return res.status(400).json({ error: 'Currency must be "gold"' });
     }
 
     const heroRef = db.collection('heroes').doc(userId);
@@ -1721,32 +1528,17 @@ router.post('/:userId/expand-storage', requireAuth, requireOwnership, async (req
     let currentAmount;
     let updateData = {};
     
-    if (currency === 'gold') {
-      // Gold cost: 50g per slot = 750g for 15 slots
-      const costPerSlot = 50;
-      totalCost = costPerSlot * slots; // 750g for 15 slots
-      currentAmount = hero.gold || 0;
-      
-      if (currentAmount < totalCost) {
-        return res.status(400).json({ 
-          error: `Not enough gold! Need ${totalCost}g, have ${currentAmount}g` 
-        });
-      }
-      
-      updateData.gold = currentAmount - totalCost;
-    } else {
-      // Token cost: 50 tokens for 15 slots (more reasonable vs 750g)
-      totalCost = 50; // Fixed cost for 15 slots
-      currentAmount = hero.tokens || 0;
-      
-      if (currentAmount < totalCost) {
-        return res.status(400).json({ 
-          error: `Not enough tokens! Need ${totalCost}t, have ${currentAmount}t` 
-        });
-      }
-      
-      updateData.tokens = currentAmount - totalCost;
+    const costPerSlot = 50;
+    totalCost = costPerSlot * slots;
+    currentAmount = hero.gold || 0;
+
+    if (currentAmount < totalCost) {
+      return res.status(400).json({
+        error: `Not enough gold! Need ${totalCost}g, have ${currentAmount}g`
+      });
     }
+
+    updateData.gold = currentAmount - totalCost;
 
     // Get current bank size (default 50 if not set)
     const currentBankSize = hero.bankSize || 50;
@@ -1765,8 +1557,8 @@ router.post('/:userId/expand-storage', requireAuth, requireOwnership, async (req
     const currencySymbol = currency === 'gold' ? 'g' : 't';
     console.log(`📦 ${userId} expanded bank by ${slots} slots (${currentBankSize} -> ${newBankSize}) for ${totalCost}${currencySymbol}`);
 
-    const remainingAmount = currency === 'gold' ? updateData.gold : updateData.tokens;
-    const currencyName = currency === 'gold' ? 'Gold' : 'Tokens';
+    const remainingAmount = updateData.gold;
+    const currencyName = 'Gold';
 
     res.json({ 
       success: true, 

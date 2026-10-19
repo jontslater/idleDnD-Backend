@@ -124,8 +124,9 @@ async function runTests() {
 
   console.log('\nTest 4: level-up awards skill points once');
   try {
+    const { calculateMaxXp } = await import('../src/utils/levelUpHelper.js');
     const base = { level: 5, skillPoints: 0, skillPointsEarned: 0, role: 'mage', maxHp: 100, hp: 100, attack: 10, defense: 5 };
-    const r1 = processLevelUps(base, 5000);
+    const r1 = processLevelUps(base, calculateMaxXp(5));
     assert.ok(r1.leveledUp);
     assert.equal(r1.updates.skillPointsEarned, 1);
     assert.equal(r1.updates.skillPoints, 1);

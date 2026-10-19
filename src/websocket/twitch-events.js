@@ -18,11 +18,11 @@ const streamerClients = new Map(); // streamerUsername -> tmi.Client
 const botJoinedChannels = new Set(); // Track channels TNEWBOT has joined
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
-// Active chatter tracking: channelName -> Map<userId, lastChatTimestamp>
-// Tracks users who chatted in the last hour for viewer bonuses
+import { CHAT_BOOST, chatDamageHealMultiplier, chatLootRarityBonus } from '../data/balance.js';
+
 const activeChatters = new Map(); // channelName -> Map<userId, timestamp>
 const channelToStreamerId = new Map(); // channelName -> streamerTwitchId (for broadcasting)
-const CHATTER_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const CHATTER_TIMEOUT_MS = CHAT_BOOST.activeWindowMs;
 
 // List of valid game commands (whitelist approach)
 // Only commands in this list will be processed - all others are silently ignored
@@ -64,22 +64,25 @@ async function trackChatActivity(channelName, userId, username, streamerTwitchId
   // Update or add user's last chat time
   chatters.set(userId, now);
   
-  // Clean up old chatters (older than 1 hour)
-  const oneHourAgo = now - CHATTER_TIMEOUT_MS;
+  const windowStart = now - CHATTER_TIMEOUT_MS;
   for (const [chatterUserId, lastChat] of chatters.entries()) {
-    if (lastChat < oneHourAgo) {
+    if (lastChat < windowStart) {
       chatters.delete(chatterUserId);
     }
   }
-  
-  // Get current count
+
   const count = chatters.size;
-  
-  // Broadcast chatter count update
+  const chatMult = chatDamageHealMultiplier(count);
+  const chatBoostPercent = Math.round((chatMult - 1) * 100);
+
   if (streamerTwitchId) {
     broadcastToRoom(String(streamerTwitchId), {
       type: 'chatter_count_update',
       count: count,
+      chatMult,
+      chatBoostPercent,
+      lootRarityBonus: chatLootRarityBonus(count),
+      activeWindowMs: CHATTER_TIMEOUT_MS,
       timestamp: now
     });
     console.log(`📡 [Chatter Tracking] ${channelName}: ${count} active chatters (updated from ${username})`);
@@ -175,9 +178,14 @@ function broadcastAllChatterCounts() {
     const streamerTwitchId = channelToStreamerId.get(channelName);
     if (streamerTwitchId) {
       // Broadcast even if count is 0 to keep browser sources updated
+      const chatMult = chatDamageHealMultiplier(count);
       broadcastToRoom(String(streamerTwitchId), {
         type: 'chatter_count_update',
         count: count,
+        chatMult,
+        chatBoostPercent: Math.round((chatMult - 1) * 100),
+        lootRarityBonus: chatLootRarityBonus(count),
+        activeWindowMs: CHATTER_TIMEOUT_MS,
         timestamp: now
       });
     }

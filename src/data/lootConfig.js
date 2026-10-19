@@ -8,6 +8,12 @@
  * - Pity/bad-luck protection exists but is conservative
  */
 
+/** Chance any item drops on kill (backend authoritative; FE should match). */
+export const KILL_DROP_CHANCES = {
+  normal: 0.08,
+  elite: 0.25
+};
+
 // Rarity drop chances by content type and difficulty
 export const DROP_RATES = {
   // Trash enemies (quest zones, idle farming)
@@ -281,5 +287,3 @@ export const RAID_RARITY_CHANCES = {
     legendary: 0.15
   }
 };
-
-export { ELITE_LOOT_CONFIG, getRarityWeights, getItemName };

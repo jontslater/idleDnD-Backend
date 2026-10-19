@@ -4,27 +4,18 @@
  * Uses polynomial maxXp formula (WoW-style) for balanced leveling progression
  */
 
-import { ROLE_CONFIG } from '../data/roleConfig.js';
 import { calculateSkillPoints } from '../data/skills.js';
+import { xpToNextLevel } from '../data/balance.js';
+
+const MAX_HERO_LEVEL = 100;
 
 /**
- * Calculate maxXp for a given level
- * Uses polynomial growth (WoW-style) instead of exponential for better balance
- * Tuned for 5-15 minutes per level (idle game pacing)
- * @param {number} level - Hero level
- * @returns {number} Max XP required for that level
+ * XP required to advance from `level` → level+1 (balance plan).
  */
 export function calculateMaxXp(level) {
-  if (level <= 1) return 100;
-  
-  // Polynomial growth: 40 * level² + 300 * level - 240
-  // Level 1: 100 XP
-  // Level 10: ~4,060 XP
-  // Level 50: ~102,760 XP
-  // Level 100: ~403,760 XP
-  // Level 177: ~1,265,000 XP
-  // This creates predictable, reasonable leveling times
-  return Math.floor(40 * level * level + 300 * level - 240);
+  const L = Math.min(99, Math.max(1, level || 1));
+  const need = xpToNextLevel(L);
+  return need > 0 ? need : xpToNextLevel(99);
 }
 
 /**
@@ -81,7 +72,11 @@ export function processLevelUps(hero, newXp) {
   
   // Handle multiple level-ups with safety cap
   const MAX_LEVELS_PER_UPDATE = 50; // Safety cap to prevent infinite loops
-  while (currentXp >= currentMaxXp && totalLevelsGained < MAX_LEVELS_PER_UPDATE) {
+  while (
+    currentXp >= currentMaxXp &&
+    totalLevelsGained < MAX_LEVELS_PER_UPDATE &&
+    newLevel < MAX_HERO_LEVEL
+  ) {
     newLevel++;
     totalLevelsGained++;
     currentXp = currentXp - currentMaxXp;
@@ -104,25 +99,8 @@ export function processLevelUps(hero, newXp) {
     updates.level = newLevel;
     updates.xp = currentXp;
     updates.maxXp = currentMaxXp;
-    
-    // Update stats on level-up (accumulate for all levels gained)
-    const roleConfig = ROLE_CONFIG[hero.role];
-    if (roleConfig) {
-      const currentMaxHp = hero.maxHp || 100;
-      const currentAttack = hero.attack || 10;
-      const currentDefense = hero.defense || 5;
-      
-      // Calculate HP ratio to maintain after level-up
-      const hpRatio = (hero.hp || currentMaxHp) / currentMaxHp;
-      
-      // Add stats for each level gained
-      updates.maxHp = currentMaxHp + (roleConfig.hpPerLevel * totalLevelsGained);
-      updates.attack = currentAttack + (roleConfig.attackPerLevel * totalLevelsGained);
-      updates.defense = currentDefense + (roleConfig.defensePerLevel * totalLevelsGained);
-      
-      // Maintain HP ratio (heal proportionally)
-      updates.hp = Math.floor(updates.maxHp * hpRatio);
-    }
+
+    // Combat stats derive from level + gear (balance.js); do not increment stored atk/def/hp here.
 
     Object.assign(updates, skillPointPatchForLevelUp(hero, newLevel));
   }

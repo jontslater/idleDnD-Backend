@@ -1,0 +1,755 @@
+{
+  "version": 1,
+  "xpLevelCoefficient": 60,
+  "formulas": {
+    "g": "1 + 0.1 * (L - 1)",
+    "xpToNext": "floor(60 * g(L) * L^1.13)",
+    "damageReduction": "min(0.75, armor / (armor + 400 * g(L_attacker)))",
+    "damage": "ATK * abilityMult * chatMult * (1 - DR) * U(0.9,1.1) * (crit ? 1.5 : 1)",
+    "heal": "spellPower * 3.0 * chatMult * (crit ? 1.5 : 1)",
+    "chatMult": "1 + min(0.2, 0.02 * activeChatters)"
+  },
+  "roleBaseStats": {
+    "tank": {
+      "hp": 400,
+      "atk": 20,
+      "spellPower": 0,
+      "armor": 300,
+      "crit": 0.05
+    },
+    "healer": {
+      "hp": 250,
+      "atk": 14,
+      "spellPower": 20,
+      "armor": 120,
+      "crit": 0.05
+    },
+    "dps": {
+      "hp": 260,
+      "atk": 32,
+      "spellPower": 0,
+      "armor": 100,
+      "crit": 0.1
+    }
+  },
+  "gear": {
+    "rarityR": {
+      "common": 1,
+      "uncommon": 1.15,
+      "rare": 1.35,
+      "epic": 1.6,
+      "legendary": 1.9,
+      "mythic": 2.25
+    },
+    "budgetFraction": 0.4,
+    "setCritPercent": {
+      "common": 0,
+      "uncommon": 2,
+      "rare": 5,
+      "epic": 8,
+      "legendary": 12,
+      "mythic": 15
+    }
+  },
+  "combatCaps": {
+    "damageReduction": 0.75,
+    "critChance": 0.35,
+    "critMultiplier": 1.5,
+    "cooldownReductionPercent": 40,
+    "chatDamageHealBonusCap": 0.2,
+    "chatLootRarityBonusCap": 0.05,
+    "winStreakDifficultyCap": 1.25,
+    "waveTierBonusCap": 0.25
+  },
+  "enemyBase": {
+    "hp": 900,
+    "atk": 40,
+    "armor": 150
+  },
+  "enemyKinds": [
+    "normal",
+    "elite",
+    "dungeonBoss",
+    "raidBoss"
+  ],
+  "bossMechanics": {
+    "dungeonBoss": {
+      "aoeIntervalSec": 12,
+      "aoeAttackMult": 0.5
+    },
+    "raidBoss": {
+      "aoeIntervalSec": 10,
+      "aoeAttackMult": 0.6,
+      "enrageAfterSec": 360,
+      "enrageAttackBonusEverySec": 10,
+      "enrageAttackBonusPercent": 0.1
+    }
+  },
+  "chatBoost": {
+    "activeWindowMs": 600000,
+    "damageHealPerChatter": 0.02,
+    "damageHealCap": 0.2,
+    "lootRarityPerChatter": 0.005,
+    "lootRarityCap": 0.05
+  },
+  "xpSources": {
+    "eliteMult": 3,
+    "bossMult": 10,
+    "dungeonClearMinutes": 15,
+    "raidClearMinutes": 45,
+    "dailyQuestMinutes": 20,
+    "killsPerHourIdle": 240
+  },
+  "loot": {
+    "normalKillDropChance": 0.08,
+    "eliteKillDropChance": 0.25,
+    "dropTables": {
+      "trash": {
+        "common": 0.7,
+        "uncommon": 0.25,
+        "rare": 0.05,
+        "epic": 0,
+        "legendary": 0
+      },
+      "elite": {
+        "common": 0.5,
+        "uncommon": 0.35,
+        "rare": 0.14,
+        "epic": 0.01,
+        "legendary": 0
+      },
+      "dungeon": {
+        "normal": {
+          "common": 0,
+          "uncommon": 0.55,
+          "rare": 0.4,
+          "epic": 0.05,
+          "legendary": 0
+        },
+        "heroic": {
+          "common": 0,
+          "uncommon": 0.3,
+          "rare": 0.55,
+          "epic": 0.14,
+          "legendary": 0.01
+        },
+        "mythic": {
+          "common": 0,
+          "uncommon": 0,
+          "rare": 0.6,
+          "epic": 0.35,
+          "legendary": 0.05
+        }
+      },
+      "raid": {
+        "normal": {
+          "common": 0,
+          "uncommon": 0,
+          "rare": 0.7,
+          "epic": 0.28,
+          "legendary": 0.02
+        },
+        "heroic": {
+          "common": 0,
+          "uncommon": 0,
+          "rare": 0.45,
+          "epic": 0.5,
+          "legendary": 0.05
+        },
+        "mythic": {
+          "common": 0,
+          "uncommon": 0,
+          "rare": 0.1,
+          "epic": 0.75,
+          "legendary": 0.15
+        }
+      },
+      "worldboss": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0,
+        "epic": 0.7,
+        "legendary": 0.3
+      },
+      "bossUnique": {
+        "dropChance": 0.1
+      }
+    },
+    "pity": {
+      "enabled": true,
+      "counters": {
+        "dungeon_heroic": {
+          "threshold": 15,
+          "guaranteedRarity": "epic"
+        },
+        "dungeon_mythic": {
+          "threshold": 8,
+          "guaranteedRarity": "legendary"
+        },
+        "raid_heroic": {
+          "threshold": 10,
+          "guaranteedRarity": "epic"
+        },
+        "raid_mythic": {
+          "threshold": 6,
+          "guaranteedRarity": "legendary"
+        },
+        "worldboss": {
+          "threshold": 3,
+          "guaranteedRarity": "legendary"
+        }
+      }
+    }
+  },
+  "hpRegen": {
+    "onlyBetweenFights": true,
+    "fullHealDurationMs": 3000
+  },
+  "swingTimerMs": 2000,
+  "levelBands": {
+    "idle": {
+      "min": 1,
+      "max": 100
+    },
+    "dungeon": [
+      {
+        "id": "goblin_cave",
+        "min": 10,
+        "max": 20
+      },
+      {
+        "id": "ancient_catacombs",
+        "min": 15,
+        "max": 30
+      },
+      {
+        "id": "demon_ruins",
+        "min": 25,
+        "max": 45
+      },
+      {
+        "id": "shadow_depths",
+        "min": 40,
+        "max": 60
+      },
+      {
+        "id": "dragon_spire",
+        "min": 55,
+        "max": 80
+      },
+      {
+        "id": "void_citadel",
+        "min": 75,
+        "max": 100
+      }
+    ],
+    "raid": [
+      {
+        "id": "corrupted_temple",
+        "min": 20,
+        "max": 40,
+        "minItemLevel": 25
+      },
+      {
+        "id": "dragons_lair",
+        "min": 35,
+        "max": 55,
+        "minItemLevel": 40
+      },
+      {
+        "id": "elder_dragon_heroic",
+        "min": 50,
+        "max": 75,
+        "minItemLevel": 55
+      },
+      {
+        "id": "elder_dragon_mythic",
+        "min": 70,
+        "max": 100,
+        "minItemLevel": 70
+      }
+    ]
+  },
+  "skillCaps": {
+    "cooldownReductionPercent": 40,
+    "critChancePercent": 35,
+    "damageReductionPercent": 75
+  },
+  "activeAbilities": {
+    "byRole": {
+      "tank": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "healer": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "dps": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      }
+    },
+    "classOverrides": {
+      "shaman": {
+        "id": "chainLightning",
+        "name": "Chain Lightning",
+        "role": "healer",
+        "cooldownMs": 15000,
+        "effect": {
+          "type": "chain_damage",
+          "description": "Legacy overlay active; hits multiple enemies (client resolves targets)."
+        }
+      },
+      "berserker": {
+        "id": "whirlwind",
+        "name": "Whirlwind",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "aoe_damage",
+          "description": "Legacy overlay active; AoE around self (client resolves radius)."
+        }
+      }
+    },
+    "resolvedByClass": {
+      "guardian": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "paladin": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "warden": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "bloodknight": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "vanguard": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "brewmaster": {
+        "id": "shieldWall",
+        "name": "Shield Wall",
+        "role": "tank",
+        "cooldownMs": 45000,
+        "effect": {
+          "type": "shield_wall",
+          "tankDamageReductionPercent": 50,
+          "partyDamageReductionPercent": 20,
+          "durationMs": 8000,
+          "taunt": true
+        }
+      },
+      "cleric": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "atoner": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "druid": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "lightbringer": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "shaman": {
+        "id": "chainLightning",
+        "name": "Chain Lightning",
+        "role": "healer",
+        "cooldownMs": 15000,
+        "effect": {
+          "type": "chain_damage",
+          "description": "Legacy overlay active; hits multiple enemies (client resolves targets)."
+        }
+      },
+      "mistweaver": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "chronomancer": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "bard": {
+        "id": "groupHeal",
+        "name": "Group Heal",
+        "role": "healer",
+        "cooldownMs": 30000,
+        "effect": {
+          "type": "aoe_heal_percent_caster_max_hp",
+          "healPercentOfCasterMaxHp": 25,
+          "scalesWithHealingMultiplier": true
+        }
+      },
+      "berserker": {
+        "id": "whirlwind",
+        "name": "Whirlwind",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "aoe_damage",
+          "description": "Legacy overlay active; AoE around self (client resolves radius)."
+        }
+      },
+      "crusader": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "assassin": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "reaper": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "bladedancer": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "monk": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "stormwarrior": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "hunter": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "mage": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "warlock": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "ranger": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "shadowpriest": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "mooncaller": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "stormcaller": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      },
+      "dragonsorcerer": {
+        "id": "burstStrike",
+        "name": "Burst Strike",
+        "role": "dps",
+        "cooldownMs": 20000,
+        "effect": {
+          "type": "single_target_attack_multiplier",
+          "attackDamagePercent": 300,
+          "canCrit": true
+        }
+      }
+    }
+  },
+  "dropRates": {
+    "trash": {
+      "common": 0.7,
+      "uncommon": 0.25,
+      "rare": 0.05,
+      "epic": 0,
+      "legendary": 0
+    },
+    "elite": {
+      "common": 0.5,
+      "uncommon": 0.35,
+      "rare": 0.14,
+      "epic": 0.01,
+      "legendary": 0
+    },
+    "dungeon": {
+      "normal": {
+        "common": 0,
+        "uncommon": 0.55,
+        "rare": 0.4,
+        "epic": 0.05,
+        "legendary": 0
+      },
+      "heroic": {
+        "common": 0,
+        "uncommon": 0.3,
+        "rare": 0.55,
+        "epic": 0.14,
+        "legendary": 0.01
+      },
+      "mythic": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0.6,
+        "epic": 0.35,
+        "legendary": 0.05
+      }
+    },
+    "raid": {
+      "normal": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0.7,
+        "epic": 0.28,
+        "legendary": 0.02
+      },
+      "heroic": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0.45,
+        "epic": 0.5,
+        "legendary": 0.05
+      },
+      "mythic": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0.1,
+        "epic": 0.75,
+        "legendary": 0.15
+      }
+    },
+    "worldboss": {
+      "common": 0,
+      "uncommon": 0,
+      "rare": 0,
+      "epic": 0.7,
+      "legendary": 0.3
+    },
+    "bossUnique": {
+      "dropChance": 0.1
+    }
+  },
+  "armor": {
+    "K": 400
+  },
+  "sampleXpToNext": {
+    "10": 1537,
+    "25": 7750,
+    "50": 29433,
+    "99": 116585
+  },
+  "sampleDr": {
+    "tankRare": 0.5594428247489472,
+    "enemy150": 0.2727272727272727
+  }
+}

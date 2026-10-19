@@ -102,7 +102,11 @@ router.post('/list', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    if (currency !== 'gold' && currency !== 'tokens') {
+    if (currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+    if (currency !== 'gold') {
       return res.status(400).json({ error: 'Invalid currency' });
     }
     
@@ -283,7 +287,12 @@ router.post('/:listingId/bid', requireAuth, async (req, res) => {
     if (listing.sellerId === userId) {
       return res.status(400).json({ error: 'Cannot bid on your own listing' });
     }
-    
+
+    if (listing.currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
     const bidAmount = Number(amount);
     const minBid = Math.max(listing.startingPrice, listing.highestBid + 1);
     
@@ -414,11 +423,16 @@ router.post('/:listingId/buyout', requireAuth, async (req, res) => {
     if (!listing.buyoutPrice) {
       return res.status(400).json({ error: 'Listing has no buyout price' });
     }
-    
+
+    if (listing.currency === 'tokens') {
+      const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+      return res.status(410).json(gameplayTokenSinkResponse());
+    }
+
     if (listing.sellerId === userId) {
       return res.status(400).json({ error: 'Cannot buyout your own listing' });
     }
-    
+
     const buyoutPrice = listing.buyoutPrice;
     
     // Check buyer has enough currency

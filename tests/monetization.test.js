@@ -75,7 +75,34 @@ async function runTests() {
     failed++;
   }
 
-  console.log('\nTest 4: founder purchase grants cosmetics not tokens');
+  console.log('\nTest 4: token packs config has no gold');
+  try {
+    const { TOKEN_PACKS } = await import('../src/data/tokenPacks.js');
+    for (const pack of Object.values(TOKEN_PACKS)) {
+      assert.equal(pack.gold, undefined);
+      assert.ok(pack.tokens > 0);
+    }
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 5: gameplay token sinks blocked');
+  try {
+    const { gameplayTokenSinkResponse, TOKEN_SINK_COSMETIC_ONLY_CODE } = await import('../src/utils/tokenCosmetics.js');
+    const body = gameplayTokenSinkResponse();
+    assert.equal(body.code, TOKEN_SINK_COSMETIC_ONLY_CODE);
+    assert.ok(body.cosmeticCatalog.length >= 3);
+    console.log('  ✓ Passed');
+    passed++;
+  } catch (e) {
+    console.log('  ✗ Failed:', e.message);
+    failed++;
+  }
+
+  console.log('\nTest 6: founder purchase grants cosmetics not tokens');
   try {
     const hero = { tokens: 50, unlockedTitles: [] };
     const update = buildFounderPackCosmeticUpdate(hero, 'silver', 2);

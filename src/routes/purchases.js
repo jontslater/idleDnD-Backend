@@ -17,13 +17,7 @@ const PACK_TIERS = {
   platinum: { price: 25, premiumCurrency: 250, name: 'Platinum Founder' }
 };
 
-// Token pack configurations (standard gacha pricing)
-const TOKEN_PACKS = {
-  impulse: { price: 0.99, tokens: 100, gold: 1000, name: 'Impulse Pack' },
-  starter: { price: 4.99, tokens: 500, gold: 5000, name: 'Starter Pack' },
-  value: { price: 9.99, tokens: 1500, gold: 15000, name: 'Value Pack' },
-  premium: { price: 24.99, tokens: 5000, gold: 50000, name: 'Premium Pack' }
-};
+import { TOKEN_PACKS } from '../data/tokenPacks.js';
 
 // Tier number mapping (for database storage)
 const TIER_LEVELS = {
@@ -755,7 +749,6 @@ router.post('/token-pack', requireAuth, async (req, res) => {
       packType,
       price: packConfig.price,
       tokens: packConfig.tokens,
-      gold: packConfig.gold,
       status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -925,7 +918,7 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
       const packConfig = TOKEN_PACKS[purchase.packType];
       serverPrice = packConfig.price; // Use server-side config price
       productName = packConfig.name;
-      productDescription = `${packConfig.tokens} Tokens + ${packConfig.gold} Gold`;
+      productDescription = `${packConfig.tokens} premium tokens (cosmetic shop only)`;
     } else if (purchase.price) {
       // Fallback: use price from purchase record (created server-side)
       serverPrice = purchase.price;

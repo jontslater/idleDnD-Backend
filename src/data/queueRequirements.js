@@ -3,6 +3,17 @@
  * Defines level, gear score, and role requirements for each instance
  */
 
+import { getMinItemLevelForRaid, LEVEL_BANDS } from './balance.js';
+
+export { LEVEL_BANDS };
+
+export function resolveMinItemLevelForRaid(raidId) {
+  const fromBand = getMinItemLevelForRaid(raidId);
+  if (fromBand != null) return fromBand;
+  const req = RAID_REQUIREMENTS[raidId];
+  return req?.minItemLevel ?? null;
+}
+
 export const DUNGEON_REQUIREMENTS = {
   normal: {
     id: 'normal',
@@ -77,6 +88,7 @@ export const RAID_REQUIREMENTS = {
     id: 'elder_dragon_heroic',
     name: "Elder Dragon's Lair (Heroic)",
     description: 'Face the Elder Dragon at full power',
+    minItemLevel: 55,
     minLevel: 35,
     minGearScore: 2000,
     recommendedGearScore: 2500,
@@ -113,6 +125,7 @@ export const RAID_REQUIREMENTS = {
     id: 'corrupted_temple',
     name: 'Corrupted Temple',
     description: 'Cleanse corruption and face the Corrupted High Priest',
+    minItemLevel: 25,
     minLevel: 15,
     minGearScore: 500,
     recommendedGearScore: 600,
