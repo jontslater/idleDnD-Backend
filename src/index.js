@@ -65,13 +65,24 @@ try {
 
 // Initialize Express
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
-  credentials: true
-}));
+// Middleware — production requires explicit CORS allow-list
+const corsOrigins = (process.env.ALLOWED_ORIGINS?.split(',') || [])
+  .map((o) => o.trim())
+  .filter(Boolean);
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction && corsOrigins.length === 0) {
+  console.error('❌ ALLOWED_ORIGINS must be set in production (comma-separated). Refusing to start with open CORS.');
+  process.exit(1);
+}
+app.use(
+  cors({
+    origin: corsOrigins.length ? corsOrigins : true,
+    credentials: true
+  })
+);
 
 // Stripe webhook needs raw body - handle it before bodyParser
 app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -100,99 +111,16 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle the checkout.session.completed event
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const purchaseId = session.metadata?.purchaseId;
-
-    if (!purchaseId) {
-      console.error('[Stripe Webhook] No purchaseId in session metadata');
-      return res.status(400).json({ error: 'No purchaseId in session metadata' });
-    }
-
-    console.log(`[Stripe Webhook] Payment completed for purchase: ${purchaseId}`);
-
-    try {
-      // Get purchase record
-      const purchaseRef = db.collection('purchases').doc(purchaseId);
-      const purchaseDoc = await purchaseRef.get();
-
-      if (!purchaseDoc.exists) {
-        console.error(`[Stripe Webhook] Purchase ${purchaseId} not found`);
-        return res.status(404).json({ error: 'Purchase not found' });
-      }
-
-      const purchase = purchaseDoc.data();
-
-      if (purchase.status === 'completed') {
-        console.log(`[Stripe Webhook] Purchase ${purchaseId} already completed`);
-        return res.json({ received: true, message: 'Purchase already completed' });
-      }
-
-      // Import PACK_TIERS, TOKEN_PACKS, and TIER_LEVELS from purchases route
-      // For now, we'll use a simpler approach - call the complete endpoint
-      // Update purchase status
-      await purchaseRef.update({
-        status: 'completed',
-        completedAt: admin.firestore.FieldValue.serverTimestamp(),
-        stripeSessionId: session.id,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      // Complete the purchase based on type (call existing complete endpoints via internal logic)
-      if (purchase.packTier) {
-        // Complete founders pack
-        const PACK_TIERS = {
-          bronze: { price: 5, premiumCurrency: 25, name: 'Bronze Founder' },
-          silver: { price: 10, premiumCurrency: 75, name: 'Silver Founder' },
-          gold: { price: 15, premiumCurrency: 150, name: 'Gold Founder' },
-          platinum: { price: 25, premiumCurrency: 250, name: 'Platinum Founder' }
-        };
-        const TIER_LEVELS = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
-        
-        const heroesSnapshot = await db.collection('heroes')
-          .where('twitchUserId', '==', purchase.userId)
-          .get();
-
-        if (!heroesSnapshot.empty) {
-          const tierLevel = TIER_LEVELS[purchase.packTier];
-          const { buildFounderPackCosmeticUpdate } = await import('./utils/monetization.js');
-          const batch = db.batch();
-
-          heroesSnapshot.docs.forEach(heroDoc => {
-            const heroRef = db.collection('heroes').doc(heroDoc.id);
-            const hero = heroDoc.data();
-            const heroUpdate = buildFounderPackCosmeticUpdate(hero, purchase.packTier, tierLevel);
-            batch.update(heroRef, heroUpdate);
-          });
-
-          await batch.commit();
-          console.log(`[Stripe Webhook] Founders pack ${purchase.packTier} completed for user ${purchase.userId} - updated ${heroesSnapshot.docs.length} heroes`);
-        }
-      } else if (purchase.packType && purchase.heroId) {
-        // Complete token pack
-        const { TOKEN_PACKS } = await import('./data/tokenPacks.js');
-        const packConfig = TOKEN_PACKS[purchase.packType];
-        const heroRef = db.collection('heroes').doc(purchase.heroId);
-        const heroDoc = await heroRef.get();
-
-        if (heroDoc.exists) {
-          const hero = heroDoc.data();
-          await heroRef.update({
-            tokens: (hero.tokens || 0) + packConfig.tokens,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          console.log(`[Stripe Webhook] Token pack ${purchase.packType} completed for hero ${purchase.heroId}`);
-        }
-      }
-
-      res.json({ received: true, message: 'Purchase completed successfully' });
-    } catch (error) {
-      console.error('[Stripe Webhook] Error completing purchase:', error);
-      res.status(500).json({ error: 'Failed to complete purchase', details: error.message });
-    }
-  } else {
-    res.json({ received: true });
+  try {
+    const { handleStripeWebhookEvent } = await import('./services/stripeWebhookHandler.js');
+    const { logInfo, logError } = await import('./utils/logger.js');
+    const outcome = await handleStripeWebhookEvent(db, event);
+    logInfo('stripe_webhook', 'processed', { type: event.type, ...outcome });
+    res.json({ received: true, ...outcome });
+  } catch (error) {
+    const { logError } = await import('./utils/logger.js');
+    await logError('stripe_webhook', error, { type: event.type });
+    res.status(500).json({ error: 'Webhook handler failed' });
   }
 });
 
@@ -200,6 +128,10 @@ app.post('/api/purchases/webhook', express.raw({ type: 'application/json' }), as
 // Increased limit to 2MB to handle large batch quest updates and other large payloads
 app.use(bodyParser.json({ limit: '2mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '2mb' }));
+
+import { authRateLimiter, writeRateLimiter } from './middleware/rateLimit.js';
+app.use('/api/auth', authRateLimiter);
+app.use('/api', writeRateLimiter);
 
 // Request logging
 app.use((req, res, next) => {
@@ -217,6 +149,7 @@ import worldbossRoutes from './routes/worldboss.js';
 import bitsRoutes from './routes/bits.js';
 import questRoutes from './routes/quests.js';
 import battlefieldRoutes from './routes/battlefields.js';
+import lootRollRoutes from './routes/lootRoll.js';
 import skillsRoutes from './routes/skills.js';
 import auctionRoutes from './routes/auction.js';
 import achievementRoutes from './routes/achievements.js';
@@ -236,6 +169,8 @@ import overlayRoutes from './routes/overlay.js';
 import queueRoutes from './routes/queues.js';
 import balanceRoutes from './routes/balance.js';
 import cosmeticsRoutes from './routes/cosmetics.js';
+import gearRoutes from './routes/gear.js';
+import adminRoutes from './routes/admin.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -253,6 +188,7 @@ app.use('/api/worldboss', worldbossRoutes);
 app.use('/api/bits', bitsRoutes);
 app.use('/api/quests', questRoutes);
 app.use('/api/battlefields', battlefieldRoutes);
+app.use('/api/battlefields', lootRollRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/auction', auctionRoutes);
 app.use('/api/achievements', achievementRoutes);
@@ -269,6 +205,8 @@ app.use('/api/overlay', overlayRoutes);
 app.use('/api/queues', queueRoutes);
 app.use('/api/balance', balanceRoutes);
 app.use('/api/cosmetics', cosmeticsRoutes);
+app.use('/api/gear', gearRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

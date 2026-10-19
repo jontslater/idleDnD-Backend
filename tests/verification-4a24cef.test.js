@@ -174,7 +174,8 @@ async function runTests() {
   try {
     const instanceRef = await db.collection('raidInstances').add({
       status: 'in-progress',
-      raidId: 'test-raid',
+      raidId: 'corrupted_temple',
+      difficulty: 'normal',
       battlefieldId: 'twitch:streamer1',
       bossHp: 0,
       participantIds: ['9001'],
@@ -190,9 +191,10 @@ async function runTests() {
           { userId: victimHero, twitchUserId: 'victim-twitch', isAlive: true, heroRole: 'mage' }
         ]
       });
-    assert.ok(res.status === 200 || res.status === 500);
+    assert.equal(res.status, 200);
+    assert.ok(res.body.success !== false);
     passed++;
-    console.log('  ✓ Passed (request handled with server participant list)');
+    console.log('  ✓ Passed (no server error; spoofed participant ignored)');
   } catch (e) {
     failed++;
     console.log('  ✗ Failed:', e.message);

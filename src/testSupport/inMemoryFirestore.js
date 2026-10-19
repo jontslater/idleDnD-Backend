@@ -5,6 +5,28 @@
 
 import { assertNoServerTimestampInsideArrays } from './firestoreFieldGuards.js';
 
+function applyDotNotation(merged, updates) {
+  for (const [key, val] of Object.entries(updates)) {
+    if (!key.includes('.')) continue;
+    const parts = key.split('.');
+    let cursor = merged;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (cursor[part] == null || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) {
+        cursor[part] = {};
+      }
+      cursor = cursor[part];
+    }
+    const leaf = parts[parts.length - 1];
+    if (val && typeof val === 'object' && val._methodName === 'delete') {
+      delete cursor[leaf];
+    } else {
+      cursor[leaf] = cloneData(val);
+    }
+    delete merged[key];
+  }
+}
+
 function cloneData(data) {
   if (data == null) return data;
   if (typeof data.toMillis === 'function') return data;
@@ -61,6 +83,7 @@ export function createInMemoryFirestore(initialData = {}) {
         const coll = ensureCollection(collName);
         const existing = coll.get(id) || {};
         const merged = { ...existing, ...cloneData(updates) };
+        applyDotNotation(merged, updates);
         for (const [key, val] of Object.entries(updates)) {
           if (val && typeof val === 'object' && val._methodName === 'delete') {
             delete merged[key];

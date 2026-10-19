@@ -1,7 +1,9 @@
 // Raid Loot Tables
 // Raid loot has 20-30% higher stats than world drops of the same level/rarity
 
-import { SET_PIECE_RATES } from './lootConfig.js';
+import { SET_PIECE_RATES, rollLoot } from './lootConfig.js';
+import { generateGearItem } from './gear/generator.js';
+import { pickSetForSource } from './gear/sets.js';
 
 const RAID_LOOT_BONUS = {
   normal: 1.20,    // 20% better than world drops
@@ -243,88 +245,28 @@ const RAID_RARITY_MULTIPLIERS = {
  * @param {number} bossLevel - Level of the boss
  * @returns {object} Generated raid loot item
  */
+function categoryToRoleGroup(category) {
+  if (category === 'tank') return 'tank';
+  if (category === 'healer') return 'healer';
+  return 'melee';
+}
+
 function generateRaidLoot(raidId, difficulty, category, slot, bossLevel) {
-  // Check if this boss has a legendary item
-  // OLD VALUE: 15% chance (too high)
-  // NEW VALUE: 10% chance for unique legendary (only in mythic)
-  const bossLegendary = LEGENDARY_BOSS_LOOT[raidId];
-  const uniqueLegendaryChance = difficulty === 'mythic' ? 0.10 : 0.00;
-  if (bossLegendary && Math.random() < uniqueLegendaryChance) {
-    const legendaryItem = Object.entries(bossLegendary)[0];
-    return {
-      id: Date.now() + Math.random(),
-      name: legendaryItem[0],
-      ...legendaryItem[1],
-      rarity: 'legendary',
-      color: '#ff8000',
-      level: bossLevel,
-      isRaidLoot: true,
-      fromRaid: raidId
-    };
-  }
-
-  // Determine rarity based on difficulty
-  const rarityChances = RAID_RARITY_CHANCES[difficulty];
-  const rand = Math.random();
-  let rarity;
-  let cumulativeChance = 0;
-  
-  for (const [rarityName, chance] of Object.entries(rarityChances)) {
-    cumulativeChance += chance;
-    if (rand <= cumulativeChance) {
-      rarity = rarityName;
-      break;
-    }
-  }
-
-  // Get template
-  const template = RAID_LOOT_TEMPLATES[category][slot];
-  if (!template) {
-    console.error(`No raid loot template for ${category} ${slot}`);
-    return null;
-  }
-
-  // Calculate stats
-  const difficultyBonus = RAID_LOOT_BONUS[difficulty];
-  const rarityMultiplier = RAID_RARITY_MULTIPLIERS[rarity];
-  const levelMultiplier = 1 + (bossLevel * 0.1);
-  const totalMultiplier = difficultyBonus * rarityMultiplier * levelMultiplier;
-
-  const item = {
-    id: Date.now() + Math.random(),
-    name: `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${template.name}`,
-    slot: slot,
-    rarity: rarity,
-    color: rarity === 'rare' ? '#0070dd' : rarity === 'epic' ? '#a335ee' : '#ff8000',
-    attack: Math.floor(template.attack * totalMultiplier),
-    defense: Math.floor(template.defense * totalMultiplier),
-    hp: Math.floor(template.hp * totalMultiplier),
-    level: bossLevel,
-    forRole: category,
-    isRaidLoot: true,
-    fromRaid: raidId
-  };
-
-  // Add proc effects for epic/legendary
-  if (rarity === 'epic' || rarity === 'legendary') {
-    const procCount = rarity === 'epic' ? 2 : 3;
-    item.procEffects = generateRaidProcs(category, procCount);
-  }
-
-  // Assign set name for raids
-  // OLD VALUE: 60% (too high)
-  // NEW VALUES (from lootConfig.js): normal 30%, heroic 45%, mythic 60%
-  const setPieceRate = SET_PIECE_RATES.raid[difficulty] || 0.30;
-  const shouldBeSetPiece = Math.random() < setPieceRate;
-  
-  if (shouldBeSetPiece && rarity !== 'common') {
-    const setName = assignSetName(category, slot);
-    if (setName) {
-      item.setName = setName;
-    }
-  }
-
-  return item;
+  const roleGroup = categoryToRoleGroup(category);
+  const { rarity } = rollLoot('raid', difficulty, 0);
+  const source = { type: 'raid', difficulty, contentId: raidId, enemyLevel: bossLevel };
+  const setPieceRate = SET_PIECE_RATES.raid[difficulty] || 0.3;
+  const set = Math.random() < setPieceRate ? pickSetForSource(roleGroup, { ...source, ilvl: bossLevel }) : null;
+  const item = generateGearItem({
+    roleGroup,
+    slot,
+    rarity,
+    source,
+    seed: `raid-${raidId}-${slot}-${Date.now()}`,
+    setId: set?.id || null,
+    isSetPiece: Boolean(set)
+  });
+  return { ...item, isRaidLoot: true, fromRaid: raidId, forRole: category };
 }
 
 /**

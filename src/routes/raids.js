@@ -709,10 +709,32 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
       updateData.combatLog = admin.firestore.FieldValue.arrayUnion(...combatLogEntries);
     }
     
-    // Update bossHp if bossHpPercent is provided
-    if (bossHpPercent !== undefined && bossHpPercent !== null) {
-      const bossMaxHp = instance.bossMaxHp || instance.boss?.maxHp || instance.boss?.hp || 1000;
-      updateData.bossHp = Math.floor((bossHpPercent / 100) * bossMaxHp);
+    const bossMaxHp = instance.bossMaxHp || instance.boss?.maxHp || instance.boss?.hp || 1000;
+    let currentBossHp = instance.bossHp ?? bossMaxHp;
+    const bossDamage = Math.max(0, Math.floor(Number(req.body.bossDamage) || 0));
+    if (bossDamage > 0) {
+      const { capRaidBossDamageReport } = await import('../utils/raidBossDamageLimiter.js');
+      const heroKey = req.body.heroId || req.body.userId || req.streamer?.twitchId || 'overlay';
+      const heroLevel = Math.floor(Number(req.body.heroLevel) || 50);
+      const classKey = req.body.classKey || req.body.heroClass || 'berserker';
+      const { applied } = capRaidBossDamageReport({
+        instance: { ...instance, id: instanceId, instanceId },
+        heroLevel,
+        classKey,
+        heroKey,
+        requestedDamage: bossDamage
+      });
+      currentBossHp = Math.max(0, currentBossHp - applied);
+      updateData.bossHp = currentBossHp;
+      updateData.bossDamageApplied = applied;
+      updateData.totalBossDamageApplied = (instance.totalBossDamageApplied || 0) + applied;
+      if (!instance.bossFightStartedAt) {
+        updateData.bossFightStartedAt = Date.now();
+      }
+    } else if (bossHpPercent !== undefined && bossHpPercent !== null) {
+      const reported = Math.floor((bossHpPercent / 100) * bossMaxHp);
+      const minAllowed = Math.max(0, currentBossHp - Math.floor(bossMaxHp * 0.05));
+      updateData.bossHp = Math.min(currentBossHp, Math.max(reported, minAllowed));
     }
     
     // Save checkpoint if phase changed or at significant HP thresholds
@@ -897,6 +919,9 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
     const { getRaidById } = await import('../data/raids.js');
     const { generateRaidLoot } = await import('../data/raidLoot.js');
     const raidData = getRaidById(instance.raidId);
+    if (!raidData) {
+      return res.status(400).json({ error: 'Unknown raid configuration', raidId: instance.raidId });
+    }
     
     // SERVER-SIDE VALIDATION (FE #3 requirement 2): Validate completion criteria
     // Don't blindly trust client's success flag - verify boss defeated and team survived
@@ -906,7 +931,11 @@ router.post('/instance/:instanceId/complete', requireAuthOrStreamerKey, async (r
       // Validate success criteria:
       // 1. Boss must be defeated (bossHp <= 0)
       // 2. At least one participant must be alive
-      const bossHp = instance.bossHp || instance.boss?.hp || raidData.boss.hp;
+      const bossHp =
+        instance.bossHp ??
+        instance.boss?.hp ??
+        raidData?.boss?.hp ??
+        0;
       const aliveParticipants = (finalParticipants || instance.participants || []).filter(p => p.isAlive);
       
       if (bossHp > 0) {

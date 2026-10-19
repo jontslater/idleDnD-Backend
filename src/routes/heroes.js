@@ -84,6 +84,7 @@ router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req
     }
 
     const { getVendorSellPrice } = await import('../utils/vendorPrice.js');
+    const { bindingViolation } = await import('../utils/itemBinding.js');
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
     if (!doc.exists) {
@@ -120,6 +121,10 @@ router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req
           if (!item?.id || item.id !== itemId) continue;
           if (equippedIds.has(item.id)) {
             throw Object.assign(new Error(`Cannot sell equipped item: ${item.id}`), { status: 400 });
+          }
+          const sellBind = bindingViolation(item, 'sell');
+          if (sellBind) {
+            throw Object.assign(new Error(sellBind.error), { status: 400, code: sellBind.code });
           }
           const stackQty = Math.max(1, Number(item.quantity) || 1);
           if (stackQty <= left) {
@@ -278,9 +283,17 @@ router.post('/test/create', requireAdmin, async (req, res) => {
   }
 });
 
-// Get all heroes
-router.get('/', async (req, res) => {
+// Get all heroes — disabled (was leaking full hero documents)
+router.get('/', requireAuth, async (req, res) => {
   try {
+    const { requireInternal } = await import('../middleware/requireInternal.js');
+    const internalKey = req.headers['x-internal-key'];
+    if (!internalKey || internalKey !== process.env.INTERNAL_API_KEY) {
+      return res.status(403).json({
+        error: 'Listing all heroes is disabled. Use GET /api/heroes/:userId or /api/heroes/twitch/:twitchUserId',
+        code: 'HERO_LIST_DISABLED'
+      });
+    }
     const snapshot = await db.collection('heroes').get();
     const heroes = snapshot.docs.map(doc => {
       const data = { ...doc.data(), id: doc.id };
@@ -1017,6 +1030,10 @@ router.post('/', requireAuth, async (req, res) => {
     });
 
     const docRef = await db.collection('heroes').add(heroData);
+    if (twitchUserId) {
+      const { applyAccountFounderToHero } = await import('../services/cosmeticsService.js');
+      await applyAccountFounderToHero(db, twitchUserId, docRef, heroData);
+    }
     const doc = await docRef.get();
 
     const { MAX_HEROES } = await import('../utils/heroSlotLimits.js');
@@ -1277,45 +1294,11 @@ router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (re
 });
 
 router.post('/:userId/purchase/cosmetic-tokens', requireAuth, requireOwnership, async (req, res) => {
-  try {
-    const { itemId } = req.body;
-    const { userId } = req.params;
-    const { COSMETIC_TOKEN_CATALOG } = await import('../utils/tokenCosmetics.js');
-    const item = COSMETIC_TOKEN_CATALOG[itemId];
-    if (!item) {
-      return res.status(400).json({ error: 'Invalid cosmetic item' });
-    }
-
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Hero not found' });
-    const hero = doc.data();
-    const tokens = hero.tokens || 0;
-    if (tokens < item.price) {
-      return res.status(400).json({ error: `Need ${item.price} tokens, have ${tokens}` });
-    }
-
-    const update = {
-      tokens: tokens - item.price,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    if (item.grants.cosmetics) {
-      update.cosmetics = { ...(hero.cosmetics || {}), ...item.grants.cosmetics };
-    }
-    if (item.grants.unlockedTitles) {
-      update.unlockedTitles = admin.firestore.FieldValue.arrayUnion(...item.grants.unlockedTitles);
-      if (item.grants.activeTitle && !hero.activeTitle) {
-        update.activeTitle = item.grants.activeTitle;
-      }
-    }
-
-    await heroRef.update(update);
-    const updated = await heroRef.get();
-    res.json({ success: true, itemId, newTokens: tokens - item.price, hero: updated.data() });
-  } catch (error) {
-    console.error('Error purchasing cosmetic with tokens:', error);
-    res.status(500).json({ error: 'Failed to purchase cosmetic' });
-  }
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json({
+    ...gameplayTokenSinkResponse(),
+    message: 'Use POST /api/cosmetics/purchase instead'
+  });
 });
 
 // Gold Sinks - Balanced, not gacha

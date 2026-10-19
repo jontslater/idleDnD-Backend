@@ -104,6 +104,12 @@ router.post('/list', requireAuth, async (req, res) => {
     // Clean item first to remove frontend-only properties
     // Remove frontend-only properties like heroId, heroName, allItems, stackKey, displayName
     const { heroId: _heroId, heroName: _heroName, allItems: _allItems, stackKey: _stackKey, displayName: _displayName, ...cleanItem } = item;
+
+    const { bindingViolation } = await import('../utils/itemBinding.js');
+    const bindErr = bindingViolation(cleanItem, 'auction');
+    if (bindErr) {
+      return res.status(400).json(bindErr);
+    }
     
     // Calculate listing fee (WoW-style: % of vendor price based on duration)
     const vendorPrice = getVendorSellPrice(cleanItem);

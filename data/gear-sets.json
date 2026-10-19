@@ -1,0 +1,1118 @@
+[
+  {
+    "id": "dungeon_t1_tank",
+    "name": "Ironbound Guardian",
+    "roleGroup": "tank",
+    "kind": "dungeon",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 10,
+      "max": 25
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t1_healer",
+    "name": "Ironbound Lifebinder",
+    "roleGroup": "healer",
+    "kind": "dungeon",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 10,
+      "max": 25
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t1_melee",
+    "name": "Ironbound Berserker",
+    "roleGroup": "melee",
+    "kind": "dungeon",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 10,
+      "max": 25
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t1_caster",
+    "name": "Ironbound Archmage",
+    "roleGroup": "caster",
+    "kind": "dungeon",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 10,
+      "max": 25
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t2_tank",
+    "name": "Deepdelver Guardian",
+    "roleGroup": "tank",
+    "kind": "dungeon",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 25,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t2_healer",
+    "name": "Deepdelver Lifebinder",
+    "roleGroup": "healer",
+    "kind": "dungeon",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 25,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t2_melee",
+    "name": "Deepdelver Berserker",
+    "roleGroup": "melee",
+    "kind": "dungeon",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 25,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t2_caster",
+    "name": "Deepdelver Archmage",
+    "roleGroup": "caster",
+    "kind": "dungeon",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 25,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t3_tank",
+    "name": "Shadowmark Guardian",
+    "roleGroup": "tank",
+    "kind": "dungeon",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 65
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t3_healer",
+    "name": "Shadowmark Lifebinder",
+    "roleGroup": "healer",
+    "kind": "dungeon",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 65
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t3_melee",
+    "name": "Shadowmark Berserker",
+    "roleGroup": "melee",
+    "kind": "dungeon",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 65
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t3_caster",
+    "name": "Shadowmark Archmage",
+    "roleGroup": "caster",
+    "kind": "dungeon",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 65
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t4_tank",
+    "name": "Dragonscale Guardian",
+    "roleGroup": "tank",
+    "kind": "dungeon",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 65,
+      "max": 85
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t4_healer",
+    "name": "Dragonscale Lifebinder",
+    "roleGroup": "healer",
+    "kind": "dungeon",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 65,
+      "max": 85
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t4_melee",
+    "name": "Dragonscale Berserker",
+    "roleGroup": "melee",
+    "kind": "dungeon",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 65,
+      "max": 85
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t4_caster",
+    "name": "Dragonscale Archmage",
+    "roleGroup": "caster",
+    "kind": "dungeon",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 65,
+      "max": 85
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t5_tank",
+    "name": "Voidwalker Guardian",
+    "roleGroup": "tank",
+    "kind": "dungeon",
+    "tier": 5,
+    "ilvlBand": {
+      "min": 85,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t5_healer",
+    "name": "Voidwalker Lifebinder",
+    "roleGroup": "healer",
+    "kind": "dungeon",
+    "tier": 5,
+    "ilvlBand": {
+      "min": 85,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t5_melee",
+    "name": "Voidwalker Berserker",
+    "roleGroup": "melee",
+    "kind": "dungeon",
+    "tier": 5,
+    "ilvlBand": {
+      "min": 85,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "dungeon_t5_caster",
+    "name": "Voidwalker Archmage",
+    "roleGroup": "caster",
+    "kind": "dungeon",
+    "tier": 5,
+    "ilvlBand": {
+      "min": 85,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t1_tank",
+    "name": "Guardian's Bulwark",
+    "roleGroup": "tank",
+    "kind": "raid",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 15,
+      "max": 30
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t1_healer",
+    "name": "Lifebinder's Grace",
+    "roleGroup": "healer",
+    "kind": "raid",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 15,
+      "max": 30
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t1_melee",
+    "name": "Berserker's Wrath",
+    "roleGroup": "melee",
+    "kind": "raid",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 15,
+      "max": 30
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t1_caster",
+    "name": "Archmage's Power",
+    "roleGroup": "caster",
+    "kind": "raid",
+    "tier": 1,
+    "ilvlBand": {
+      "min": 15,
+      "max": 30
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t2_tank",
+    "name": "Guardian's Bulwark T2",
+    "roleGroup": "tank",
+    "kind": "raid",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 30,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t2_healer",
+    "name": "Lifebinder's Grace T2",
+    "roleGroup": "healer",
+    "kind": "raid",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 30,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t2_melee",
+    "name": "Berserker's Wrath T2",
+    "roleGroup": "melee",
+    "kind": "raid",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 30,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t2_caster",
+    "name": "Archmage's Power T2",
+    "roleGroup": "caster",
+    "kind": "raid",
+    "tier": 2,
+    "ilvlBand": {
+      "min": 30,
+      "max": 45
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t3_tank",
+    "name": "Guardian's Bulwark T3",
+    "roleGroup": "tank",
+    "kind": "raid",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 70
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t3_healer",
+    "name": "Lifebinder's Grace T3",
+    "roleGroup": "healer",
+    "kind": "raid",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 70
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t3_melee",
+    "name": "Berserker's Wrath T3",
+    "roleGroup": "melee",
+    "kind": "raid",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 70
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t3_caster",
+    "name": "Archmage's Power T3",
+    "roleGroup": "caster",
+    "kind": "raid",
+    "tier": 3,
+    "ilvlBand": {
+      "min": 45,
+      "max": 70
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t4_tank",
+    "name": "Guardian's Bulwark T4",
+    "roleGroup": "tank",
+    "kind": "raid",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 70,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "shield_wall_cooldown_ms",
+        "value": -5000,
+        "description": "Shield Wall cooldown −5s"
+      },
+      "4": {
+        "hook": "shield_wall_party_dr",
+        "value": 0.05,
+        "description": "Shield Wall party DR +5%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t4_healer",
+    "name": "Lifebinder's Grace T4",
+    "roleGroup": "healer",
+    "kind": "raid",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 70,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "group_heal_bonus",
+        "value": 0.1,
+        "description": "Group Heal +10% healing"
+      },
+      "4": {
+        "hook": "group_heal_hot",
+        "value": 0.1,
+        "description": "Group Heal leaves a 6s HoT for 10%"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t4_melee",
+    "name": "Berserker's Wrath T4",
+    "roleGroup": "melee",
+    "kind": "raid",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 70,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_crit",
+        "value": 0.1,
+        "description": "Burst Strike +10% crit chance"
+      },
+      "4": {
+        "hook": "burst_strike_cleave",
+        "value": 0.5,
+        "description": "Burst Strike cleaves 50% to one extra target"
+      }
+    },
+    "defaultBinding": "bop"
+  },
+  {
+    "id": "raid_t4_caster",
+    "name": "Archmage's Power T4",
+    "roleGroup": "caster",
+    "kind": "raid",
+    "tier": 4,
+    "ilvlBand": {
+      "min": 70,
+      "max": 100
+    },
+    "slots": [
+      "helm",
+      "armor",
+      "gloves",
+      "boots",
+      "cloak"
+    ],
+    "bonuses": {
+      "2": {
+        "hook": "burst_strike_charge_rate",
+        "value": 0.15,
+        "description": "Burst Strike charges 15% faster"
+      },
+      "4": {
+        "hook": "burst_strike_dot",
+        "value": 0.6,
+        "description": "Burst Strike applies a 3s DoT worth 60%"
+      }
+    },
+    "defaultBinding": "bop"
+  }
+]

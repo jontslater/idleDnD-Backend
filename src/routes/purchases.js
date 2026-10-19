@@ -954,8 +954,14 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
       metadata: {
         purchaseId: purchaseId,
         purchaseType: purchase.packTier ? 'founders-pack' : purchase.packType ? 'token-pack' : 'unknown',
-        userId: purchase.userId || '',
+        userId: purchase.userId || ''
       },
+      payment_intent_data: {
+        metadata: {
+          purchaseId: purchaseId,
+          userId: purchase.userId || ''
+        }
+      }
     });
 
     res.json({ sessionId: session.id, url: session.url });

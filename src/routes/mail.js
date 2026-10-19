@@ -139,6 +139,12 @@ router.post('/send', requireAuth, async (req, res) => {
 
         // Use the first available item as the template (they should all have the same properties)
         const representativeItem = availableItemsOfType[0];
+
+        const { bindingViolation } = await import('../utils/itemBinding.js');
+        const bindErr = bindingViolation(itemTemplate, 'mail');
+        if (bindErr) {
+          return res.status(400).json(bindErr);
+        }
         
         itemData.push({
           ...representativeItem,
