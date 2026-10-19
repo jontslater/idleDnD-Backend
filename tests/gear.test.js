@@ -35,7 +35,24 @@ async function runTests() {
     console.log('  ✗ Failed:', e.message);
   }
 
-  console.log('\nTest 3: ilvl cap 115');
+  console.log('\nTest 3: generated gear includes binding');
+  try {
+    const boe = generateGearItem({
+      roleGroup: 'caster',
+      slot: 'helm',
+      rarity: 'uncommon',
+      source: { type: 'idle', enemyLevel: 15 },
+      seed: 'binding-field'
+    });
+    assert.equal(boe.binding, 'boe');
+    passed++;
+    console.log('  ✓ Passed');
+  } catch (e) {
+    failed++;
+    console.log('  ✗ Failed:', e.message);
+  }
+
+  console.log('\nTest 4: ilvl cap 115');
   try {
     const ilvl = ilvlFromSource({ type: 'worldboss', enemyLevel: 200 });
     assert.equal(ilvl, ILVL_CAP);

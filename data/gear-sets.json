@@ -27,7 +27,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t1_healer",
@@ -57,7 +58,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t1_melee",
@@ -87,7 +89,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t1_caster",
@@ -117,7 +120,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t2_tank",
@@ -147,7 +151,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t2_healer",
@@ -177,7 +182,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t2_melee",
@@ -207,7 +213,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t2_caster",
@@ -237,7 +244,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t3_tank",
@@ -267,7 +275,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t3_healer",
@@ -297,7 +306,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t3_melee",
@@ -327,7 +337,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t3_caster",
@@ -357,7 +368,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t4_tank",
@@ -387,7 +399,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t4_healer",
@@ -417,7 +430,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t4_melee",
@@ -447,7 +461,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t4_caster",
@@ -477,7 +492,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t5_tank",
@@ -507,7 +523,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t5_healer",
@@ -537,7 +554,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t5_melee",
@@ -567,7 +585,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "dungeon_t5_caster",
@@ -597,7 +616,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t1_tank",
@@ -627,7 +647,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t1_healer",
@@ -657,7 +678,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t1_melee",
@@ -687,7 +709,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t1_caster",
@@ -717,7 +740,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t2_tank",
@@ -747,7 +771,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t2_healer",
@@ -777,7 +802,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t2_melee",
@@ -807,7 +833,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t2_caster",
@@ -837,7 +864,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t3_tank",
@@ -867,7 +895,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t3_healer",
@@ -897,7 +926,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t3_melee",
@@ -927,7 +957,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t3_caster",
@@ -957,7 +988,8 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t4_tank",
@@ -987,7 +1019,8 @@
         "value": 0.05,
         "description": "Shield Wall party DR +5%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t4_healer",
@@ -1017,7 +1050,8 @@
         "value": 0.1,
         "description": "Group Heal leaves a 6s HoT for 10%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t4_melee",
@@ -1047,7 +1081,8 @@
         "value": 0.5,
         "description": "Burst Strike cleaves 50% to one extra target"
       }
-    }
+    },
+    "defaultBinding": "bop"
   },
   {
     "id": "raid_t4_caster",
@@ -1077,6 +1112,7 @@
         "value": 0.6,
         "description": "Burst Strike applies a 3s DoT worth 60%"
       }
-    }
+    },
+    "defaultBinding": "bop"
   }
 ]

@@ -1,0 +1,30 @@
+{
+  "bindings": [
+    "bop",
+    "boe",
+    "account",
+    "none"
+  ],
+  "rules": {
+    "bop": {
+      "label": "Bind on Pickup",
+      "playerTradable": false,
+      "vendorSellable": true
+    },
+    "boe": {
+      "label": "Bind on Equip",
+      "playerTradable": true,
+      "vendorSellable": true
+    },
+    "account": {
+      "label": "Account Bound",
+      "playerTradable": false,
+      "vendorSellable": false
+    },
+    "none": {
+      "label": "Unbound",
+      "playerTradable": true,
+      "vendorSellable": true
+    }
+  }
+}

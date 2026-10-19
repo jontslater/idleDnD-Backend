@@ -84,6 +84,7 @@ router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req
     }
 
     const { getVendorSellPrice } = await import('../utils/vendorPrice.js');
+    const { bindingViolation } = await import('../utils/itemBinding.js');
     const heroRef = db.collection('heroes').doc(userId);
     const doc = await heroRef.get();
     if (!doc.exists) {
@@ -120,6 +121,10 @@ router.post('/:userId/inventory/sell', requireAuth, requireOwnership, async (req
           if (!item?.id || item.id !== itemId) continue;
           if (equippedIds.has(item.id)) {
             throw Object.assign(new Error(`Cannot sell equipped item: ${item.id}`), { status: 400 });
+          }
+          const sellBind = bindingViolation(item, 'sell');
+          if (sellBind) {
+            throw Object.assign(new Error(sellBind.error), { status: 400, code: sellBind.code });
           }
           const stackQty = Math.max(1, Number(item.quantity) || 1);
           if (stackQty <= left) {

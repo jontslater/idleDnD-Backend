@@ -7,6 +7,7 @@ import { pickLegendary } from './legendaries.js';
 import { getSetById } from './sets.js';
 import { materialForIlvl } from './materials.js';
 import { seededRandom, jitter } from './rng.js';
+import { bindingForGeneratedGear } from '../../utils/itemBinding.js';
 
 const RARITY_COLORS = {
   common: '#9d9d9d',
@@ -161,9 +162,17 @@ export function generateGearItem(opts) {
   }
 
   const set = setId ? getSetById(setId) : null;
+  const legendaryResolved = legendary?.id || legendaryId || null;
   const name = buildName(base, prefix, suffix, material);
   const legacy = toLegacyCombatFields(stats, roleGroup);
   const id = `gear_${seed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`;
+  const binding = bindingForGeneratedGear({
+    source,
+    setId: set?.id || setId,
+    isSetPiece,
+    legendaryId: legendaryResolved,
+    rarity
+  });
 
   return {
     id,
@@ -188,9 +197,10 @@ export function generateGearItem(opts) {
     affixes,
     setId: set?.id || setId || null,
     setName: set?.name || null,
-    legendaryId: legendary?.id || legendaryId || null,
+    legendaryId: legendaryResolved,
     legendaryEffect: legendary?.description || null,
     uniqueEquipped: legendary ? true : undefined,
+    binding,
     source,
     isSetPiece,
     attack: legacy.attack,

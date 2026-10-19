@@ -1240,7 +1240,8 @@ router.post('/:userId/equip', requireAuth, requireOwnership, async (req, res) =>
     }
 
     equippedItem = { ...hero.inventory[itemIndex] };
-    const item = equippedItem;
+    const { applyBindOnEquip } = await import('../utils/itemBinding.js');
+    const item = applyBindOnEquip(equippedItem);
     delete item.heroId;
     delete item.heroName;
     delete item.displayName;

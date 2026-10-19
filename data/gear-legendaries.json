@@ -5,7 +5,8 @@
     "slot": "weapon",
     "roleGroup": "melee",
     "hook": "burst_strike_ignite",
-    "description": "Burst Strike ignites for 40% over 4s"
+    "description": "Burst Strike ignites for 40% over 4s",
+    "defaultBinding": "bop"
   },
   {
     "id": "phylactery_shard",
@@ -13,7 +14,8 @@
     "slot": "accessory",
     "roleGroup": "tank",
     "hook": "shield_wall_absorb",
-    "description": "Shield Wall also absorbs 5% max HP"
+    "description": "Shield Wall also absorbs 5% max HP",
+    "defaultBinding": "bop"
   },
   {
     "id": "priests_corrupted_orb",
@@ -21,7 +23,8 @@
     "slot": "weapon",
     "roleGroup": "caster",
     "hook": "burst_strike_dot_amp",
-    "description": "Burst Strike DoT +20%"
+    "description": "Burst Strike DoT +20%",
+    "defaultBinding": "bop"
   },
   {
     "id": "demon_lords_crown",
@@ -29,7 +32,8 @@
     "slot": "helm",
     "roleGroup": "caster",
     "hook": "burst_strike_charge_rate",
-    "description": "Burst Strike charges 10% faster"
+    "description": "Burst Strike charges 10% faster",
+    "defaultBinding": "bop"
   },
   {
     "id": "sanctified_reliquary",
@@ -37,7 +41,8 @@
     "slot": "accessory",
     "roleGroup": "healer",
     "hook": "group_heal_hot",
-    "description": "Group Heal HoT +5%"
+    "description": "Group Heal HoT +5%",
+    "defaultBinding": "bop"
   },
   {
     "id": "bulwark_of_ages",
@@ -45,7 +50,8 @@
     "slot": "shield",
     "roleGroup": "tank",
     "hook": "shield_wall_party_dr",
-    "description": "Shield Wall party DR +3%"
+    "description": "Shield Wall party DR +3%",
+    "defaultBinding": "bop"
   },
   {
     "id": "windwalkers",
@@ -53,7 +59,8 @@
     "slot": "boots",
     "roleGroup": "melee",
     "hook": "burst_strike_cleave",
-    "description": "Burst Strike cleave +25%"
+    "description": "Burst Strike cleave +25%",
+    "defaultBinding": "bop"
   },
   {
     "id": "starweave_mantle",
@@ -61,7 +68,8 @@
     "slot": "cloak",
     "roleGroup": "caster",
     "hook": "burst_strike_crit",
-    "description": "Burst Strike +5% crit"
+    "description": "Burst Strike +5% crit",
+    "defaultBinding": "bop"
   },
   {
     "id": "ironheart_gauntlets",
@@ -69,7 +77,8 @@
     "slot": "gloves",
     "roleGroup": "tank",
     "hook": "shield_wall_cooldown_ms",
-    "description": "Shield Wall CD −2s"
+    "description": "Shield Wall CD −2s",
+    "defaultBinding": "bop"
   },
   {
     "id": "lifebinders_tear",
@@ -77,7 +86,8 @@
     "slot": "ring1",
     "roleGroup": "healer",
     "hook": "group_heal_bonus",
-    "description": "Group Heal +5%"
+    "description": "Group Heal +5%",
+    "defaultBinding": "bop"
   },
   {
     "id": "assassins_mark",
@@ -85,7 +95,8 @@
     "slot": "ring2",
     "roleGroup": "melee",
     "hook": "burst_strike_crit",
-    "description": "Burst Strike +8% crit"
+    "description": "Burst Strike +8% crit",
+    "defaultBinding": "bop"
   },
   {
     "id": "archmage_focus",
@@ -93,7 +104,8 @@
     "slot": "weapon",
     "roleGroup": "caster",
     "hook": "burst_strike_dot",
-    "description": "Burst Strike DoT +15%"
+    "description": "Burst Strike DoT +15%",
+    "defaultBinding": "bop"
   },
   {
     "id": "wardens_aegis",
@@ -101,7 +113,8 @@
     "slot": "armor",
     "roleGroup": "tank",
     "hook": "shield_wall_absorb",
-    "description": "Shield Wall absorb +3% max HP"
+    "description": "Shield Wall absorb +3% max HP",
+    "defaultBinding": "bop"
   },
   {
     "id": "berserker_fang",
@@ -109,7 +122,8 @@
     "slot": "weapon",
     "roleGroup": "melee",
     "hook": "burst_strike_ignite",
-    "description": "Burst Strike ignite +10%"
+    "description": "Burst Strike ignite +10%",
+    "defaultBinding": "bop"
   },
   {
     "id": "void_touched_blade",
@@ -117,7 +131,8 @@
     "slot": "weapon",
     "roleGroup": "melee",
     "hook": "burst_strike_cleave",
-    "description": "Extra cleave target at 35%"
+    "description": "Extra cleave target at 35%",
+    "defaultBinding": "bop"
   },
   {
     "id": "celestial_halo",
@@ -125,7 +140,8 @@
     "slot": "helm",
     "roleGroup": "healer",
     "hook": "group_heal_bonus",
-    "description": "Group Heal +8%"
+    "description": "Group Heal +8%",
+    "defaultBinding": "bop"
   },
   {
     "id": "emberwoven_robes",
@@ -133,7 +149,8 @@
     "slot": "armor",
     "roleGroup": "caster",
     "hook": "burst_strike_dot",
-    "description": "DoT duration +1s"
+    "description": "DoT duration +1s",
+    "defaultBinding": "bop"
   },
   {
     "id": "thunderfist",
@@ -141,7 +158,8 @@
     "slot": "gloves",
     "roleGroup": "melee",
     "hook": "burst_strike_crit",
-    "description": "Burst Strike crit damage +10%"
+    "description": "Burst Strike crit damage +10%",
+    "defaultBinding": "bop"
   },
   {
     "id": "eclipse_band",
@@ -149,7 +167,8 @@
     "slot": "ring1",
     "roleGroup": "caster",
     "hook": "burst_strike_charge_rate",
-    "description": "Charge rate +8%"
+    "description": "Charge rate +8%",
+    "defaultBinding": "bop"
   },
   {
     "id": "worldheart_charm",
@@ -157,6 +176,7 @@
     "slot": "accessory",
     "roleGroup": "healer",
     "hook": "group_heal_hot",
-    "description": "HoT +8%"
+    "description": "HoT +8%",
+    "defaultBinding": "bop"
   }
 ]
