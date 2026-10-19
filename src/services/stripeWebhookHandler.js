@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { TOKEN_PACKS } from '../data/tokenPacks.js';
 import { TIER_LEVELS } from '../data/founderPacks.js';
 import { grantFounderEntitlements, buildFounderHeroUpdate, applyAccountFounderToHero } from './cosmeticsService.js';
+import { revokeFounderPurchase, revokeTokenPackPurchase } from './founderRevocation.js';
 
 /**
  * @param {import('firebase-admin/firestore').Firestore} db
@@ -136,6 +137,7 @@ async function processChargeReversal(db, event, eventRef) {
     return;
   }
 
+  let purchaseToRevoke = null;
   await db.runTransaction(async (tx) => {
     const purchaseRef = db.collection('purchases').doc(purchaseId);
     const purchaseDoc = await tx.get(purchaseRef);
@@ -143,30 +145,7 @@ async function processChargeReversal(db, event, eventRef) {
     const purchase = purchaseDoc.data();
     if (purchase.status === 'refunded') return;
 
-    if (purchase.packType && purchase.heroId) {
-      const packConfig = TOKEN_PACKS[purchase.packType];
-      const heroRef = db.collection('heroes').doc(purchase.heroId);
-      const heroDoc = await tx.get(heroRef);
-      if (heroDoc.exists && packConfig) {
-        const hero = heroDoc.data();
-        tx.update(heroRef, {
-          tokens: Math.max(0, (hero.tokens || 0) - packConfig.tokens),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      }
-    }
-
-    if (purchase.packTier) {
-      const userRef = db.collection('users').doc(String(purchase.userId));
-      tx.set(
-        userRef,
-        {
-          founderPackTier: admin.firestore.FieldValue.delete(),
-          founderRevokedAt: admin.firestore.FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
-    }
+    purchaseToRevoke = { id: purchaseId, ...purchase };
 
     tx.update(purchaseRef, {
       status: 'refunded',
@@ -186,6 +165,15 @@ async function processChargeReversal(db, event, eventRef) {
       { merge: true }
     );
   });
+
+  if (purchaseToRevoke) {
+    if (purchaseToRevoke.packType && purchaseToRevoke.heroId) {
+      await revokeTokenPackPurchase(db, purchaseToRevoke);
+    }
+    if (purchaseToRevoke.packTier) {
+      await revokeFounderPurchase(db, purchaseToRevoke);
+    }
+  }
 }
 
 export { applyAccountFounderToHero };

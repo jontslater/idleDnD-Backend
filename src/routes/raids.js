@@ -709,10 +709,19 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
       updateData.combatLog = admin.firestore.FieldValue.arrayUnion(...combatLogEntries);
     }
     
-    // Update bossHp if bossHpPercent is provided
-    if (bossHpPercent !== undefined && bossHpPercent !== null) {
-      const bossMaxHp = instance.bossMaxHp || instance.boss?.maxHp || instance.boss?.hp || 1000;
-      updateData.bossHp = Math.floor((bossHpPercent / 100) * bossMaxHp);
+    const bossMaxHp = instance.bossMaxHp || instance.boss?.maxHp || instance.boss?.hp || 1000;
+    let currentBossHp = instance.bossHp ?? bossMaxHp;
+    const bossDamage = Math.max(0, Math.floor(Number(req.body.bossDamage) || 0));
+    if (bossDamage > 0) {
+      const maxPerReport = Math.max(1, Math.floor(bossMaxHp * 0.05));
+      const applied = Math.min(bossDamage, maxPerReport);
+      currentBossHp = Math.max(0, currentBossHp - applied);
+      updateData.bossHp = currentBossHp;
+      updateData.bossDamageApplied = applied;
+    } else if (bossHpPercent !== undefined && bossHpPercent !== null) {
+      const reported = Math.floor((bossHpPercent / 100) * bossMaxHp);
+      const minAllowed = Math.max(0, currentBossHp - Math.floor(bossMaxHp * 0.05));
+      updateData.bossHp = Math.min(currentBossHp, Math.max(reported, minAllowed));
     }
     
     // Save checkpoint if phase changed or at significant HP thresholds

@@ -1294,45 +1294,11 @@ router.post('/:userId/purchase/tokens', requireAuth, requireOwnership, async (re
 });
 
 router.post('/:userId/purchase/cosmetic-tokens', requireAuth, requireOwnership, async (req, res) => {
-  try {
-    const { itemId } = req.body;
-    const { userId } = req.params;
-    const { COSMETIC_TOKEN_CATALOG } = await import('../utils/tokenCosmetics.js');
-    const item = COSMETIC_TOKEN_CATALOG[itemId];
-    if (!item) {
-      return res.status(400).json({ error: 'Invalid cosmetic item' });
-    }
-
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Hero not found' });
-    const hero = doc.data();
-    const tokens = hero.tokens || 0;
-    if (tokens < item.price) {
-      return res.status(400).json({ error: `Need ${item.price} tokens, have ${tokens}` });
-    }
-
-    const update = {
-      tokens: tokens - item.price,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    if (item.grants.cosmetics) {
-      update.cosmetics = { ...(hero.cosmetics || {}), ...item.grants.cosmetics };
-    }
-    if (item.grants.unlockedTitles) {
-      update.unlockedTitles = admin.firestore.FieldValue.arrayUnion(...item.grants.unlockedTitles);
-      if (item.grants.activeTitle && !hero.activeTitle) {
-        update.activeTitle = item.grants.activeTitle;
-      }
-    }
-
-    await heroRef.update(update);
-    const updated = await heroRef.get();
-    res.json({ success: true, itemId, newTokens: tokens - item.price, hero: updated.data() });
-  } catch (error) {
-    console.error('Error purchasing cosmetic with tokens:', error);
-    res.status(500).json({ error: 'Failed to purchase cosmetic' });
-  }
+  const { gameplayTokenSinkResponse } = await import('../utils/tokenCosmetics.js');
+  return res.status(410).json({
+    ...gameplayTokenSinkResponse(),
+    message: 'Use POST /api/cosmetics/purchase instead'
+  });
 });
 
 // Gold Sinks - Balanced, not gacha

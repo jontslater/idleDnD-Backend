@@ -1,14 +1,17 @@
 import admin from 'firebase-admin';
 import { KILL_DROP_CHANCES } from '../data/lootConfig.js';
 import { rollLootForKill } from './lootRollService.js';
+import { combatKillBaseXp } from '../data/balance.js';
+import { capAccumulatedXpForMinute } from '../utils/combatXpLimiter.js';
 
-const BLOCKED_CLIENT_KINDS = new Set(['raidBoss', 'dungeonBoss', 'worldboss', 'boss']);
+const BOSS_KINDS = new Set(['raidBoss', 'dungeonBoss', 'worldboss', 'boss']);
 
-/** ~6 idle kills/min × 8% drop ≈ 0.48 drops/min → cap 1 normal drop per hero per minute. */
-const DROP_WINDOW_MS = 60_000;
-const MAX_NORMAL_DROPS_PER_HERO_PER_MIN = 1;
-const MAX_ELITE_DROPS_PER_HERO_PER_MIN = 2;
-const PLAUSIBLE_KILLS_PER_MIN = 12;
+/** Honest idle: 30 kills/min × 8% ≈ 2.4/min uncapped; plan ≈29 drops/hour per hero. */
+export const TARGET_DROPS_PER_HOUR = 29;
+const DROP_WINDOW_MS = 60 * 60 * 1000;
+const MAX_ELITE_FRACTION_PER_BATCH = 0.25;
+const SWING_MS = 2000;
+const MAX_KILLS_PER_MINUTE = Math.floor(60_000 / SWING_MS);
 
 const heroDropWindows = new Map();
 
@@ -16,65 +19,103 @@ function windowKey(heroId) {
   return String(heroId);
 }
 
-function canGrantDrop(heroId, kind) {
+function getDropWindow(heroId) {
   const now = Date.now();
   const key = windowKey(heroId);
   let entry = heroDropWindows.get(key);
   if (!entry || now - entry.windowStart > DROP_WINDOW_MS) {
-    entry = { windowStart: now, normal: 0, elite: 0, kills: 0 };
+    entry = { windowStart: now, drops: 0, killsThisMinute: 0, minuteStart: now };
     heroDropWindows.set(key, entry);
   }
-  entry.kills += 1;
-  if (entry.kills > PLAUSIBLE_KILLS_PER_MIN) {
+  if (now - entry.minuteStart > 60_000) {
+    entry.killsThisMinute = 0;
+    entry.minuteStart = now;
+  }
+  return entry;
+}
+
+function canGrantDrop(heroId, { isAbilityKill }) {
+  const entry = getDropWindow(heroId);
+  entry.killsThisMinute += 1;
+  if (!isAbilityKill && entry.killsThisMinute > MAX_KILLS_PER_MINUTE) {
     return { allowed: false, reason: 'kill_rate' };
   }
-  const isElite = kind === 'elite';
-  if (isElite) {
-    if (entry.elite >= MAX_ELITE_DROPS_PER_HERO_PER_MIN) {
-      return { allowed: false, reason: 'elite_drop_cap' };
-    }
-    entry.elite += 1;
-    return { allowed: true };
+  if (entry.drops >= TARGET_DROPS_PER_HOUR) {
+    return { allowed: false, reason: 'drop_cap' };
   }
-  if (entry.normal >= MAX_NORMAL_DROPS_PER_HERO_PER_MIN) {
-    return { allowed: false, reason: 'normal_drop_cap' };
-  }
-  entry.normal += 1;
   return { allowed: true };
 }
 
-/**
- * Normalize kill payload from overlay / FE.
- */
-export function normalizeIdleKill(raw) {
+function recordDrop(heroId) {
+  const entry = getDropWindow(heroId);
+  entry.drops += 1;
+}
+
+export function createBatchLootContext(kills) {
+  const n = kills.length || 1;
+  const eliteAllowed = Math.max(0, Math.floor(n * MAX_ELITE_FRACTION_PER_BATCH));
+  return { eliteAllowed, eliteUsed: 0 };
+}
+
+export function resolveKillKindForBatch(kill, batchCtx) {
+  let kind = kill.kind || kill.enemyKind || 'normal';
+  if (kind === 'elite') {
+    if (batchCtx.eliteUsed < batchCtx.eliteAllowed) {
+      batchCtx.eliteUsed += 1;
+      return 'elite';
+    }
+    return 'normal';
+  }
+  return kind;
+}
+
+export function normalizeIdleKill(raw, batchCtx = null) {
   if (!raw || typeof raw !== 'object') return null;
   const heroId = raw.heroId || raw.hero_id;
   if (!heroId) return null;
   const enemyLevel = raw.enemyLevel ?? raw.enemy_level ?? raw.level ?? 1;
-  const kind = raw.kind || raw.enemyKind || 'normal';
+  let kind = raw.kind || raw.enemyKind || 'normal';
+  if (batchCtx) {
+    kind = resolveKillKindForBatch({ ...raw, kind }, batchCtx);
+  }
   const contentType = raw.contentType || raw.content_type;
+  const source = raw.source || (raw.fromAbility || raw.abilityId ? 'ability' : 'combat');
   return {
     heroId: String(heroId),
     enemyLevel: Number(enemyLevel) || 1,
     kind: String(kind),
     contentType: contentType ? String(contentType) : undefined,
     difficulty: raw.difficulty,
-    contentId: raw.contentId
+    contentId: raw.contentId,
+    source: String(source),
+    fromAbility: Boolean(raw.fromAbility || raw.abilityId || source === 'ability')
   };
 }
 
 export function isClientBossLootKill(kill) {
   if (!kill) return true;
-  if (BLOCKED_CLIENT_KINDS.has(kill.kind)) return true;
-  if (kill.contentType === 'raid' || kill.contentType === 'dungeon') return true;
-  return false;
+  return BOSS_KINDS.has(kill.kind);
+}
+
+async function grantAbilityKillXp(db, heroRef, hero, kill, battlefieldId) {
+  if (!kill.fromAbility) return null;
+  const level = hero.level || 1;
+  const xp = combatKillBaseXp(level, kill.kind === 'elite' ? 'elite' : 'normal');
+  const { allowedXp } = capAccumulatedXpForMinute(battlefieldId, level, xp);
+  if (allowedXp <= 0) return 0;
+  const newXp = (hero.xp || 0) + allowedXp;
+  await heroRef.update({
+    xp: newXp,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return allowedXp;
 }
 
 /**
- * Roll idle/world loot for one kill (server authoritative).
+ * Roll idle/world loot for one kill (server authoritative). One 8% roll here only.
  */
-export async function rollIdleKillLoot(db, battlefieldId, kill) {
-  const normalized = normalizeIdleKill(kill);
+export async function rollIdleKillLoot(db, battlefieldId, kill, batchCtx = null) {
+  const normalized = normalizeIdleKill(kill, batchCtx);
   if (!normalized) {
     return { ok: false, status: 400, error: 'Invalid kill (heroId, enemyLevel, kind required)' };
   }
@@ -82,12 +123,12 @@ export async function rollIdleKillLoot(db, battlefieldId, kill) {
     return {
       ok: false,
       status: 403,
-      error: 'Boss and raid loot must come from instance completion',
+      error: 'Boss loot must come from instance completion',
       code: 'BOSS_LOOT_SERVER_ONLY'
     };
   }
 
-  const cap = canGrantDrop(normalized.heroId, normalized.kind);
+  const cap = canGrantDrop(normalized.heroId, { isAbilityKill: normalized.fromAbility });
   if (!cap.allowed) {
     return { ok: true, dropped: false, throttled: true, reason: cap.reason };
   }
@@ -99,11 +140,12 @@ export async function rollIdleKillLoot(db, battlefieldId, kill) {
   }
   const hero = { id: heroDoc.id, ...heroDoc.data() };
   if (hero.currentBattlefieldId !== battlefieldId) {
-    return { ok: false, status: 403, error: 'Hero not on this battlefield' };
+    return { ok: false, status: 403, error: 'Hero not on this battlefield', code: 'BATTLEFIELD_MISMATCH' };
   }
 
-  const rollChance =
-    normalized.kind === 'elite' ? KILL_DROP_CHANCES.elite : KILL_DROP_CHANCES.normal;
+  await grantAbilityKillXp(db, heroRef, hero, normalized, battlefieldId);
+
+  const rollChance = normalized.kind === 'elite' ? KILL_DROP_CHANCES.elite : KILL_DROP_CHANCES.normal;
   if (Math.random() > rollChance) {
     return { ok: true, dropped: false };
   }
@@ -111,10 +153,13 @@ export async function rollIdleKillLoot(db, battlefieldId, kill) {
   const roll = rollLootForKill(hero, normalized, {
     lootPity: hero.lootPity || {},
     setCollection: hero.setCollection || {}
-  });
+  }, { guaranteedDrop: true });
+
   if (!roll.dropped || !roll.item) {
     return { ok: true, dropped: false };
   }
+
+  recordDrop(normalized.heroId);
 
   const inventory = Array.isArray(hero.inventory) ? [...hero.inventory] : [];
   inventory.push(roll.item);
@@ -126,4 +171,9 @@ export async function rollIdleKillLoot(db, battlefieldId, kill) {
   });
 
   return { ok: true, dropped: true, heroId: normalized.heroId, item: roll.item };
+}
+
+/** Test helper */
+export function resetIdleLootWindows() {
+  heroDropWindows.clear();
 }

@@ -285,13 +285,24 @@ router.post('/loot-roll', requireStreamerAccess, async (req, res) => {
     if (!bf) {
       return res.status(400).json({ error: 'battlefieldId or streamerId required' });
     }
+    const { assertBattlefieldMatchesStreamer, resolveStreamerIdFromRequest } = await import(
+      '../utils/streamerAuth.js'
+    );
+    const authStreamerId = resolveStreamerIdFromRequest(req);
+    if (authStreamerId && !assertBattlefieldMatchesStreamer(bf, authStreamerId)) {
+      return res.status(403).json({
+        error: 'Battlefield does not belong to authenticated streamer',
+        code: 'BATTLEFIELD_STREAMER_MISMATCH'
+      });
+    }
     if (!Array.isArray(kills) || kills.length === 0) {
       return res.status(400).json({ error: 'kills array is required' });
     }
-    const { rollIdleKillLoot } = await import('../services/idleKillLootService.js');
+    const { rollIdleKillLoot, createBatchLootContext } = await import('../services/idleKillLootService.js');
+    const batchCtx = createBatchLootContext(kills.slice(0, 30));
     const drops = [];
     for (const kill of kills.slice(0, 30)) {
-      const result = await rollIdleKillLoot(db, bf, kill);
+      const result = await rollIdleKillLoot(db, bf, kill, batchCtx);
       if (result.ok && result.dropped && result.item) {
         drops.push({ heroId: result.heroId, item: result.item });
       }

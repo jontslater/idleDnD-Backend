@@ -21,10 +21,13 @@ router.post('/:battlefieldId/loot/roll', requireStreamerAccess, async (req, res)
       return res.status(400).json({ error: 'Maximum 30 kills per request' });
     }
 
+    const { createBatchLootContext } = await import('../services/idleKillLootService.js');
+    const batchCtx = createBatchLootContext(kills);
+
     const drops = [];
     const errors = [];
     for (const kill of kills) {
-      const result = await rollIdleKillLoot(db, battlefieldId, kill);
+      const result = await rollIdleKillLoot(db, battlefieldId, kill, batchCtx);
       if (!result.ok) {
         errors.push({ kill, error: result.error, status: result.status });
         if (result.status === 403 && result.code === 'BOSS_LOOT_SERVER_ONLY') {

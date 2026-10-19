@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GEAR_BASES } from '../src/data/gear/bases.js';
-import { GEAR_SETS } from '../src/data/gear/sets.js';
+import { GEAR_SETS, SET_HOOK_CATALOG } from '../src/data/gear/sets.js';
 import { LEGENDARIES } from '../src/data/gear/legendaries.js';
 import { PREFIXES, SUFFIXES } from '../src/data/gear/affixes.js';
 import { BINDING_RULES, ITEM_BINDINGS } from '../src/utils/itemBinding.js';
@@ -24,6 +24,10 @@ fs.writeFileSync(
 fs.writeFileSync(
   path.join(outDir, 'gear-binding.json'),
   `${JSON.stringify({ bindings: ITEM_BINDINGS, rules: BINDING_RULES }, null, 2)}\n`
+);
+fs.writeFileSync(
+  path.join(outDir, 'gear-set-hooks.json'),
+  `${JSON.stringify({ hooks: SET_HOOK_CATALOG }, null, 2)}\n`
 );
 fs.writeFileSync(
   path.join(outDir, 'gear-set-bonuses.json'),

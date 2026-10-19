@@ -17,5 +17,11 @@ export const writeRateLimiter = rateLimit({
   max: maxWrite,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests. Try again later.' }
+  message: { error: 'Too many requests. Try again later.' },
+  skip: (req) => {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
+    if (req.headers['x-streamer-key']) return true;
+    return false;
+  }
 });

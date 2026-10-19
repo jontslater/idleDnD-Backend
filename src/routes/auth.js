@@ -174,6 +174,20 @@ router.post('/twitch', async (req, res) => {
       }
     }
 
+    if (access_token) {
+      const { saveTwitchCredentials, stripTwitchTokensFromHeroes, TWITCH_VIEWER_SCOPES } =
+        await import('../utils/twitchCredentialStore.js');
+      await saveTwitchCredentials(db, twitchUser.id, {
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresAt: Date.now() + (expires_in ? expires_in * 1000 : 3600_000),
+        scopes: TWITCH_VIEWER_SCOPES
+      });
+      if (!heroQuery.empty) {
+        await stripTwitchTokensFromHeroes(db, twitchUser.id);
+      }
+    }
+
     let hero = null;
 
     if (!heroQuery.empty) {
@@ -186,18 +200,6 @@ router.post('/twitch', async (req, res) => {
       
       updateData.twitchUsername = twitchUser.login.toLowerCase();
 
-      if (access_token) {
-        const { saveTwitchCredentials, stripTwitchTokensFromHeroes, TWITCH_VIEWER_SCOPES } =
-          await import('../utils/twitchCredentialStore.js');
-        await saveTwitchCredentials(db, twitchUser.id, {
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          expiresAt: Date.now() + (expires_in ? expires_in * 1000 : 3600_000),
-          scopes: TWITCH_VIEWER_SCOPES
-        });
-        await stripTwitchTokensFromHeroes(db, twitchUser.id);
-      }
-      
       // Update all user's heroes with twitchUsername
       heroQuery.docs.forEach(heroDoc => {
         batch.update(heroDoc.ref, updateData);

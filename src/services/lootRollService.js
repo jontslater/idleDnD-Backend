@@ -60,8 +60,8 @@ function setPieceRate(source) {
 /**
  * Roll one loot item for a hero kill (server authoritative).
  */
-export function rollLootForKill(hero, kill, heroState = {}) {
-  if (!shouldDrop(kill)) return { dropped: false };
+export function rollLootForKill(hero, kill, heroState = {}, options = {}) {
+  if (!options.guaranteedDrop && !shouldDrop(kill)) return { dropped: false };
 
   const roleGroup = roleGroupFromHero(hero);
   const source = mapKillToSource(kill);

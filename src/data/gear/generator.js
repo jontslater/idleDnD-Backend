@@ -18,6 +18,8 @@ const RARITY_COLORS = {
   mythic: '#e60000'
 };
 
+const ARMOR_SLOTS = new Set(['armor', 'shield', 'helm', 'cloak', 'gloves', 'boots']);
+
 function primarySecondaryPlan(roleGroup, slot = 'armor') {
   if (roleGroup === 'tank') {
     if (ARMOR_SLOTS.has(slot)) {
@@ -34,8 +36,6 @@ function primarySecondaryPlan(roleGroup, slot = 'armor') {
   return { primary: ['power'], secondary: ['crit', 'haste', 'stamina'] };
 }
 
-const ARMOR_SLOTS = new Set(['armor', 'shield', 'helm', 'cloak', 'gloves', 'boots']);
-
 /** Maps stat budget to legacy defense/attack fields the FE sums (BALANCE_PLAN scale). */
 const LEGACY_BUDGET_TO_DEFENSE = 13.1 / STAT_COST.armor;
 
@@ -47,14 +47,14 @@ function allocateStats(budget, roleGroup, rnd, slot = 'armor') {
   let primBudget = budget * primShare;
   for (const key of plan.primary) {
     const cost = STAT_COST[key] || 1;
-    const val = (primBudget / plan.primary.length / cost) * jitter(0.08, rnd);
+    const val = (primBudget / plan.primary.length / cost) * jitter(0.03, rnd);
     stats[key] += val;
     remaining -= val * cost;
   }
   const secKeys = plan.secondary;
   for (const key of secKeys) {
     const cost = STAT_COST[key] || 1;
-    const val = (remaining / secKeys.length / cost) * jitter(0.08, rnd);
+    const val = (remaining / secKeys.length / cost) * jitter(0.03, rnd);
     if (key === 'crit' || key === 'haste' || key === 'recovery') {
       stats[key] = Math.min(GEAR_SECONDARY_CAPS[key], val / 100);
     } else {
@@ -97,15 +97,37 @@ function applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd) {
   return affixes;
 }
 
+function slotWeights(slot) {
+  const armorSlot = ARMOR_SLOTS.has(slot);
+  return {
+    def: armorSlot ? 1 : slot === 'weapon' ? 0.2 : 0.12,
+    atk: slot === 'weapon' ? 1 : ['ring1', 'ring2', 'accessory'].includes(slot) ? 0.22 : 0.1,
+    hp: armorSlot ? 0.4 : 0.14
+  };
+}
+
 function toLegacyCombatFields(stats, roleGroup, budget, slot) {
-  const attack = Math.floor(roleGroup === 'healer' ? stats.spellPower * 0.5 : stats.power);
-  let defense = Math.floor(stats.armor || 0);
+  const w = slotWeights(slot);
+  let defense = Math.max(Math.floor(stats.armor || 0), Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE * w.def));
+  let attack = Math.floor(roleGroup === 'healer' ? stats.spellPower * 0.5 : stats.power);
+  attack = Math.max(attack, Math.floor(budget * 0.38 * w.atk));
+  let hp = Math.max(Math.floor(stats.stamina * 10), Math.floor(budget * 0.52 * w.hp));
+  if (roleGroup === 'healer') {
+    attack = Math.max(attack, Math.floor(budget * 0.32 * w.atk));
+    hp = Math.max(hp, Math.floor(budget * 0.48 * w.hp));
+  }
   if (roleGroup === 'tank' && ARMOR_SLOTS.has(slot)) {
     defense = Math.max(defense, Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE));
-  } else if (roleGroup === 'tank') {
-    defense = Math.max(defense, Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE * 0.35));
+    hp = Math.max(hp, Math.floor(budget * 0.55 * w.hp));
   }
-  const hp = Math.floor(stats.stamina * 10);
+  const floorSum = budget * 0.32;
+  const sum = attack + defense + hp;
+  if (sum < floorSum && sum > 0) {
+    const scale = floorSum / sum;
+    attack = Math.floor(attack * scale);
+    defense = Math.floor(defense * scale);
+    hp = Math.floor(hp * scale);
+  }
   return { attack, defense, hp };
 }
 

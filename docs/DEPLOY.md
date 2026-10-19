@@ -8,7 +8,13 @@ Deploy rules before pointing clients at production:
 firebase deploy --only firestore:rules
 ```
 
-`firestore.rules` denies **all** client reads/writes on `heroes`, `users`, `twitchCredentials`, purchases, mail, and auction data. Streamers must not read OAuth tokens from hero documents; tokens live only in `twitchCredentials` (encrypted server-side).
+`firestore.rules` allows **public read** on `heroes`, `battlefields`, `raidInstances`, `dungeonInstances`, `battlefieldQueues`, and `guilds` (overlay Firestore listeners). **No client writes** on any collection. Sensitive data (`users`, `twitchCredentials`, `streamerSettings`, purchases, mail, auction) is deny-all. Move private fields (e.g. email) to server-only subcollections before exposing new hero fields.
+
+Deploy indexes after rules:
+
+```bash
+firebase deploy --only firestore:indexes
+```
 
 ## Environment
 

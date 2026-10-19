@@ -65,6 +65,7 @@ try {
 
 // Initialize Express
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // Middleware — production requires explicit CORS allow-list
@@ -169,6 +170,7 @@ import queueRoutes from './routes/queues.js';
 import balanceRoutes from './routes/balance.js';
 import cosmeticsRoutes from './routes/cosmetics.js';
 import gearRoutes from './routes/gear.js';
+import adminRoutes from './routes/admin.js';
 
 // Import services
 import { initializeQuestSystem } from './services/questService.js';
@@ -204,6 +206,7 @@ app.use('/api/queues', queueRoutes);
 app.use('/api/balance', balanceRoutes);
 app.use('/api/cosmetics', cosmeticsRoutes);
 app.use('/api/gear', gearRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

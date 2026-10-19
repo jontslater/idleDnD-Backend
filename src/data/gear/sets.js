@@ -14,22 +14,54 @@ const LEGACY_T1 = [
 
 const ROLE_BONUS_HOOKS = {
   tank: {
-    2: { hook: 'shield_wall_cooldown_ms', value: -5000, description: 'Shield Wall cooldown −5s' },
+    2: {
+      hook: 'shield_wall_cooldown_ms',
+      value: -5000,
+      description: 'Shield Wall cooldown −5s',
+      statBonuses: { armor: 40, stamina: 25 }
+    },
     4: { hook: 'shield_wall_party_dr', value: 0.05, description: 'Shield Wall party DR +5%' }
   },
   healer: {
-    2: { hook: 'group_heal_bonus', value: 0.1, description: 'Group Heal +10% healing' },
+    2: {
+      hook: 'group_heal_bonus',
+      value: 0.1,
+      description: 'Group Heal +10% healing',
+      statBonuses: { spellPower: 18, stamina: 20 }
+    },
     4: { hook: 'group_heal_hot', value: 0.1, description: 'Group Heal leaves a 6s HoT for 10%' }
   },
   melee: {
-    2: { hook: 'burst_strike_crit', value: 0.1, description: 'Burst Strike +10% crit chance' },
+    2: {
+      hook: 'burst_strike_crit',
+      value: 0.1,
+      description: 'Burst Strike +10% crit chance',
+      statBonuses: { power: 22, stamina: 15 }
+    },
     4: { hook: 'burst_strike_cleave', value: 0.5, description: 'Burst Strike cleaves 50% to one extra target' }
   },
   caster: {
-    2: { hook: 'burst_strike_charge_rate', value: 0.15, description: 'Burst Strike charges 15% faster' },
+    2: {
+      hook: 'burst_strike_charge_rate',
+      value: 0.15,
+      description: 'Burst Strike charges 15% faster',
+      statBonuses: { power: 20, stamina: 12 }
+    },
     4: { hook: 'burst_strike_dot', value: 0.6, description: 'Burst Strike applies a 3s DoT worth 60%' }
   }
 };
+
+/** Documented hook ids for FE skill integration (4-piece effects). */
+export const SET_HOOK_CATALOG = [
+  { hook: 'shield_wall_cooldown_ms', consumes: 'cooldown_ms', description: 'Reduces Shield Wall cooldown (ms)' },
+  { hook: 'shield_wall_party_dr', consumes: 'damage_reduction', description: 'Party DR while Shield Wall active' },
+  { hook: 'group_heal_bonus', consumes: 'healing_multiplier', description: 'Group Heal healing multiplier' },
+  { hook: 'group_heal_hot', consumes: 'heal_over_time', description: 'Group Heal leaves a HoT' },
+  { hook: 'burst_strike_crit', consumes: 'crit_chance', description: 'Burst Strike bonus crit' },
+  { hook: 'burst_strike_cleave', consumes: 'cleave', description: 'Burst Strike cleave target' },
+  { hook: 'burst_strike_charge_rate', consumes: 'charge_rate', description: 'Burst Strike charge speed' },
+  { hook: 'burst_strike_dot', consumes: 'damage_over_time', description: 'Burst Strike DoT' }
+];
 
 function makeSet(id, name, roleGroup, kind, tier, ilvlBand) {
   return {

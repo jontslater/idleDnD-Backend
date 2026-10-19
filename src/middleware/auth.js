@@ -164,13 +164,17 @@ export const requireAdminOrStreamerKey = async (req, res, next) => {
  * Use for overlay sync and chat activity endpoints
  */
 export const requireStreamerAccess = async (req, res, next) => {
-  const streamerId = req.params.streamerId || req.body.streamerId;
+  const { resolveStreamerIdFromRequest, assertBattlefieldMatchesStreamer, battlefieldIdForStreamer } =
+    await import('../utils/streamerAuth.js');
+  const streamerId = resolveStreamerIdFromRequest(req);
   const streamerKey = req.headers['x-streamer-key'];
-  
+
   if (!streamerId) {
     return res.status(400).json({ error: 'Streamer ID required' });
   }
-  
+
+  const battlefieldId = req.params?.battlefieldId || req.body?.battlefieldId;
+
   // Option 1: Valid streamer key (for browser source/overlay)
   if (streamerKey) {
     try {
@@ -178,21 +182,24 @@ export const requireStreamerAccess = async (req, res, next) => {
       if (settingsDoc.exists) {
         const settings = settingsDoc.data();
         const storedKey = settings.overlayKey;
-        
+
         if (storedKey) {
-          // Timing-safe comparison to prevent timing attacks
           try {
-            const isValid = crypto.timingSafeEqual(
-              Buffer.from(streamerKey),
-              Buffer.from(storedKey)
-            );
-            
+            const isValid = crypto.timingSafeEqual(Buffer.from(streamerKey), Buffer.from(storedKey));
+
             if (isValid) {
-              req.streamerKeyAuth = true; // Mark as key-authenticated
+              if (battlefieldId && !assertBattlefieldMatchesStreamer(battlefieldId, streamerId)) {
+                return res.status(403).json({
+                  error: 'Battlefield does not belong to authenticated streamer',
+                  code: 'BATTLEFIELD_STREAMER_MISMATCH'
+                });
+              }
+              req.streamer = { twitchId: String(streamerId), battlefieldId: battlefieldIdForStreamer(streamerId) };
+              req.streamerKeyAuth = true;
               return next();
             }
-          } catch (compError) {
-            // Length mismatch or comparison error - key invalid
+          } catch {
+            // invalid key length
           }
         }
       }
@@ -200,15 +207,19 @@ export const requireStreamerAccess = async (req, res, next) => {
       console.error('[Auth] Error verifying streamer key:', error);
     }
   }
-  
+
   // Option 2: Authenticated user is the streamer (for portal/dashboard)
-  if (req.user && req.user.twitchUserId === streamerId) {
-    req.streamerOwnerAuth = true; // Mark as owner-authenticated
+  if (req.user && String(req.user.twitchUserId) === String(streamerId)) {
+    if (battlefieldId && !assertBattlefieldMatchesStreamer(battlefieldId, streamerId)) {
+      return res.status(403).json({ error: 'Battlefield does not belong to authenticated streamer' });
+    }
+    req.streamer = { twitchId: String(streamerId), battlefieldId: battlefieldIdForStreamer(streamerId) };
+    req.streamerOwnerAuth = true;
     return next();
   }
-  
-  return res.status(403).json({ 
-    error: 'Forbidden: Streamer authentication required' 
+
+  return res.status(403).json({
+    error: 'Forbidden: Streamer authentication required'
   });
 };
 

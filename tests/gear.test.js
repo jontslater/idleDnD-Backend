@@ -134,25 +134,30 @@ async function runTests() {
     console.log('  ✗ Failed:', e.message);
   }
 
-  console.log('\nTest 7: monotonic rarity at same ilvl');
+  console.log('\nTest 7: monotonic rarity at same ilvl (200 random seeds)');
   try {
     const slot = 'armor';
     const ilvl = 40;
-    const rarities = ['common', 'uncommon', 'rare', 'epic'];
-    const totals = rarities.map((rarity) => {
-      const it = generateGearItem({
-        roleGroup: 'tank',
-        slot,
-        rarity,
-        ilvl,
-        source: { type: 'idle', enemyLevel: ilvl },
-        seed: `mono-${rarity}`
-      });
-      return totalStatBudgetFromItem(it);
-    });
-    for (let i = 1; i < totals.length; i++) {
-      assert.ok(totals[i] >= totals[i - 1], `rarity order broken at ${rarities[i]}`);
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+    let inversions = 0;
+    for (let s = 0; s < 200; s++) {
+      const totals = rarities.map((rarity) =>
+        totalStatBudgetFromItem(
+          generateGearItem({
+            roleGroup: 'tank',
+            slot,
+            rarity,
+            ilvl,
+            source: { type: 'idle', enemyLevel: ilvl },
+            seed: `mono-${s}-${rarity}`
+          })
+        )
+      );
+      for (let i = 1; i < totals.length; i++) {
+        if (totals[i] < totals[i - 1]) inversions++;
+      }
     }
+    assert.equal(inversions, 0, `inversions=${inversions}`);
     passed++;
     console.log('  ✓ Passed');
   } catch (e) {
