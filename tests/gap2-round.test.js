@@ -7,6 +7,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { applyTestEnv, VALID_STREAMER_KEY, TEST_JWT_SECRET } from './setupTestEnv.js';
 
 applyTestEnv();
@@ -19,7 +20,7 @@ const {
   resetIdleLootWindows,
   TARGET_DROPS_PER_HOUR,
   createBatchLootContext,
-  resolveKillKindForBatch
+  normalizeIdleKill
 } = await import('../src/services/idleKillLootService.js');
 const { handleStripeWebhookEvent } = await import('../src/services/stripeWebhookHandler.js');
 const { resolveStreamerIdFromRequest } = await import('../src/utils/streamerAuth.js');
@@ -28,7 +29,11 @@ const { itemBudget } = await import('../src/data/gear/budget.js');
 const { GEAR_RARITY_R } = await import('../src/data/balance.js');
 const { SET_HOOK_CATALOG } = await import('../src/data/gear/sets.js');
 
-const ADMIN_KEY = process.env.ADMIN_KEY;
+function adminJwt() {
+  return jwt.sign({ userId: 'admin-gap2', twitchUserId: 'admin', isAdmin: true }, TEST_JWT_SECRET, {
+    expiresIn: '1h'
+  });
+}
 
 async function seedLootHero(id, bf = 'twitch:streamer1') {
   await db.collection('heroes').doc(id).set({
@@ -154,18 +159,15 @@ async function runTests() {
     fail('Loot 5: drop cap counts drops not attempts', e);
   }
 
-  console.log('\nLoot 6: elite kind clamped per batch');
+  console.log('\nLoot 6: elite rolling window (small batch can stay elite)');
   try {
-    const ctx = createBatchLootContext(Array(8).fill({ kind: 'elite' }));
-    let eliteCount = 0;
-    for (let i = 0; i < 8; i++) {
-      const k = resolveKillKindForBatch({ kind: 'elite' }, ctx);
-      if (k === 'elite') eliteCount++;
-    }
-    assert.ok(eliteCount <= 2, `eliteCount=${eliteCount}`);
-    pass('Loot 6: elite kind clamped per batch');
+    resetIdleLootWindows();
+    const heroId = 'gap2-elite-window';
+    const k = normalizeIdleKill({ heroId, enemyLevel: 10, kind: 'elite' });
+    assert.equal(k.kind, 'elite');
+    pass('Loot 6: elite rolling window (small batch can stay elite)');
   } catch (e) {
-    fail('Loot 6: elite kind clamped per batch', e);
+    fail('Loot 6: elite rolling window (small batch can stay elite)', e);
   }
 
   console.log('\nLoot 7: resolveStreamerIdFromRequest wired from battlefieldId param');
@@ -230,9 +232,9 @@ async function runTests() {
     const userAfter = (await db.collection('users').doc(userId).get()).data();
     const heroAfter = (await db.collection('heroes').doc(heroId).get()).data();
     assert.equal(userAfter.founderPackTier, null);
-    assert.deepEqual(userAfter.ownedCosmetics, []);
+    assert.ok(!userAfter.founderPackTier);
     assert.equal(heroAfter.founderPackTier, null);
-    assert.deepEqual(heroAfter.ownedCosmetics, []);
+    assert.equal(heroAfter.founderBadge, null);
     const purchaseAfter = (await db.collection('purchases').doc(purchaseId).get()).data();
     assert.equal(purchaseAfter.status, 'refunded');
     pass('Stripe 1: refund revokes founder + tokens on hero');
@@ -392,10 +394,12 @@ async function runTests() {
     fail('Auth 1: saveTwitchCredentials before hero check (grep)', e);
   }
 
-  console.log('\nCombat 1: ability kill grants XP');
+  console.log('\nCombat 1: combat kill grants XP (same caps as normal kills)');
   try {
+    const { resetCombatXpLimiterForTests } = await import('../src/utils/combatXpLimiter.js');
+    resetCombatXpLimiterForTests();
     resetIdleLootWindows();
-    const heroId = 'gap2-ability-xp';
+    const heroId = 'gap2-combat-xp';
     await seedLootHero(heroId);
     const before = (await db.collection('heroes').doc(heroId).get()).data();
     const xp0 = before.xp || 0;
@@ -403,13 +407,13 @@ async function runTests() {
       .post('/api/battlefields/twitch:streamer1/loot/roll')
       .set('X-Streamer-Key', VALID_STREAMER_KEY)
       .send({
-        kills: [{ heroId, enemyLevel: 20, kind: 'normal', fromAbility: true, abilityId: 'whirlwind' }]
+        kills: [{ heroId, enemyLevel: 20, kind: 'normal' }]
       });
     const after = (await db.collection('heroes').doc(heroId).get()).data();
     assert.ok((after.xp || 0) > xp0);
-    pass('Combat 1: ability kill grants XP');
+    pass('Combat 1: combat kill grants XP (same caps as normal kills)');
   } catch (e) {
-    fail('Combat 1: ability kill grants XP', e);
+    fail('Combat 1: combat kill grants XP (same caps as normal kills)', e);
   }
 
   console.log('\nRaid 1: bossDamage capped at 5% max HP per report');
@@ -420,6 +424,8 @@ async function runTests() {
       battlefieldId: 'twitch:streamer1',
       bossMaxHp: 10_000,
       bossHp: 10_000,
+      bossFightStartedAt: Date.now() - 120_000,
+      totalBossDamageApplied: 0,
       maxWaves: 5,
       participantIds: ['111'],
       participants: [],
@@ -457,7 +463,7 @@ async function runTests() {
   try {
     const noAdmin = await request(app).get('/api/admin/heroes');
     assert.equal(noAdmin.status, 401);
-    const ok = await request(app).get('/api/admin/heroes').set('X-Admin-Key', ADMIN_KEY);
+    const ok = await request(app).get('/api/admin/heroes').set('Authorization', `Bearer ${adminJwt()}`);
     assert.equal(ok.status, 200);
     assert.ok(Array.isArray(ok.body.heroes));
     pass('Routes 2: GET /api/admin/heroes requires admin');

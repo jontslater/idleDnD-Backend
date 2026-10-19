@@ -79,3 +79,8 @@ export function capAccumulatedXpForMinute(battlefieldId, heroLevel, xpToAdd) {
   entry.total += allowedXp;
   return { allowedXp, dropped: Math.max(0, xpToAdd - allowedXp) };
 }
+
+export function resetCombatXpLimiterForTests() {
+  battlefieldWindows.clear();
+  battlefieldXpPerMinute.clear();
+}

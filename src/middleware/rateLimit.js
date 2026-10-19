@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { isValidStreamerKeyRequest } from '../utils/streamerKeyValidation.js';
 
 const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
 const maxAuth = Number(process.env.RATE_LIMIT_AUTH_MAX || 30);
@@ -18,10 +19,12 @@ export const writeRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Try again later.' },
-  skip: (req) => {
+  skip: async (req) => {
     const method = (req.method || 'GET').toUpperCase();
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
-    if (req.headers['x-streamer-key']) return true;
+    if (req.headers['x-streamer-key']) {
+      return await isValidStreamerKeyRequest(req);
+    }
     return false;
   }
 });

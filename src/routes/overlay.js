@@ -299,7 +299,7 @@ router.post('/loot-roll', requireStreamerAccess, async (req, res) => {
       return res.status(400).json({ error: 'kills array is required' });
     }
     const { rollIdleKillLoot, createBatchLootContext } = await import('../services/idleKillLootService.js');
-    const batchCtx = createBatchLootContext(kills.slice(0, 30));
+    const batchCtx = createBatchLootContext();
     const drops = [];
     for (const kill of kills.slice(0, 30)) {
       const result = await rollIdleKillLoot(db, bf, kill, batchCtx);

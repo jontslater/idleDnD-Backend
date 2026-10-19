@@ -140,6 +140,12 @@ export async function purchaseCosmetic(db, { twitchUserId, heroDocId, cosmeticId
 
     const price = cosmetic.priceTokens || 0;
     const tokens = hero.tokens || 0;
+    if (tokens < 0 || hero.tokenBalanceBlocked) {
+      throw Object.assign(new Error('Token balance is negative. Purchases are blocked until balance is positive.'), {
+        status: 403,
+        code: 'TOKEN_BALANCE_NEGATIVE'
+      });
+    }
     if (tokens < price) {
       throw Object.assign(new Error(`Need ${price} tokens, have ${tokens}`), { status: 400 });
     }

@@ -6,8 +6,9 @@ import { ilvlFromSource } from './ilvl.js';
 import { pickLegendary } from './legendaries.js';
 import { getSetById } from './sets.js';
 import { materialForIlvl } from './materials.js';
-import { seededRandom, jitter } from './rng.js';
+import { seededRandom } from './rng.js';
 import { bindingForGeneratedGear } from '../../utils/itemBinding.js';
+import { legacyTargetsForItem, normalizeRoleGroup } from './planLegacy.js';
 
 const RARITY_COLORS = {
   common: '#9d9d9d',
@@ -18,131 +19,41 @@ const RARITY_COLORS = {
   mythic: '#e60000'
 };
 
-const ARMOR_SLOTS = new Set(['armor', 'shield', 'helm', 'cloak', 'gloves', 'boots']);
-
-function primarySecondaryPlan(roleGroup, slot = 'armor') {
-  if (roleGroup === 'tank') {
-    if (ARMOR_SLOTS.has(slot)) {
-      return { primary: ['armor', 'stamina'], secondary: ['power', 'haste', 'recovery', 'crit'] };
-    }
-    return { primary: ['stamina', 'armor'], secondary: ['power', 'haste', 'recovery', 'crit'] };
-  }
-  if (roleGroup === 'healer') {
-    return { primary: ['spellPower'], secondary: ['stamina', 'haste', 'recovery', 'crit'] };
-  }
-  if (roleGroup === 'caster') {
-    return { primary: ['power'], secondary: ['crit', 'haste', 'recovery'] };
-  }
-  return { primary: ['power'], secondary: ['crit', 'haste', 'stamina'] };
+function jitterStat(value, rnd, band = 0.05) {
+  const delta = (rnd() * 2 - 1) * band;
+  return Math.max(0, Math.floor(value * (1 + delta)));
 }
 
-/** Maps stat budget to legacy defense/attack fields the FE sums (BALANCE_PLAN scale). */
-const LEGACY_BUDGET_TO_DEFENSE = 13.1 / STAT_COST.armor;
-
-function allocateStats(budget, roleGroup, rnd, slot = 'armor') {
-  const plan = primarySecondaryPlan(roleGroup, slot);
-  const stats = { power: 0, spellPower: 0, armor: 0, stamina: 0, crit: 0, haste: 0, recovery: 0 };
-  let remaining = budget;
-  const primShare = 0.6;
-  let primBudget = budget * primShare;
-  for (const key of plan.primary) {
-    const cost = STAT_COST[key] || 1;
-    const val = (primBudget / plan.primary.length / cost) * jitter(0.03, rnd);
-    stats[key] += val;
-    remaining -= val * cost;
-  }
-  const secKeys = plan.secondary;
-  for (const key of secKeys) {
-    const cost = STAT_COST[key] || 1;
-    const val = (remaining / secKeys.length / cost) * jitter(0.03, rnd);
-    if (key === 'crit' || key === 'haste' || key === 'recovery') {
-      stats[key] = Math.min(GEAR_SECONDARY_CAPS[key], val / 100);
-    } else {
-      stats[key] += val;
-    }
-    remaining -= val * cost;
-  }
-  const spent = budgetFromStats(stats);
-  if (spent > 0) {
-    const scale = budget / spent;
-    for (const key of Object.keys(stats)) {
-      stats[key] *= scale;
-      if (key === 'crit' || key === 'haste' || key === 'recovery') {
-        stats[key] = Math.min(GEAR_SECONDARY_CAPS[key], stats[key]);
-      }
-    }
-  }
-  return stats;
-}
-
-function applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd) {
+function applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix) {
   const affixes = [];
   if (prefix) {
-    const shift = budget * (prefix.shift || 0.1);
-    stats[prefix.stat] = (stats[prefix.stat] || 0) + shift / (STAT_COST[prefix.stat] || 1);
-    affixes.push({ id: prefix.id, kind: 'prefix', stats: { [prefix.stat]: shift } });
+    affixes.push({ id: prefix.id, kind: 'prefix', stats: { [prefix.stat]: budget * (prefix.shift || 0.1) } });
   }
   if (suffix) {
-    const per = suffix.stats.length;
-    for (const st of suffix.stats) {
-      const portion = (budget * 0.15) / per;
-      if (st === 'crit' || st === 'haste' || st === 'recovery') {
-        stats[st] = Math.min(GEAR_SECONDARY_CAPS[st], (stats[st] || 0) + portion / 100 / (STAT_COST[st] || 1));
-      } else {
-        stats[st] = (stats[st] || 0) + portion / (STAT_COST[st] || 1);
-      }
-    }
     affixes.push({ id: suffix.id, kind: 'suffix', label: suffix.label, stats: suffix.stats });
   }
   return affixes;
 }
 
-function slotWeights(slot) {
-  const armorSlot = ARMOR_SLOTS.has(slot);
-  return {
-    def: armorSlot ? 1 : slot === 'weapon' ? 0.2 : 0.12,
-    atk: slot === 'weapon' ? 1 : ['ring1', 'ring2', 'accessory'].includes(slot) ? 0.22 : 0.1,
-    hp: armorSlot ? 0.4 : 0.14
-  };
-}
-
-function toLegacyCombatFields(stats, roleGroup, budget, slot) {
-  const w = slotWeights(slot);
-  let defense = Math.max(Math.floor(stats.armor || 0), Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE * w.def));
-  let attack = Math.floor(roleGroup === 'healer' ? stats.spellPower * 0.5 : stats.power);
-  attack = Math.max(attack, Math.floor(budget * 0.38 * w.atk));
-  let hp = Math.max(Math.floor(stats.stamina * 10), Math.floor(budget * 0.52 * w.hp));
-  if (roleGroup === 'healer') {
-    attack = Math.max(attack, Math.floor(budget * 0.32 * w.atk));
-    hp = Math.max(hp, Math.floor(budget * 0.48 * w.hp));
+function statsFromLegacy(legacy, roleGroup, budget) {
+  const role = normalizeRoleGroup(roleGroup);
+  const stats = { power: 0, spellPower: 0, armor: 0, stamina: 0, crit: 0, haste: 0, recovery: 0 };
+  stats.armor = legacy.defense;
+  stats.stamina = Math.max(1, Math.floor(legacy.hp / 10));
+  if (role === 'healer') {
+    stats.spellPower = Math.max(1, legacy.attack * 2);
+  } else {
+    stats.power = Math.max(1, legacy.attack);
   }
-  if (roleGroup === 'tank' && ARMOR_SLOTS.has(slot)) {
-    defense = Math.max(defense, Math.floor(budget * LEGACY_BUDGET_TO_DEFENSE));
-    hp = Math.max(hp, Math.floor(budget * 0.55 * w.hp));
-  }
-  const floorSum = budget * 0.32;
-  const sum = attack + defense + hp;
-  if (sum < floorSum && sum > 0) {
-    const scale = floorSum / sum;
-    attack = Math.floor(attack * scale);
-    defense = Math.floor(defense * scale);
-    hp = Math.floor(hp * scale);
-  }
-  return { attack, defense, hp };
-}
-
-function enforceBudgetFloor(stats, budget) {
   const spent = budgetFromStats(stats);
-  if (spent <= 0 || spent >= budget * 0.92) return stats;
-  const scale = (budget * 0.95) / spent;
-  const out = { ...stats };
-  for (const key of Object.keys(out)) {
-    out[key] *= scale;
-    if (key === 'crit' || key === 'haste' || key === 'recovery') {
-      out[key] = Math.min(GEAR_SECONDARY_CAPS[key], out[key]);
-    }
+  if (spent > 0 && spent < budget * 0.9) {
+    const scale = budget / spent;
+    stats.power *= scale;
+    stats.spellPower *= scale;
+    stats.armor *= scale;
+    stats.stamina *= scale;
   }
-  return out;
+  return stats;
 }
 
 function buildName(base, prefix, suffix, material) {
@@ -192,25 +103,12 @@ export function generateGearItem(opts) {
     prefix = PREFIXES[Math.floor(rnd() * PREFIXES.length)];
   }
 
-  let budget = itemBudget({ roleGroup, slot, ilvl, rarity, isSetPiece });
-  if (legendaryId || rarity === 'legendary' || rarity === 'mythic') {
-    budget *= 0.94;
-  }
+  const role = normalizeRoleGroup(roleGroup);
+  let budget = itemBudget({ roleGroup: role, slot, ilvl, rarity, isSetPiece });
 
-  let stats = allocateStats(budget, roleGroup, rnd, slot);
-  const affixes = applyAffixes(stats, budget, roleGroup, rarity, prefix, suffix, rnd);
-  stats = enforceBudgetFloor(stats, budget);
-  const spent = budgetFromStats(stats);
-  if (spent > 0 && spent > budget * 1.05) {
-    const scale = budget / spent;
-    for (const key of Object.keys(stats)) {
-      if (key === 'crit' || key === 'haste' || key === 'recovery') {
-        stats[key] *= scale;
-      } else {
-        stats[key] *= scale;
-      }
-    }
-  }
+  const legacy = legacyTargetsForItem(role, slot, ilvl, rarity);
+  let stats = statsFromLegacy(legacy, role, budget);
+  const affixes = applyAffixes(stats, budget, role, rarity, prefix, suffix);
 
   let legendary = null;
   if (legendaryId) {
@@ -222,7 +120,6 @@ export function generateGearItem(opts) {
   const set = setId ? getSetById(setId) : null;
   const legendaryResolved = legendary?.id || legendaryId || null;
   const name = buildName(base, prefix, suffix, material);
-  const legacy = toLegacyCombatFields(stats, roleGroup, budget, slot);
   const id = `gear_${seed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)}`;
   const binding = bindingForGeneratedGear({
     source,

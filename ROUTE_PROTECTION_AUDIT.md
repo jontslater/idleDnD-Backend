@@ -1,6 +1,6 @@
 # Route Protection Audit Report
 
-**Generated**: 2026-10-19T09:55:46.098Z
+**Generated**: 2026-10-19T10:12:23.755Z
 
 ## Summary
 
@@ -336,19 +336,19 @@ All routes are properly protected!
 | GET | /available/:userId | requireAuth, requireOwnership | 333 |
 | POST | /:raidId/start | requireAuth | 419 |
 | POST | /instance/:instanceId/progress | requireAuthOrStreamerKey, requireAuth | 631 |
-| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 787 |
-| GET | /instance/:instanceId | ✅ PUBLIC | 833 |
-| GET | /instance/:instanceId/status | ✅ PUBLIC | 857 |
-| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 875 |
-| POST | /schedule | requireAuth | 1106 |
-| POST | /queue/:raidId/join | requireAuth | 1153 |
-| GET | /queue/:raidId | ✅ PUBLIC | 1255 |
-| POST | /queue/:raidId/leave | requireAuth | 1300 |
-| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1785 |
-| POST | /:raidId/guild-signup | requireAuth | 1817 |
-| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1912 |
-| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 1987 |
-| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2049 |
+| POST | /instance/:instanceId/resume | requireAuthOrStreamerKey, requireAuth | 800 |
+| GET | /instance/:instanceId | ✅ PUBLIC | 846 |
+| GET | /instance/:instanceId/status | ✅ PUBLIC | 870 |
+| POST | /instance/:instanceId/complete | requireAuthOrStreamerKey, requireAuth | 888 |
+| POST | /schedule | requireAuth | 1119 |
+| POST | /queue/:raidId/join | requireAuth | 1166 |
+| GET | /queue/:raidId | ✅ PUBLIC | 1268 |
+| POST | /queue/:raidId/leave | requireAuth | 1313 |
+| GET | /:raidId/guild-signup/:guildId | ✅ PUBLIC | 1798 |
+| POST | /:raidId/guild-signup | requireAuth | 1830 |
+| PUT | /:raidId/guild-signup/:guildId | requireAuth | 1925 |
+| POST | /instance/:instanceId/command | requireAuthOrStreamerKey, requireAuth | 2000 |
+| POST | /instance/:instanceId/chat | requireAuthOrStreamerKey, requireAuth | 2062 |
 
 ### reports.js (4 routes)
 

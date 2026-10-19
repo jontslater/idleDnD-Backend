@@ -22,7 +22,7 @@ router.post('/:battlefieldId/loot/roll', requireStreamerAccess, async (req, res)
     }
 
     const { createBatchLootContext } = await import('../services/idleKillLootService.js');
-    const batchCtx = createBatchLootContext(kills);
+    const batchCtx = createBatchLootContext();
 
     const drops = [];
     const errors = [];

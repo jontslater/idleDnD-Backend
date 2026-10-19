@@ -713,11 +713,24 @@ router.post('/instance/:instanceId/progress', requireAuthOrStreamerKey, async (r
     let currentBossHp = instance.bossHp ?? bossMaxHp;
     const bossDamage = Math.max(0, Math.floor(Number(req.body.bossDamage) || 0));
     if (bossDamage > 0) {
-      const maxPerReport = Math.max(1, Math.floor(bossMaxHp * 0.05));
-      const applied = Math.min(bossDamage, maxPerReport);
+      const { capRaidBossDamageReport } = await import('../utils/raidBossDamageLimiter.js');
+      const heroKey = req.body.heroId || req.body.userId || req.streamer?.twitchId || 'overlay';
+      const heroLevel = Math.floor(Number(req.body.heroLevel) || 50);
+      const classKey = req.body.classKey || req.body.heroClass || 'berserker';
+      const { applied } = capRaidBossDamageReport({
+        instance: { ...instance, id: instanceId, instanceId },
+        heroLevel,
+        classKey,
+        heroKey,
+        requestedDamage: bossDamage
+      });
       currentBossHp = Math.max(0, currentBossHp - applied);
       updateData.bossHp = currentBossHp;
       updateData.bossDamageApplied = applied;
+      updateData.totalBossDamageApplied = (instance.totalBossDamageApplied || 0) + applied;
+      if (!instance.bossFightStartedAt) {
+        updateData.bossFightStartedAt = Date.now();
+      }
     } else if (bossHpPercent !== undefined && bossHpPercent !== null) {
       const reported = Math.floor((bossHpPercent / 100) * bossMaxHp);
       const minAllowed = Math.max(0, currentBossHp - Math.floor(bossMaxHp * 0.05));

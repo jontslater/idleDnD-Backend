@@ -10,12 +10,18 @@
 ```json
 {
   "kills": [
-    { "heroId": "hero-doc-id", "enemyLevel": 42, "kind": "normal" }
+    {
+      "heroId": "hero-doc-id",
+      "enemyLevel": 42,
+      "kind": "normal",
+      "instanceId": "optional-firestore-instance-id"
+    }
   ]
 }
 ```
 
-- `kind`: `normal` | `elite` (boss kinds `raidBoss`, `dungeonBoss`, `worldboss` are rejected — raid/dungeon loot only from instance completion).
+- `kind`: `normal` | `elite` (boss kinds `raidBoss`, `dungeonBoss`, `worldboss`, `boss` are rejected — boss loot only from instance completion).
+- `instanceId`: when present, the server loads `raidInstances/{id}` or `dungeonInstances/{id}`. If the instance is **in progress** and the hero is a **participant**, trash kills roll the matching **dungeon/raid** loot table (`contentType`, `difficulty`, `contentId` from the instance). Without a valid `instanceId`, kills roll idle/world loot.
 - Drop rate caps match idle plan (~8% normal, per-hero per-minute limits).
 
 `POST /api/overlay/loot-roll` remains as a deprecated alias (same payload plus `streamerId` or `battlefieldId`).

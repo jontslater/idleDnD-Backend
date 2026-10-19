@@ -79,35 +79,25 @@ export const requireOwnership = (req, res, next) => {
  * Uses timing-safe comparison to prevent timing attacks
  */
 export const requireAdmin = (req, res, next) => {
-  const adminKey = req.headers['x-admin-key']; // Only from header, not body
-  const expectedKey = process.env.ADMIN_KEY;
-  
-  if (!expectedKey) {
-    return res.status(503).json({ 
-      error: 'Admin operations are disabled (ADMIN_KEY not configured)' 
-    });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Admin JWT required' });
   }
-  
-  if (!adminKey) {
-    return res.status(401).json({ error: 'Admin authentication required' });
-  }
-  
-  // Timing-safe comparison to prevent timing attacks
+  const token = authHeader.substring(7);
   try {
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(adminKey),
-      Buffer.from(expectedKey)
-    );
-    
-    if (!isValid) {
-      return res.status(403).json({ error: 'Invalid admin credentials' });
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded.isAdmin && decoded.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin claim required' });
     }
+    req.user = decoded;
+    req.authType = 'jwt-admin';
+    return next();
   } catch (error) {
-    // Length mismatch or other error
-    return res.status(403).json({ error: 'Invalid admin credentials' });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired. Please log in again.' });
+    }
+    return res.status(401).json({ error: 'Invalid authentication token.' });
   }
-  
-  next();
 };
 
 /**

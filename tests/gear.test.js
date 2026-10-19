@@ -63,28 +63,34 @@ async function runTests() {
     console.log('  ✗ Failed:', e.message);
   }
 
-  console.log('\nTest 4: common item budget within ±12% (400 samples, no affixes)');
+  console.log('\nTest 4: full-set legacy totals within ±10% of plan (sample grid)');
   try {
+    const { planFullSetLegacyTotals, slotsForRoleGroup, clearSetLegacyCacheForTests } = await import(
+      '../src/data/gear/planLegacy.js'
+    );
+    clearSetLegacyCacheForTests();
     let violations = 0;
-    for (let i = 0; i < 400; i++) {
-      const roleGroup = ['tank', 'healer', 'melee', 'caster'][i % 4];
-      const slot = SET_SLOTS[i % SET_SLOTS.length];
-      const rarity = 'common';
-      const ilvl = 20 + (i % 80);
-      const expected = itemBudget({ roleGroup, slot, ilvl, rarity, isSetPiece: false });
-      const item = generateGearItem({
-        roleGroup,
-        slot,
-        rarity,
-        ilvl,
-        source: { type: 'idle', enemyLevel: ilvl },
-        seed: `budget-test-${i}`
-      });
-      const actual = budgetFromStats(item.stats);
-      const ratio = actual / expected;
-      if (ratio < 0.8 || ratio > 1.15) violations++;
+    for (const roleGroup of ['tank', 'healer', 'melee', 'caster']) {
+      for (const ilvl of [10, 50, 100]) {
+        const plan = planFullSetLegacyTotals(roleGroup, ilvl, 'common');
+        let defense = 0;
+        for (const slot of slotsForRoleGroup(roleGroup)) {
+          const item = generateGearItem({
+            roleGroup,
+            slot,
+            rarity: 'common',
+            ilvl,
+            source: { type: 'idle', enemyLevel: ilvl },
+            seed: `budget-test-${roleGroup}-${slot}-${ilvl}`
+          });
+          defense += item.defense || 0;
+        }
+        if (plan.defense > 0 && (defense < plan.defense * 0.9 || defense > plan.defense * 1.1)) {
+          violations++;
+        }
+      }
     }
-    assert.ok(violations <= 25, `violations=${violations}`);
+    assert.equal(violations, 0, `violations=${violations}`);
     passed++;
     console.log('  ✓ Passed');
   } catch (e) {
