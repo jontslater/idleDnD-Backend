@@ -143,22 +143,39 @@ export function getSkillById(skillId) {
   return getAllSkills().find(skill => skill.id === skillId);
 }
 
-// Calculate skill points available for a hero
+export const MAX_HERO_LEVEL_FOR_SKILLS = 100;
+/** First level that awards a skill point (6), then +1 every 2 levels through 100. */
+export const FIRST_SKILL_POINT_LEVEL = 6;
+export const SKILL_POINT_LEVEL_STEP = 2;
+
+/** Total skill points earned from level 1 through `level` (ignores spent points). */
 export function calculateSkillPoints(level) {
-  if (level < 6) return 0;
-  
-  // Skill points are granted every 2 levels starting from level 6, up to level 100
-  // Points at: 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, ..., 98, 100
-  const MAX_LEVEL = 100;
-  const firstSkillPointLevel = 6;
-  
-  // Generate all skill point levels from 6 to 100 (every 2 levels)
-  const pointLevels = [];
-  for (let l = firstSkillPointLevel; l <= MAX_LEVEL; l += 2) {
-    pointLevels.push(l);
+  if (level < FIRST_SKILL_POINT_LEVEL) return 0;
+
+  const capped = Math.min(level, MAX_HERO_LEVEL_FOR_SKILLS);
+  let count = 0;
+  for (let l = FIRST_SKILL_POINT_LEVEL; l <= capped; l += SKILL_POINT_LEVEL_STEP) {
+    count++;
   }
-  
-  return pointLevels.filter(l => level >= l).length;
+  return count;
+}
+
+export function skillPointsSpentInTree(skills) {
+  if (!skills) return 0;
+  return Object.values(skills).reduce((sum, skill) => sum + (skill.points || 0), 0);
+}
+
+/**
+ * Server-authoritative skill point fields from hero level and allocated skills.
+ * Client-provided skillPoints / skillPointsEarned are ignored when persisting heroes.
+ */
+export function resolveSkillPointFields(level, skills) {
+  const skillPointsEarned = calculateSkillPoints(level);
+  const spent = skillPointsSpentInTree(skills);
+  return {
+    skillPoints: Math.max(0, skillPointsEarned - spent),
+    skillPointsEarned
+  };
 }
 
 // Get available skills for a hero (unlocked based on level)

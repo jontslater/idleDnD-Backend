@@ -170,28 +170,37 @@ export function getHeroRole(heroClass) {
 }
 
 /**
- * Calculate hero's gear score
+ * Rarity contribution for dungeon/raid queue gates.
+ * Matches TNEWFE `src/game/economy/lootTables.ts` QUEUE_RARITY_GEAR_VALUES
+ * and `computeQueueGearScore` in `src/game/economy/gearScore.ts`.
  */
-export function calculateGearScore(hero) {
-  const rarityValues = {
-    common: 10,
-    uncommon: 25,
-    rare: 50,
-    epic: 100,
-    legendary: 200
-  };
-  
-  let totalScore = 0;
-  
-  if (hero.equipment) {
-    Object.values(hero.equipment).forEach(item => {
-      if (item && item.rarity) {
-        totalScore += rarityValues[item.rarity] || 0;
-      }
-    });
+export const QUEUE_RARITY_GEAR_VALUES = {
+  common: 10,
+  uncommon: 25,
+  rare: 50,
+  epic: 100,
+  legendary: 200,
+  mythic: 400
+};
+
+/**
+ * Calculate hero's gear score for queue requirements (rarity sum across equipment).
+ */
+export function computeQueueGearScore(hero) {
+  if (!hero?.equipment) return 0;
+
+  let total = 0;
+  for (const item of Object.values(hero.equipment)) {
+    if (item?.rarity) {
+      total += QUEUE_RARITY_GEAR_VALUES[item.rarity] ?? 0;
+    }
   }
-  
-  return totalScore;
+  return total;
+}
+
+/** @deprecated Use computeQueueGearScore — kept for queueService imports */
+export function calculateGearScore(hero) {
+  return computeQueueGearScore(hero);
 }
 
 /**

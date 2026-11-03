@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { getAllSkills, getSkillsForClass, getSkillById, calculateSkillPoints } from '../data/skills.js';
+import { getAllSkills, getSkillsForClass, getSkillById, calculateSkillPoints, resolveSkillPointFields, skillPointsSpentInTree } from '../data/skills.js';
 
 // Get hero's skills
 export async function getHeroSkills(userId) {
@@ -13,15 +13,14 @@ export async function getHeroSkills(userId) {
     }
     
     const hero = doc.data();
-    const skills = hero.skills || {};
-    const skillPoints = hero.skillPoints || 0;
-    const skillPointsEarned = hero.skillPointsEarned || 0;
     const level = hero.level || 1;
+    const { skillPoints, skillPointsEarned } = resolveSkillPointFields(level, hero.skills);
     
     // Get ALL skills for this class (not just unlocked ones)
     const allClassSkills = getSkillsForClass(hero.role);
     
     // Merge with hero's allocated skills
+    const skills = hero.skills || {};
     const skillsData = allClassSkills.map(skill => ({
       ...skill,
       points: skills[skill.id]?.points || 0,
@@ -227,24 +226,13 @@ export async function updateSkillPointsOnLevelUp(userId, newLevel) {
     if (!doc.exists) return;
     
     const hero = doc.data();
-    const oldLevel = hero.level || 1;
-    
-    // Calculate skill points for both levels
-    const oldPoints = calculateSkillPoints(oldLevel);
-    const newPoints = calculateSkillPoints(newLevel);
-    
-    // If new level earns a skill point (every other level past 5)
-    if (newPoints > oldPoints) {
-      const pointsEarned = newPoints - oldPoints;
-      const currentPoints = hero.skillPoints || 0;
-      const currentEarned = hero.skillPointsEarned || 0;
-      
-      await heroRef.update({
-        skillPoints: currentPoints + pointsEarned,
-        skillPointsEarned: currentEarned + pointsEarned,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    }
+    const { skillPoints, skillPointsEarned } = resolveSkillPointFields(newLevel, hero.skills);
+
+    await heroRef.update({
+      skillPoints,
+      skillPointsEarned,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
   } catch (error) {
     console.error('Error updating skill points on level up:', error);
   }
