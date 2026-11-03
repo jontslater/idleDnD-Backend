@@ -1290,11 +1290,11 @@ async function handleClassesCommand(username) {
 async function handleHelpCommand(username) {
   const combat = '!attack (!a) !heal (!h) !defend !cast !dispel !rest !potion';
   const info = '!stats (!s) !gear (!g) !heroes !classes';
-  const shop = '!shop !buy !use !claim !tokens';
+  const shop = '!shop !buy !use !tokens';
   const profession = '!profession !gather !recipes !craft !elixirs';
-  const utility = '!join !leave !auto !quest !skills !leaderboard';
+  const utility = '!join !leave !auto !hero !skills !leaderboard';
   
-  const message = `${username}: Commands → Combat: ${combat} | Info: ${info} | Shop: ${shop} | Profession: ${profession} | Utility: ${utility} | !help`;
+  const message = `${username}: Chat → ${utility} | Site (Portal) → quests, raids, shop, professions | Combat: ${combat} | Info: ${info}`;
 
   return {
     success: true,
@@ -1887,8 +1887,7 @@ async function handleAutoCommand(hero, username, battlefieldId) {
  * Handle !quest command
  */
 async function handleQuestCommand(hero, args, username, userId) {
-  // TODO: Implement quest claiming logic
-  const message = `${username}: Quest system coming soon! Check the website for quest progress.`;
+  const message = `${username}: Quests are on the website — open Portal → Quests to view progress and bonuses. Combat progress syncs automatically.`;
 
   return {
     success: true,

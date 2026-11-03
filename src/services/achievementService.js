@@ -1,18 +1,18 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ACHIEVEMENTS, getAchievementById } from '../data/achievements.js';
+import { resolveHeroByDocId } from '../utils/questHeroResolver.js';
 
-// Check and unlock achievements for a hero
+// Check and unlock achievements for a hero (heroId = Firestore heroes document id)
 export async function checkAchievements(userId, actionType, actionValue = 1) {
   try {
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    
-    if (!doc.exists) {
+    const resolved = await resolveHeroByDocId(userId);
+    if (!resolved) {
       return [];
     }
-    
-    const hero = doc.data();
+
+    const heroRef = resolved.ref;
+    const hero = resolved.data;
     const unlockedAchievements = hero.achievements || [];
     const unlockedIds = unlockedAchievements.map(a => a.achievementId);
     
@@ -139,14 +139,12 @@ export async function checkAchievements(userId, actionType, actionValue = 1) {
 // Get hero's achievements
 export async function getHeroAchievements(userId) {
   try {
-    const heroRef = db.collection('heroes').doc(userId);
-    const doc = await heroRef.get();
-    
-    if (!doc.exists) {
+    const resolved = await resolveHeroByDocId(userId);
+    if (!resolved) {
       return null;
     }
-    
-    const hero = doc.data();
+
+    const hero = resolved.data;
     const achievements = hero.achievements || [];
     const titles = hero.titles || [];
     const activeTitle = hero.activeTitle || null;

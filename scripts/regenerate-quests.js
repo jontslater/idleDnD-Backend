@@ -59,29 +59,8 @@ async function regenerateAllQuests() {
     });
     console.log('');
     
-    // Reset all player quest progress
-    console.log('🔄 Resetting all player quest progress...');
-    const heroesSnapshot = await db.collection('heroes').get();
-    const batch = db.batch();
-    
-    heroesSnapshot.forEach(doc => {
-      batch.update(doc.ref, {
-        'questProgress.daily': {},
-        'questProgress.weekly': {},
-        'questProgress.monthly': {},
-        'questProgress.dailyBonusClaimed': false,
-        'questProgress.weeklyBonusClaimed': false,
-        'questProgress.monthlyBonusClaimed': false,
-        'questProgress.lastDailyReset': admin.firestore.FieldValue.serverTimestamp(),
-        'questProgress.lastWeeklyReset': admin.firestore.FieldValue.serverTimestamp(),
-        'questProgress.lastMonthlyReset': admin.firestore.FieldValue.serverTimestamp()
-      });
-    });
-    
-    await batch.commit();
-    console.log(`✅ Reset ${heroesSnapshot.size} players' quest progress`);
-    
     console.log('\n🎉 All quests regenerated successfully!');
+    console.log('ℹ️  Player quest progress resets lazily via periodKey on next login/combat sync.');
     process.exit(0);
   } catch (error) {
     console.error('❌ Error regenerating quests:', error);

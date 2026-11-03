@@ -63,7 +63,7 @@ router.get('/:bossId', async (req, res) => {
 router.post('/:bossId/join', async (req, res) => {
   try {
     const { bossId } = req.params;
-    const { userId, username, heroLevel, heroRole } = req.body;
+    const { userId, username, heroLevel, heroRole, heroId } = req.body;
     
     if (!userId || !username || !heroLevel || !heroRole) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -107,6 +107,18 @@ router.post('/:bossId/join', async (req, res) => {
       participants: admin.firestore.FieldValue.arrayUnion(participant),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+
+    if (heroId) {
+      try {
+        const { applyQuestTrackingForHero } = await import('../services/questProgressService.js');
+        await applyQuestTrackingForHero(heroId, [
+          { trackingKey: 'worldBoss', type: 'weekly', increment: 1 },
+          { trackingKey: 'worldBoss', type: 'monthly', increment: 1 }
+        ]);
+      } catch (questErr) {
+        console.warn('[World Boss] Quest tracking failed (non-critical):', questErr.message);
+      }
+    }
     
     res.json({ success: true, message: 'Joined world boss fight', participant });
   } catch (error) {
