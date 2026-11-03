@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { getAllSkills, getSkillsForClass, getSkillById, calculateSkillPoints, resolveSkillPointFields, skillPointsSpentInTree } from '../data/skills.js';
+import { getAllSkills, getSkillsForClass, getSkillById, calculateSkillPoints, resolveSkillPointFields } from '../data/skills.js';
 
 // Get hero's skills
 export async function getHeroSkills(userId) {
