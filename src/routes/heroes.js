@@ -2,6 +2,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
+import { resolveSkillPointFields } from '../data/skills.js';
 import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
 import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
 
@@ -1081,6 +1082,11 @@ router.put('/:userId', async (req, res) => {
       // Don't fail the hero update if stats tracking fails
       console.error('[Update Hero] Error tracking stats:', statsError);
     }
+
+    // Server-authoritative skill points from level (ignore inflated client values)
+    const effectiveLevel = updateData.level !== undefined ? updateData.level : (oldHero.level || 1);
+    const effectiveSkills = updateData.skills !== undefined ? updateData.skills : (oldHero.skills || {});
+    Object.assign(updateData, resolveSkillPointFields(effectiveLevel, effectiveSkills));
     
     await heroRef.update(updateData);
     

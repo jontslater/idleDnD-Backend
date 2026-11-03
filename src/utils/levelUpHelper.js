@@ -5,6 +5,7 @@
  */
 
 import { ROLE_CONFIG } from '../data/roleConfig.js';
+import { resolveSkillPointFields } from '../data/skills.js';
 
 /**
  * Calculate maxXp for a given level
@@ -16,13 +17,11 @@ import { ROLE_CONFIG } from '../data/roleConfig.js';
 export function calculateMaxXp(level) {
   if (level <= 1) return 100;
   
-  // Polynomial growth: 40 * level² + 300 * level - 240
-  // Level 1: 100 XP
-  // Level 10: ~4,060 XP
-  // Level 50: ~102,760 XP
-  // Level 100: ~403,760 XP
-  // Level 177: ~1,265,000 XP
-  // This creates predictable, reasonable leveling times
+  // Polynomial max XP: 40 * level² + 300 * level - 240
+  // Level 1: 100 XP (level <= 1 returns 100 explicitly above)
+  // Level 10: 6,760 XP
+  // Level 50: 127,760 XP
+  // Level 100: 429,760 XP
   return Math.floor(40 * level * level + 300 * level - 240);
 }
 
@@ -79,6 +78,9 @@ export function processLevelUps(hero, newXp) {
       // Maintain HP ratio (heal proportionally)
       updates.hp = Math.floor(updates.maxHp * hpRatio);
     }
+
+    const skills = hero.skills || {};
+    Object.assign(updates, resolveSkillPointFields(newLevel, skills));
   }
   
   return {

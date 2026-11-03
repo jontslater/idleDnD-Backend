@@ -10,7 +10,7 @@
     "deploy": "firebase deploy --only functions",
     "deploy-indexes": "firebase deploy --only firestore:indexes",
     "serve": "firebase emulators:start",
-    "test": "node --check src/services/commandHandler.js && node --test tests/chat-command-policy.test.js tests/battlefield-queue-routes.test.js src/utils/questTier.test.js",
+    "test": "node --check src/services/commandHandler.js && node --test tests/chat-command-policy.test.js tests/battlefield-queue-routes.test.js src/utils/questTier.test.js src/data/queueRequirements.test.js src/data/skills.test.js src/utils/levelUpHelper.test.js",
     "sync-heroes": "node scripts/sync-heroes.js",
     "test-hero": "node scripts/sync-heroes.js --test",
     "test-dungeon-queue": "node scripts/test-dungeon-queue.js",

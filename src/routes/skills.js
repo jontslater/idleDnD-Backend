@@ -1,7 +1,7 @@
 import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
-import { getAllSkills, getSkillsForClass, calculateSkillPoints } from '../data/skills.js';
+import { getAllSkills, getSkillsForClass, calculateSkillPoints, resolveSkillPointFields, skillPointsSpentInTree } from '../data/skills.js';
 import { getHeroSkills, allocateSkillPoint, resetSkills } from '../services/skillService.js';
 
 const router = express.Router();
@@ -41,14 +41,11 @@ router.post('/retroactive-points/:userId', async (req, res) => {
     }
     
     const totalPoints = calculateSkillPoints(level);
+    const pointsSpent = skillPointsSpentInTree(hero.skills);
+    const { skillPoints: shouldHavePoints, skillPointsEarned: totalEarned } = resolveSkillPointFields(level, hero.skills);
     const currentPoints = hero.skillPoints || 0;
     const currentEarned = hero.skillPointsEarned || 0;
-    const pointsSpent = Object.values(hero.skills || {}).reduce((sum, skill) => sum + (skill.points || 0), 0);
     
-    // Calculate what the skill points should be (total earned minus what's been spent)
-    const shouldHavePoints = totalPoints - pointsSpent;
-    
-    // Calculate how many points to add (difference between what they should have and what they currently have)
     const pointsToAdd = shouldHavePoints - currentPoints;
     
     console.log(`[Retroactive Points] Hero ${userId}: Level ${level}`);
@@ -63,7 +60,7 @@ router.post('/retroactive-points/:userId', async (req, res) => {
     if (pointsToAdd > 0 || currentEarned !== totalPoints) {
       await heroRef.update({
         skillPoints: shouldHavePoints,
-        skillPointsEarned: totalPoints,
+        skillPointsEarned: totalEarned,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
