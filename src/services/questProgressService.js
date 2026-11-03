@@ -191,18 +191,15 @@ export async function applyQuestTrackingForHero(heroId, rawUpdates) {
 /**
  * Bump meta quest counters when a quest reward is claimed.
  */
-export function buildMetaProgressUpdatesForClaim(hero, claimedType, claimedQuest) {
+export function buildMetaProgressUpdatesForClaim(hero, claimedType, _claimedQuest, options = {}) {
   ensureQuestProgressShape(hero);
   const updates = {};
-  const statsCompleted = (hero.stats?.questsCompleted || 0) + 1;
-  updates['stats.questsCompleted'] = statsCompleted;
-  hero.stats = { ...(hero.stats || {}), questsCompleted: statsCompleted };
 
-  const bumpMeta = (periodType, trackingKey, increment = 1) => {
-    // handled via incrementMetaQuestsByType at claim sites
-  };
-
-  if (claimedType === 'daily') {
+  if (!options.skipStatsIncrement) {
+    const statsCompleted = (hero.stats?.questsCompleted || 0) + 1;
+    updates['stats.questsCompleted'] = statsCompleted;
+    hero.stats = { ...(hero.stats || {}), questsCompleted: statsCompleted };
+  }
     hero.questProgress.dailiesCompletedThisWeek = (hero.questProgress.dailiesCompletedThisWeek || 0) + 1;
     hero.questProgress.dailiesCompletedThisMonth = (hero.questProgress.dailiesCompletedThisMonth || 0) + 1;
     updates['questProgress.dailiesCompletedThisWeek'] = hero.questProgress.dailiesCompletedThisWeek;

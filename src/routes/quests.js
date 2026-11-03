@@ -339,7 +339,7 @@ async function claimAllForHero(heroId, typeFilter) {
       updates[`questProgress.${questType}.${quest.id}.claimedAt`] = admin.firestore.FieldValue.serverTimestamp();
       claimedCount++;
 
-      Object.assign(updates, buildMetaProgressUpdatesForClaim(hero, questType, quest));
+      Object.assign(updates, buildMetaProgressUpdatesForClaim(hero, questType, quest, { skipStatsIncrement: true }));
       if (questType === 'daily') {
         incrementMetaQuestsByType(hero, ['weekly', 'monthly'], 'completeDailies', 1, questDataByType, updates);
       }
