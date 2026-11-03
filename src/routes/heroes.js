@@ -3,6 +3,11 @@ import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import { resolveSkillPointFields } from '../data/skills.js';
+import {
+  applyCombatStateToUpdate,
+  applyDamageToHero,
+  tickAutoResurrection
+} from '../utils/combat/heroCombatState.js';
 import { withQuotaRetry, isQuotaError } from '../utils/quotaRetry.js';
 import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
 
@@ -952,6 +957,101 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Apply combat damage server-side (authoritative HP / death for battlefield combat sync)
+router.post('/:heroId/combat/damage', async (req, res) => {
+  try {
+    const { heroId } = req.params;
+    const rawDamage = Number(req.body?.damage);
+
+    if (!Number.isFinite(rawDamage) || rawDamage < 0) {
+      return res.status(400).json({ error: 'damage must be a non-negative number' });
+    }
+
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found', heroId });
+    }
+
+    const oldHero = doc.data();
+    const now = Date.now();
+    const damageResult = applyDamageToHero(oldHero, rawDamage, { now });
+    const updateData = applyCombatStateToUpdate(oldHero, {
+      hp: damageResult.hero.hp,
+      shield: damageResult.hero.shield,
+      isDead: damageResult.hero.isDead,
+      deathTime: damageResult.hero.deathTime
+    }, { now });
+
+    await heroRef.update(updateData);
+
+    const heroCache = getHeroCache();
+    heroCache.invalidate(heroId);
+
+    const updated = await heroRef.get();
+
+    res.json({
+      success: true,
+      died: damageResult.died,
+      alreadyDead: damageResult.alreadyDead,
+      hpDamage: damageResult.hpDamage,
+      shieldDamage: damageResult.shieldDamage,
+      hero: { ...updated.data(), id: updated.id }
+    });
+  } catch (error) {
+    console.error('Error applying combat damage:', error);
+    res.status(500).json({ error: 'Failed to apply combat damage' });
+  }
+});
+
+// Tick idle auto-resurrection (60s at 50% HP — matches TNEWFE battlefield)
+router.post('/:heroId/combat/tick-resurrection', async (req, res) => {
+  try {
+    const { heroId } = req.params;
+    const heroRef = db.collection('heroes').doc(heroId);
+    const doc = await heroRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'Hero not found', heroId });
+    }
+
+    const oldHero = doc.data();
+    const now = Date.now();
+    const { hero: nextHero, resurrected } = tickAutoResurrection(oldHero, { now });
+
+    if (!resurrected) {
+      return res.json({
+        success: true,
+        resurrected: false,
+        hero: { ...oldHero, id: doc.id }
+      });
+    }
+
+    const updateData = applyCombatStateToUpdate(oldHero, {
+      hp: nextHero.hp,
+      isDead: false,
+      deathTime: null,
+      shield: 0
+    }, { now });
+
+    await heroRef.update(updateData);
+
+    const heroCache = getHeroCache();
+    heroCache.invalidate(heroId);
+
+    const updated = await heroRef.get();
+    res.json({
+      success: true,
+      resurrected: true,
+      hero: { ...updated.data(), id: updated.id }
+    });
+  } catch (error) {
+    console.error('Error ticking hero resurrection:', error);
+    res.status(500).json({ error: 'Failed to tick resurrection' });
+  }
+});
+
 // Update hero
 router.put('/:userId', async (req, res) => {
   try {
@@ -1087,6 +1187,9 @@ router.put('/:userId', async (req, res) => {
     const effectiveLevel = updateData.level !== undefined ? updateData.level : (oldHero.level || 1);
     const effectiveSkills = updateData.skills !== undefined ? updateData.skills : (oldHero.skills || {});
     Object.assign(updateData, resolveSkillPointFields(effectiveLevel, effectiveSkills));
+
+    // Server-authoritative combat death: HP 0 must persist as isDead (client combat often syncs hp only)
+    Object.assign(updateData, applyCombatStateToUpdate(oldHero, updateData));
     
     await heroRef.update(updateData);
     
