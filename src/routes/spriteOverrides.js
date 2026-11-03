@@ -1,6 +1,6 @@
 import express from 'express';
 import admin from 'firebase-admin';
-import { db } from '../index.js';
+import { getFirestore } from '../firestore.js';
 import { verifyToken } from './auth.js';
 import { requireSpriteOverrideAdmin, resolveTwitchLoginFromUser } from '../utils/spriteOverrideAdmin.js';
 import {
@@ -10,11 +10,14 @@ import {
 } from '../utils/spriteOverridesValidation.js';
 
 const router = express.Router();
-const CONFIG_REF = db.collection('config').doc('spriteOverrides');
+
+function spriteOverridesDocRef() {
+  return getFirestore().collection('config').doc('spriteOverrides');
+}
 
 router.get('/', async (req, res) => {
   try {
-    const snap = await CONFIG_REF.get();
+    const snap = await spriteOverridesDocRef().get();
     if (!snap.exists) {
       return res.json({ ...EMPTY_SPRITE_OVERRIDES });
     }
@@ -40,9 +43,10 @@ router.put('/', verifyToken, requireSpriteOverrideAdmin, async (req, res) => {
       updatedBy,
     };
 
-    await CONFIG_REF.set(payload, { merge: false });
+    const docRef = spriteOverridesDocRef();
+    await docRef.set(payload, { merge: false });
 
-    const saved = await CONFIG_REF.get();
+    const saved = await docRef.get();
     res.json(documentToResponse(saved.data()));
   } catch (error) {
     console.error('[spriteOverrides] PUT failed:', error);
