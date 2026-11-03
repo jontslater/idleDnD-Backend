@@ -3,8 +3,9 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
+import { initFirestore } from './firestore.js';
 
 // Load environment variables
 dotenv.config();
@@ -12,6 +13,12 @@ dotenv.config();
 // Initialize Firebase Admin
 let db;
 try {
+  if (process.env.USE_MOCK_FIRESTORE === '1') {
+    const { createInMemoryFirestore } = await import('./firestoreMock.js');
+    db = createInMemoryFirestore();
+    initFirestore(db);
+    console.log('✅ Mock Firestore initialized (USE_MOCK_FIRESTORE=1)');
+  } else {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const serviceAccountPath = join(__dirname, '..', 'serviceAccountKey.json');
@@ -40,12 +47,14 @@ try {
   
   admin.initializeApp({ credential });
   db = admin.firestore();
+  initFirestore(db);
   console.log('✅ Firebase initialized successfully');
   
   // Initialize write batcher to reduce Firestore quota usage
   const { getWriteBatcher } = await import('./utils/writeBatcher.js');
   const writeBatcher = getWriteBatcher(db);
   console.log('✅ Write batcher initialized (reduces Firestore writes)');
+  }
 } catch (error) {
   console.error('❌ Failed to initialize Firebase:', error);
   process.exit(1);
@@ -481,6 +490,10 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('');
 }
 
+const isMainModule =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
 const server = app.listen(PORT, async () => {
   console.log(`
 ╔════════════════════════════════════════════╗
@@ -585,6 +598,8 @@ Press Ctrl+C to stop
     console.error('❌ Failed to initialize XP accumulator service:', error);
   }
 });
+
+} // isMainModule
 
 // Export for Firebase Functions (optional)
 export { app, db };
