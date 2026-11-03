@@ -7,6 +7,13 @@ import { db } from '../index.js';
 import { ROLE_CONFIG } from '../data/roleConfig.js';
 import admin from 'firebase-admin';
 import { getHeroCache, getHeroByTwitchIdCache } from '../utils/heroCache.js';
+import {
+  PLAYER_PORTAL_URL,
+  buildHelpReply,
+  buildRemovedCommandReply,
+  isRemovedChatCommand,
+  normalizeChatCommand,
+} from './chatCommandPolicy.js';
 
 /**
  * Get all heroes in a battlefield
@@ -83,50 +90,24 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
   try {
     // Use numeric streamerId if available (for queues), otherwise use username (legacy)
     const battlefieldId = streamerId ? `twitch:${streamerId}` : `twitch:${streamerUsername.toLowerCase()}`;
-    const commandLower = command.toLowerCase();
-    
+    const commandLower = normalizeChatCommand(command);
+
     console.log(`[Command] Processing !${command} - BattlefieldId: ${battlefieldId}, StreamerId: ${streamerId}`);
-    
-    // Commands that don't require hero to be in battlefield
-    switch (commandLower) {
-      case 'join':
-        // Join is handled separately in twitch-events.js
-        return {
-          success: false,
-          message: `@${viewerUsername} Use !join [class] to join the battlefield.`
-        };
-      
-      case 'classes':
-        return await handleClassesCommand(viewerUsername);
-      
-      case 'help':
-      case 'commands':
-        return await handleHelpCommand(viewerUsername);
-      
-      case 'heroes':
-        return await handleHeroesCommand(viewerUsername, viewerId);
-      
-      case 'level':
-      case 'grantlegendary':
-      case 'grantlegendaries':
-      case 'push':
-      case 'pushfirebase':
-      case 'sync':
-      case 'syncfirebase':
-        // Admin commands - check authorization first
-        const isAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
-        if (!isAdmin) {
-          return {
-            success: false,
-            message: `@${viewerUsername} Admin commands are only available to the streamer.`
-          };
-        }
-        // Fall through to get hero if needed
-        break;
-      
-      default:
-        // Commands that require hero - will be handled below
-        break;
+
+    if (commandLower === 'join') {
+      // Join is handled separately in twitch-events.js; this path is a fallback hint only.
+      return {
+        success: false,
+        message: `@${viewerUsername} Use !join [class] or !join [number] to join the battlefield.`,
+      };
+    }
+
+    if (commandLower === 'help') {
+      return buildHelpReply(viewerUsername);
+    }
+
+    if (isRemovedChatCommand(command)) {
+      return buildRemovedCommandReply(viewerUsername, command);
     }
     
     // Get hero for commands that need it (with caching)
@@ -186,366 +167,154 @@ export async function processCommand(command, args, viewerUsername, viewerId, st
           twitchIdCache.invalidate(viewerId);
         }
       }
-      
-      // Initialize equipment slots if missing (similar to quest progress)
-      const { initializeEquipmentSlots } = await import('./gearService.js');
-      const initializedEquipment = initializeEquipmentSlots(hero);
-      if (initializedEquipment) {
-        const currentSlots = Object.keys(hero.equipment || {});
-        const expectedSlots = Object.keys(initializedEquipment);
-        const needsUpdate = expectedSlots.some(slot => !(slot in (hero.equipment || {})));
-        
-        if (needsUpdate) {
-          await heroDoc.ref.update({ equipment: initializedEquipment });
-          hero.equipment = initializedEquipment;
-          console.log(`✅ [Command] Initialized equipment slots for hero ${hero.id}`);
-        }
-      }
     }
 
-    // Command aliases (convert shortcuts to full commands)
-    const aliases = {
-      'a': 'attack',
-      'h': 'heal',
-      's': 'stats',
-      'g': 'gear'
-    };
-    if (aliases[commandLower]) {
-      commandLower = aliases[commandLower];
-    }
+    const needJoinMessage = `@${viewerUsername} Join the battle with !join first.`;
 
-    // Route to appropriate command handler
     switch (commandLower) {
-      case 'stats':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleStatsCommand(hero, viewerUsername);
-      
-      case 'gear':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleGearCommand(hero, viewerUsername);
-      
-      case 'shop':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleShopCommand(hero, viewerUsername);
-      
-      case 'attack':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleAttackCommand(hero, args, viewerUsername, battlefieldId);
-      
-      case 'heal':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleHealCommand(hero, args, viewerUsername, battlefieldId);
-      
-      case 'cast':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleCastCommand(hero, args, viewerUsername, battlefieldId);
-      
-      case 'defend':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleDefendCommand(hero, viewerUsername, battlefieldId);
-      
-      case 'buy':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleBuyCommand(hero, args, viewerUsername);
-      
-      case 'use':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleUseCommand(hero, args, viewerUsername);
-      
-      case 'rest':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleRestCommand(hero, viewerUsername, battlefieldId);
-      
-      case 'claim':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleClaimCommand(hero, viewerUsername);
-      
-      case 'tokens':
-        if (!hero) return { success: false, message: `@${viewerUsername} Join the battle with !join to use this command.` };
-        return await handleTokensCommand(hero, viewerUsername);
-      
-      case 'leave':
+      case 'leave': {
         // Leave command supports optional hero index: !leave [index]
-        // If index provided, leave that specific hero
-        // If no index, leave ALL heroes from this battlefield
         const leaveIndex = args[0] && !isNaN(parseInt(args[0], 10)) ? parseInt(args[0], 10) : null;
-        
+
         if (leaveIndex !== null) {
-          // User specified a hero index - leave that specific hero
           const heroesSnapshot = await db.collection('heroes')
             .where('twitchUserId', '==', viewerId)
             .get();
-          
+
           if (heroesSnapshot.empty) {
             return { success: false, message: `@${viewerUsername} You don't have any characters! Use !join [class] to create one.` };
           }
-          
-          // Sort by lastActiveAt desc (same order as !heroes)
+
           const heroes = heroesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           heroes.sort((a, b) => {
             const aTime = a.lastActiveAt?.toMillis?.() ?? new Date(a.lastActiveAt ?? 0).getTime();
             const bTime = b.lastActiveAt?.toMillis?.() ?? new Date(b.lastActiveAt ?? 0).getTime();
             return bTime - aTime;
           });
-          
-          const index = leaveIndex - 1; // Convert 1-based to 0-based
+
+          const index = leaveIndex - 1;
           if (index < 0 || index >= heroes.length) {
-            return { success: false, message: `@${viewerUsername} Invalid character number. Use !heroes to see your characters.` };
+            return {
+              success: false,
+              message: `@${viewerUsername} Invalid character number. See your roster at ${PLAYER_PORTAL_URL}`,
+            };
           }
-          
+
           const selectedHero = heroes[index];
           return await handleLeaveCommand(selectedHero, viewerUsername, battlefieldId);
-        } else {
-          // No index provided - leave ALL heroes from this battlefield
-          const heroesInBattlefield = await db.collection('heroes')
+        }
+
+        const heroesInBattlefield = await db.collection('heroes')
+          .where('twitchUserId', '==', viewerId)
+          .where('currentBattlefieldId', '==', battlefieldId)
+          .get();
+
+        if (heroesInBattlefield.empty) {
+          const anyHeroSnapshot = await db.collection('heroes')
             .where('twitchUserId', '==', viewerId)
-            .where('currentBattlefieldId', '==', battlefieldId)
+            .limit(1)
             .get();
-          
-          if (heroesInBattlefield.empty) {
-            // Try to find any hero for this user (might be in different battlefield)
-            const anyHeroSnapshot = await db.collection('heroes')
-              .where('twitchUserId', '==', viewerId)
-              .limit(1)
-              .get();
-            
-            if (anyHeroSnapshot.empty) {
-              return { success: false, message: `@${viewerUsername} You don't have any characters! Use !join [class] to create one.` };
-            }
-            
-            const heroDoc = anyHeroSnapshot.docs[0];
-            hero = { id: heroDoc.id, ...heroDoc.data() };
-            return await handleLeaveCommand(hero, viewerUsername, battlefieldId);
+
+          if (anyHeroSnapshot.empty) {
+            return { success: false, message: `@${viewerUsername} You don't have any characters! Use !join [class] to create one.` };
           }
-          
-          // Leave all heroes from this battlefield
-          // IMPORTANT: Broadcast for ALL heroes (even deleted ones) so browser source can remove them
-          // Use batch read to check all heroes at once for better performance
-          const heroRefs = heroesInBattlefield.docs.map(doc => db.collection('heroes').doc(doc.id));
-          const heroChecks = await Promise.all(heroRefs.map(ref => ref.get()));
-          
-          const validHeroes = [];
-          const deletedHeroIds = [];
-          for (let i = 0; i < heroesInBattlefield.docs.length; i++) {
-            const heroDoc = heroesInBattlefield.docs[i];
-            const heroCheck = heroChecks[i];
-            if (heroCheck.exists) {
-              validHeroes.push({ id: heroDoc.id, ...heroDoc.data() });
-            } else {
-              // Hero was deleted - still need to broadcast so browser source removes it
-              deletedHeroIds.push(heroDoc.id);
-              console.warn(`⚠️ [Leave] Hero document ${heroDoc.id} was deleted, but will still broadcast removal`);
-            }
-          }
-          
-          // Broadcast for deleted heroes first (they need immediate removal from browser source)
-          if (deletedHeroIds.length > 0) {
-            try {
-              const { broadcastToRoom } = await import('../websocket/server.js');
-              // Convert battlefield ID to Twitch ID for WebSocket
-              let streamerTwitchId = null;
-              if (battlefieldId.startsWith('twitch:')) {
-                const identifier = battlefieldId.replace('twitch:', '').trim();
-                
-                // Check if it's a numeric Twitch ID (like "1087777297")
-                if (/^\d+$/.test(identifier)) {
-                  // It's already a numeric ID, use it directly
-                  streamerTwitchId = identifier;
-                } else {
-                  // It's a username, look up streamer's Twitch ID from their hero document
-                  const streamerUsername = identifier.toLowerCase();
-                  const streamerHeroSnapshot = await db.collection('heroes')
-                    .where('twitchUsername', '==', streamerUsername)
-                    .limit(1)
-                    .get();
-                  if (!streamerHeroSnapshot.empty) {
-                    const streamerHero = streamerHeroSnapshot.docs[0].data();
-                    streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
-                  }
-                }
-              } else {
-                streamerTwitchId = battlefieldId;
-              }
-              
-              if (streamerTwitchId) {
-                // Broadcast for each deleted hero
-                for (const deletedHeroId of deletedHeroIds) {
-                  broadcastToRoom(String(streamerTwitchId), {
-                    type: 'hero_left_battlefield',
-                    hero: { id: deletedHeroId }, // Minimal hero data - just the ID
-                    message: `Hero has left the battlefield`,
-                    timestamp: Date.now()
-                  });
-                }
-                console.log(`📡 [Leave] Broadcasted removal for ${deletedHeroIds.length} deleted hero(es) to Twitch ID: ${streamerTwitchId}`);
-              }
-            } catch (broadcastError) {
-              console.warn('Failed to broadcast removal for deleted heroes:', broadcastError);
-            }
-          }
-          
-          // Process valid heroes normally
-          const results = [];
-          for (const heroData of validHeroes) {
-            const result = await handleLeaveCommand(heroData, viewerUsername, battlefieldId);
-            results.push(result);
-          }
-          
-          const totalCount = validHeroes.length + deletedHeroIds.length;
-          const successCount = results.filter(r => r.success).length;
-          
-          if (totalCount === 0) {
-            return {
-              success: true,
-              message: `@${viewerUsername} No active characters found in battlefield.`
-            };
-          } else if (successCount === validHeroes.length && deletedHeroIds.length === 0) {
-            return {
-              success: true,
-              message: `@${viewerUsername} All ${successCount} character${successCount > 1 ? 's' : ''} left the party!`
-            };
+
+          const heroDoc = anyHeroSnapshot.docs[0];
+          hero = { id: heroDoc.id, ...heroDoc.data() };
+          return await handleLeaveCommand(hero, viewerUsername, battlefieldId);
+        }
+
+        const heroRefs = heroesInBattlefield.docs.map(doc => db.collection('heroes').doc(doc.id));
+        const heroChecks = await Promise.all(heroRefs.map(ref => ref.get()));
+
+        const validHeroes = [];
+        const deletedHeroIds = [];
+        for (let i = 0; i < heroesInBattlefield.docs.length; i++) {
+          const heroDoc = heroesInBattlefield.docs[i];
+          const heroCheck = heroChecks[i];
+          if (heroCheck.exists) {
+            validHeroes.push({ id: heroDoc.id, ...heroDoc.data() });
           } else {
-            return {
-              success: true,
-              message: `@${viewerUsername} ${totalCount} character${totalCount > 1 ? 's' : ''} left the party!`
-            };
+            deletedHeroIds.push(heroDoc.id);
+            console.warn(`⚠️ [Leave] Hero document ${heroDoc.id} was deleted, but will still broadcast removal`);
           }
         }
-      
-      case 'rejoin':
-        // Rejoin can work with or without hero in battlefield
-        // If args[0] is a number, it's selecting a character by index from !heroes
-        // If args[0] is a class name, it's switching to that class
-        // If no args and hero exists, just rejoin with current hero
-        if (args[0] && /^\d+$/.test(args[0])) {
-          // User specified a character number (from !heroes list)
-          return await handleRejoinByIndexCommand(args[0], viewerUsername, viewerId, battlefieldId);
+
+        if (deletedHeroIds.length > 0) {
+          try {
+            const { broadcastToRoom } = await import('../websocket/server.js');
+            let streamerTwitchId = null;
+            if (battlefieldId.startsWith('twitch:')) {
+              const identifier = battlefieldId.replace('twitch:', '').trim();
+              if (/^\d+$/.test(identifier)) {
+                streamerTwitchId = identifier;
+              } else {
+                const streamerUsernameLookup = identifier.toLowerCase();
+                const streamerHeroSnapshot = await db.collection('heroes')
+                  .where('twitchUsername', '==', streamerUsernameLookup)
+                  .limit(1)
+                  .get();
+                if (!streamerHeroSnapshot.empty) {
+                  const streamerHero = streamerHeroSnapshot.docs[0].data();
+                  streamerTwitchId = streamerHero.twitchUserId || streamerHero.twitchId;
+                }
+              }
+            } else {
+              streamerTwitchId = battlefieldId;
+            }
+
+            if (streamerTwitchId) {
+              for (const deletedHeroId of deletedHeroIds) {
+                broadcastToRoom(String(streamerTwitchId), {
+                  type: 'hero_left_battlefield',
+                  hero: { id: deletedHeroId },
+                  message: `Hero has left the battlefield`,
+                  timestamp: Date.now(),
+                });
+              }
+              console.log(`📡 [Leave] Broadcasted removal for ${deletedHeroIds.length} deleted hero(es) to Twitch ID: ${streamerTwitchId}`);
+            }
+          } catch (broadcastError) {
+            console.warn('Failed to broadcast removal for deleted heroes:', broadcastError);
+          }
         }
-        return await handleRejoinCommand(hero, args, viewerUsername, viewerId, battlefieldId);
-      
-      case 'switch':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleSwitchCommand(hero, args, viewerUsername, viewerId, battlefieldId);
-      
-      case 'auto':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleAutoCommand(hero, viewerUsername, battlefieldId);
-      
-      case 'quest':
-      case 'quests':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleQuestCommand(hero, args, viewerUsername, viewerId);
-      
-      case 'profession':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleProfessionCommand(hero, args, viewerUsername);
-      
-      case 'gather':
-      case 'herbs':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleGatherCommand(hero, viewerUsername, battlefieldId);
-      
-      case 'recipes':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleRecipesCommand(hero, args, viewerUsername);
-      
-      case 'craft':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleCraftCommand(hero, args, viewerUsername, battlefieldId);
-      
-      case 'elixirs':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleElixirsCommand(hero, viewerUsername);
-      
-      case 'skills':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleSkillsCommand(hero, viewerUsername);
-      
-      case 'potion':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handlePotionCommand(hero, viewerUsername, viewerId);
-      
-      case 'dispel':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleDispelCommand(hero, args, viewerUsername, battlefieldId);
-      
-      case 'leaderboard':
-      case 'rank':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need to !join first!` };
-        return await handleLeaderboardCommand(hero, viewerUsername);
-      
-      // ==================== QUEUE SYSTEM ====================
-      
-      case 'dungeons':
-        return await handleDungeonsListCommand(viewerUsername);
-      
-      case 'raids':
-        return await handleRaidsListCommand(viewerUsername);
-      
-      case 'dungeon':
-        // Streamer only - create dungeon queue
-        const isDungeonAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
-        if (!isDungeonAdmin) {
-          return { success: false, message: `@${viewerUsername} Only the streamer can create dungeon queues!` };
+
+        const results = [];
+        for (const heroData of validHeroes) {
+          const result = await handleLeaveCommand(heroData, viewerUsername, battlefieldId);
+          results.push(result);
         }
-        return await handleDungeonQueueCommand(args, viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      case 'raid':
-        // Streamer only - create raid queue
-        const isRaidAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
-        if (!isRaidAdmin) {
-          return { success: false, message: `@${viewerUsername} Only the streamer can create raid queues!` };
+
+        const totalCount = validHeroes.length + deletedHeroIds.length;
+        const successCount = results.filter(r => r.success).length;
+
+        if (totalCount === 0) {
+          return {
+            success: true,
+            message: `@${viewerUsername} No active characters found in battlefield.`,
+          };
         }
-        return await handleRaidQueueCommand(args, viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      case 'qdungeon':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need a hero to join! Use !join [class] to create one.` };
-        return await handleQDungeonJoinCommand(args, hero, viewerUsername, viewerId, battlefieldId);
-      
-      case 'qraid':
-        if (!hero) return { success: false, message: `@${viewerUsername} You need a hero to join! Use !join [class] to create one.` };
-        return await handleQRaidJoinCommand(args, hero, viewerUsername, viewerId, battlefieldId);
-      
-      case 'qstatus':
-        return await handleQStatusCommand(battlefieldId, viewerUsername);
-      
-      case 'qstart':
-        const isQStartAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
-        if (!isQStartAdmin) {
-          return { success: false, message: `@${viewerUsername} Only the streamer can force start queues!` };
+        if (successCount === validHeroes.length && deletedHeroIds.length === 0) {
+          return {
+            success: true,
+            message: `@${viewerUsername} All ${successCount} character${successCount > 1 ? 's' : ''} left the party!`,
+          };
         }
-        return await handleQStartCommand(battlefieldId, viewerUsername, streamerUsername);
-      
-      case 'qcancel':
-        const isQCancelAdmin = await isAuthorizedAdmin(viewerUsername, viewerId, streamerUsername);
-        if (!isQCancelAdmin) {
-          return { success: false, message: `@${viewerUsername} Only the streamer can cancel queues!` };
-        }
-        return await handleQCancelCommand(battlefieldId, viewerUsername);
-      
-      case 'qleave':
-        return await handleQLeaveCommand(viewerId, viewerUsername);
-      
-      case 'level':
-        return await handleLevelCommand(hero, args, viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      case 'grantlegendary':
-      case 'grantlegendaries':
-        return await handleGrantLegendaryCommand(viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      case 'push':
-      case 'pushfirebase':
-        return await handlePushCommand(viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      case 'sync':
-      case 'syncfirebase':
-        return await handleSyncCommand(viewerUsername, viewerId, streamerUsername, battlefieldId);
-      
-      default:
         return {
-          success: false,
-          message: `@${viewerUsername} Unknown command: !${command}. Use !help for available commands.`
+          success: true,
+          message: `@${viewerUsername} ${totalCount} character${totalCount > 1 ? 's' : ''} left the party!`,
         };
+      }
+
+      case 'auto':
+        if (!hero) return { success: false, message: needJoinMessage };
+        return await handleAutoCommand(hero, args, viewerUsername, battlefieldId);
+
+      case 'hero':
+        return await handleHeroSwitchCommand(hero, args, viewerUsername, viewerId, battlefieldId);
+
+      default:
+        return buildRemovedCommandReply(viewerUsername, command);
     }
   } catch (error) {
     console.error(`Error processing command !${command} for ${viewerUsername}:`, error);
@@ -1285,21 +1054,10 @@ async function handleClassesCommand(username) {
 }
 
 /**
- * Handle !help command
+ * Handle !help / !tnew command
  */
 async function handleHelpCommand(username) {
-  const combat = '!attack (!a) !heal (!h) !defend !cast !dispel !rest !potion';
-  const info = '!stats (!s) !gear (!g) !heroes !classes';
-  const shop = '!shop !buy !use !tokens';
-  const profession = '!profession !gather !recipes !craft !elixirs';
-  const utility = '!join !leave !auto !hero !skills !leaderboard';
-  
-  const message = `${username}: Chat → ${utility} | Site (Portal) → quests, raids, shop, professions | Combat: ${combat} | Info: ${info}`;
-
-  return {
-    success: true,
-    message
-  };
+  return buildHelpReply(username);
 }
 
 /**
@@ -1511,7 +1269,7 @@ async function handleLeaveCommand(hero, username, battlefieldId) {
       }
     }
 
-    const message = `@${username} You left the party! Use !rejoin to return with your character.`;
+    const message = `@${username} You left the party! Use !join or !hero to return, or visit ${PLAYER_PORTAL_URL}.`;
 
     return {
       success: true,
@@ -1834,52 +1592,111 @@ async function handleRejoinCommand(hero, args, username, userId, battlefieldId) 
 }
 
 /**
- * Handle !switch command - Switch class
+ * Handle !hero / !switch — switch active character (by roster index or class).
  */
-async function handleSwitchCommand(hero, args, username, userId, battlefieldId) {
+async function handleHeroSwitchCommand(hero, args, username, userId, battlefieldId) {
   if (!args[0]) {
     return {
       success: false,
-      message: `@${username} Usage: !switch [class] (e.g., !switch guardian)`
+      message:
+        `@${username} Usage: !hero [number] or !hero [class] (same as !switch). Roster: ${PLAYER_PORTAL_URL}`,
     };
   }
 
-  const newClass = args[0].toLowerCase();
-  if (!ROLE_CONFIG[newClass]) {
-    return {
-      success: false,
-      message: `@${username} "${newClass}" is not a valid class! Use !classes to see all available classes.`
-    };
+  if (/^\d+$/.test(args[0])) {
+    return handleRejoinByIndexCommand(args[0], username, userId, battlefieldId);
   }
 
-  // TODO: Implement class switching logic (costs tokens/gold)
-  const message = `@${username} Class switching functionality coming soon! Use !classes to see available classes.`;
+  const classKey = args[0].toLowerCase();
+  if (ROLE_CONFIG[classKey]) {
+    const heroesSnapshot = await db.collection('heroes')
+      .where('twitchUserId', '==', userId)
+      .get();
+
+    if (heroesSnapshot.empty) {
+      return {
+        success: false,
+        message: `@${username} No characters found. Use !join ${classKey} to create one.`,
+      };
+    }
+
+    const heroes = heroesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    heroes.sort((a, b) => {
+      const aTime = a.lastActiveAt?.toMillis?.() ?? new Date(a.lastActiveAt ?? 0).getTime();
+      const bTime = b.lastActiveAt?.toMillis?.() ?? new Date(b.lastActiveAt ?? 0).getTime();
+      return bTime - aTime;
+    });
+
+    const rosterIndex = heroes.findIndex((h) => (h.role || '').toLowerCase() === classKey);
+    if (rosterIndex === -1) {
+      const roleName = ROLE_CONFIG[classKey].displayName || classKey;
+      return {
+        success: false,
+        message: `@${username} You do not have a ${roleName} yet. Use !join ${classKey} or create one at ${PLAYER_PORTAL_URL}.`,
+      };
+    }
+
+    return handleRejoinByIndexCommand(String(rosterIndex + 1), username, userId, battlefieldId);
+  }
 
   return {
-    success: true,
-    message
+    success: false,
+    message:
+      `@${username} Unknown hero "${args[0]}". Use !hero [number] or a class name from !join. Full roster: ${PLAYER_PORTAL_URL}`,
   };
 }
 
 /**
- * Handle !auto command - Toggle auto-buy
+ * Handle !switch command - Switch class (legacy; prefer !hero)
  */
-async function handleAutoCommand(hero, username, battlefieldId) {
-  const autoBuy = !hero.autoBuy;
-  
+async function handleSwitchCommand(hero, args, username, userId, battlefieldId) {
+  return handleHeroSwitchCommand(hero, args, username, userId, battlefieldId);
+}
+
+/**
+ * Handle !auto command — toggle auto gear/upgrades and auto level & skill point spending.
+ */
+async function handleAutoCommand(hero, args, username, battlefieldId) {
+  let autoBuy = Boolean(hero.autoBuy);
+  let autoSkills = Boolean(hero.autoSkills ?? hero.autoSpendSkills);
+
+  const sub = (args[0] || '').toLowerCase();
+
+  if (sub === 'off') {
+    autoBuy = false;
+    autoSkills = false;
+  } else if (sub === 'on') {
+    autoBuy = true;
+    autoSkills = true;
+  } else if (sub === 'buy') {
+    autoBuy = !autoBuy;
+  } else if (sub === 'skills' || sub === 'skill') {
+    autoSkills = !autoSkills;
+  } else if (sub === '') {
+    const allOn = autoBuy && autoSkills;
+    autoBuy = !allOn;
+    autoSkills = !allOn;
+  } else {
+    return {
+      success: false,
+      message: `@${username} Usage: !auto · !auto on · !auto off · !auto buy · !auto skills`,
+    };
+  }
+
   await db.collection('heroes').doc(hero.id).update({
-    autoBuy: autoBuy,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    autoBuy,
+    autoSkills,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  const status = autoBuy ? 'ENABLED' : 'DISABLED';
-  const emoji = autoBuy ? '✅' : '❌';
-  const message = `${username}: Auto-Buy ${status}! ${autoBuy ? 'Will automatically purchase potions and buffs.' : 'Will not auto-purchase items.'}`;
+  const buyLabel = autoBuy ? 'ON' : 'OFF';
+  const skillsLabel = autoSkills ? 'ON' : 'OFF';
 
   return {
     success: true,
-    message,
-    data: { autoBuy }
+    message:
+      `@${username} Auto — gear/upgrades: ${buyLabel}, level & skill points: ${skillsLabel}. Manage at ${PLAYER_PORTAL_URL}`,
+    data: { autoBuy, autoSkills },
   };
 }
 
