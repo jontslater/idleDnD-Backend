@@ -200,6 +200,8 @@ export function buildMetaProgressUpdatesForClaim(hero, claimedType, _claimedQues
     updates['stats.questsCompleted'] = statsCompleted;
     hero.stats = { ...(hero.stats || {}), questsCompleted: statsCompleted };
   }
+
+  if (claimedType === 'daily') {
     hero.questProgress.dailiesCompletedThisWeek = (hero.questProgress.dailiesCompletedThisWeek || 0) + 1;
     hero.questProgress.dailiesCompletedThisMonth = (hero.questProgress.dailiesCompletedThisMonth || 0) + 1;
     updates['questProgress.dailiesCompletedThisWeek'] = hero.questProgress.dailiesCompletedThisWeek;
