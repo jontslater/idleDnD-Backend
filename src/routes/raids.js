@@ -1052,6 +1052,11 @@ router.post('/queue/:raidId/join', async (req, res) => {
     const hero = heroDoc.data();
     const heroLevel = hero.level || 1;
     const heroItemScore = itemScore || 0;
+
+    const heroOwnerId = hero.twitchUserId || hero.userId || hero.ownerId;
+    if (heroOwnerId && String(heroOwnerId) !== String(userId)) {
+      return res.status(403).json({ error: 'Hero does not belong to this user' });
+    }
     
     // Check if user meets requirements
     if (heroLevel < raidData.minLevel || heroItemScore < raidData.minItemScore) {

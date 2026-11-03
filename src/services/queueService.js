@@ -243,7 +243,7 @@ export async function joinQueue(code, hero, viewerUsername, viewerId) {
 export async function leaveQueue(viewerId, viewerUsername) {
   // Find queue containing this player
   const queuesSnapshot = await db.collection('battlefieldQueues')
-    .where('status', '==', 'open')
+    .where('status', 'in', ['open', 'ready'])
     .get();
   
   let foundQueue = null;

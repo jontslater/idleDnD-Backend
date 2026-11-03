@@ -2,8 +2,176 @@ import express from 'express';
 import admin from 'firebase-admin';
 import { db } from '../index.js';
 import { getBattlefieldCache } from '../utils/battlefieldCache.js';
+import { verifyToken } from './auth.js';
+import {
+  bodyUserIdMatchesAuth,
+  getAuthenticatedTwitchUserId,
+  heroBelongsToUser,
+  heroMayJoinBattlefieldQueue,
+  isValidLobbyType,
+  streamerOwnsBattlefield,
+} from '../utils/battlefieldQueueAuth.js';
 
 const router = express.Router();
+
+// ==================== STREAMER PARTY QUEUE (Activity Lobby) ====================
+// Static paths must be registered before /:battlefieldId routes.
+
+router.post('/queue/join', verifyToken, async (req, res) => {
+  try {
+    const { code, heroId, userId, username } = req.body;
+
+    if (!code || !heroId || !userId || !username) {
+      return res.status(400).json({
+        success: false,
+        error: 'code, heroId, userId, and username are required',
+      });
+    }
+
+    if (!bodyUserIdMatchesAuth(userId, req.user)) {
+      return res.status(403).json({ success: false, error: 'userId does not match authenticated user' });
+    }
+
+    const heroDoc = await db.collection('heroes').doc(heroId).get();
+    if (!heroDoc.exists) {
+      return res.status(404).json({ success: false, error: 'Hero not found' });
+    }
+
+    const hero = { id: heroDoc.id, ...heroDoc.data() };
+
+    if (!heroBelongsToUser(hero, userId)) {
+      return res.status(403).json({ success: false, error: 'Hero does not belong to this user' });
+    }
+
+    const normalizedCode = String(code).toUpperCase();
+    const queueLookup = await db.collection('battlefieldQueues')
+      .where('code', '==', normalizedCode)
+      .where('status', '==', 'open')
+      .limit(1)
+      .get();
+
+    if (queueLookup.empty) {
+      return res.status(400).json({
+        success: false,
+        message: `@${username} Invalid or expired queue code: ${normalizedCode}`,
+      });
+    }
+
+    const queueBattlefieldId = queueLookup.docs[0].data().battlefieldId;
+    if (queueBattlefieldId && !heroMayJoinBattlefieldQueue(hero, queueBattlefieldId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Join the streamer battlefield first (!join on their channel), then use the party code.',
+      });
+    }
+
+    const { joinQueue } = await import('../services/queueService.js');
+    const result = await joinQueue(normalizedCode, hero, username, userId);
+
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+
+    return res.json({
+      success: true,
+      message: result.message,
+      queue: result.queue,
+      isReady: result.isReady,
+    });
+  } catch (error) {
+    console.error('[Battlefield Queue] join error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to join battlefield queue' });
+  }
+});
+
+router.post('/queue/leave', verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId is required' });
+    }
+
+    if (!bodyUserIdMatchesAuth(userId, req.user)) {
+      return res.status(403).json({ success: false, error: 'userId does not match authenticated user' });
+    }
+
+    const username =
+      req.user.twitchUsername ||
+      req.user.displayName ||
+      req.user.tiktokUsername ||
+      'Player';
+
+    const { leaveQueue } = await import('../services/queueService.js');
+    const result = await leaveQueue(userId, username);
+
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+
+    return res.json({ success: true, message: result.message, queue: result.queue });
+  } catch (error) {
+    console.error('[Battlefield Queue] leave error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to leave battlefield queue' });
+  }
+});
+
+router.post('/:battlefieldId/queue', verifyToken, async (req, res) => {
+  try {
+    const { battlefieldId } = req.params;
+    const decodedBattlefieldId = decodeURIComponent(battlefieldId);
+    const { streamerId, streamerName, type, instanceId } = req.body;
+
+    if (!streamerId || !streamerName || !type || !instanceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'streamerId, streamerName, type, and instanceId are required',
+      });
+    }
+
+    if (!isValidLobbyType(type)) {
+      return res.status(400).json({ success: false, error: 'type must be dungeon or raid' });
+    }
+
+    const authTwitchId = getAuthenticatedTwitchUserId(req.user);
+    if (!authTwitchId || String(authTwitchId) !== String(streamerId)) {
+      return res.status(403).json({ success: false, error: 'Only the streamer can open a party lobby' });
+    }
+
+    if (!streamerOwnsBattlefield(decodedBattlefieldId, streamerId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'battlefieldId must match twitch:{streamerId}',
+      });
+    }
+
+    const { createQueue } = await import('../services/queueService.js');
+    const result = await createQueue(
+      decodedBattlefieldId,
+      streamerId,
+      streamerName,
+      type,
+      instanceId
+    );
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.message,
+        existingQueue: result.existingQueue,
+      });
+    }
+
+    return res.json({
+      success: true,
+      queue: result.queue,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error('[Battlefield Queue] create error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to create battlefield queue' });
+  }
+});
 
 // Get all heroes in a specific battlefield
 router.get('/:battlefieldId/heroes', async (req, res) => {
