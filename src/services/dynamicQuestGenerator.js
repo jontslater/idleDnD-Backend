@@ -135,6 +135,41 @@ const QUEST_TEMPLATES = {
         monthly: { newbie: 2, intermediate: 3, veteran: 5, elite: 8 }
       }
     }
+  },
+  meta: {
+    complete_dailies: {
+      name: ['Daily Grinder', 'Daily Devotee', 'Daily Champion', 'Daily Legend'],
+      description: (count) => `Complete ${count} daily quests`,
+      type: 'completeDailies',
+      scaling: {
+        weekly: { newbie: 5, intermediate: 7, veteran: 10, elite: 15 },
+        monthly: { newbie: 20, intermediate: 30, veteran: 40, elite: 50 }
+      }
+    },
+    complete_weeklies: {
+      name: ['Weekly Champion', 'Weekly Master', 'Weekly Hero', 'Weekly Legend'],
+      description: (count) => `Complete ${count} weekly quests`,
+      type: 'completeWeeklies',
+      scaling: {
+        monthly: { newbie: 4, intermediate: 6, veteran: 8, elite: 12 }
+      }
+    },
+    reach_level: {
+      name: ['Ascendant', 'Power Riser', 'Veteran Ascendant', 'Elite Ascendant'],
+      description: (count) => `Reach level ${count}`,
+      type: 'reachLevel',
+      scaling: {
+        monthly: { newbie: 10, intermediate: 25, veteran: 40, elite: 50 }
+      }
+    },
+    item_score: {
+      name: ['Power Seeker', 'Gear Collector', 'Arsenal Builder', 'Legendary Gear'],
+      description: (count) => `Achieve ${count} item score`,
+      type: 'itemScore',
+      scaling: {
+        monthly: { newbie: 500, intermediate: 1500, veteran: 3500, elite: 5000 }
+      }
+    }
   }
 };
 
@@ -213,41 +248,32 @@ function generateQuestFromTemplate(templateKey, template, questPeriod, tier, ind
   };
 }
 
-// Generate quests for a specific period and mix of tiers
-export function generateDynamicQuests(questPeriod, count = 10) {
+const TIERS = ['newbie', 'intermediate', 'veteran', 'elite'];
+
+// Generate quests for a specific period — countPerTier quests for EACH level bracket
+export function generateDynamicQuests(questPeriod, countPerTier = 10) {
   const quests = [];
   const allTemplates = [];
   
-  // Flatten all templates into array
   Object.keys(QUEST_TEMPLATES).forEach(category => {
     Object.keys(QUEST_TEMPLATES[category]).forEach(templateKey => {
       const template = QUEST_TEMPLATES[category][templateKey];
       if (template.scaling[questPeriod]) {
-        allTemplates.push({ key: templateKey, template });
+        allTemplates.push({ key: templateKey, template, category });
       }
     });
   });
   
-  // Shuffle templates
-  const shuffled = allTemplates.sort(() => Math.random() - 0.5);
-  
-  // Tier distribution (more quests for lower tiers, fewer for high tiers)
-  const tierDistribution = {
-    daily: ['newbie', 'newbie', 'newbie', 'intermediate', 'intermediate', 'intermediate', 'veteran', 'veteran', 'elite', 'elite'],
-    weekly: ['newbie', 'intermediate', 'intermediate', 'veteran', 'veteran', 'elite', 'elite'],
-    monthly: ['newbie', 'intermediate', 'veteran', 'veteran', 'elite', 'elite', 'elite']
-  };
-  
-  const tiers = tierDistribution[questPeriod] || tierDistribution.daily;
-  
-  // Generate quests
-  for (let i = 0; i < Math.min(count, shuffled.length); i++) {
-    const { key, template } = shuffled[i];
-    const tier = tiers[i % tiers.length];
-    const quest = generateQuestFromTemplate(key, template, questPeriod, tier, i);
-    
-    if (quest) {
-      quests.push(quest);
+  for (const tier of TIERS) {
+    const shuffled = [...allTemplates].sort(() => Math.random() - 0.5);
+    let generated = 0;
+    for (let i = 0; i < shuffled.length && generated < countPerTier; i++) {
+      const { key, template } = shuffled[i];
+      const quest = generateQuestFromTemplate(key, template, questPeriod, tier, generated);
+      if (quest) {
+        quests.push(quest);
+        generated++;
+      }
     }
   }
   

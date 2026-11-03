@@ -1093,6 +1093,16 @@ router.post('/queue/:raidId/join', async (req, res) => {
       ...queue,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
+
+    try {
+      const { applyQuestTrackingForHero } = await import('../services/questProgressService.js');
+      await applyQuestTrackingForHero(heroId, [
+        { trackingKey: 'raid', type: 'weekly', increment: 1 },
+        { trackingKey: 'raid', type: 'monthly', increment: 1 }
+      ]);
+    } catch (questErr) {
+      console.warn('[Raid Queue] Quest tracking failed (non-critical):', questErr.message);
+    }
     
     // Try to matchmake based on class requirements
     await tryRaidMatchmaking(raidId, raidData);

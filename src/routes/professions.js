@@ -475,7 +475,7 @@ router.post('/:userId/craft', async (req, res) => {
       const twitchUserId = hero.twitchUserId || hero.twitchId || userId;
       
       // Call quest update endpoint to track crafting
-      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
+      const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${userId}/update-batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1128,7 +1128,7 @@ router.post('/:userId/use', async (req, res) => {
       // Only track if it's actually a consumable (potion or buff)
       if (itemType === 'potion' || itemType === 'buff' || item.itemKey) {
         // Call quest update endpoint to track consumable usage
-        const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${twitchUserId}/update-batch`, {
+        const questUpdateResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/quests/${userId}/update-batch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -1704,8 +1704,7 @@ async function handleAutoCommand(hero, args, username, battlefieldId) {
  * Handle !quest command
  */
 async function handleQuestCommand(hero, args, username, userId) {
-  // TODO: Implement quest claiming logic
-  const message = `${username}: Quest system coming soon! Check the website for quest progress.`;
+  const message = `${username}: Quests are on the website — open Portal → Quests to view progress and bonuses. Combat progress syncs automatically.`;
 
   return {
     success: true,

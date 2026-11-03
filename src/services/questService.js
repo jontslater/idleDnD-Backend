@@ -4,6 +4,7 @@ import {
   generateDynamicQuests, 
   generateCompletionBonus 
 } from './dynamicQuestGenerator.js';
+import { buildPeriodKey } from '../utils/questPeriod.js';
 
 // In-memory cache for quests to reduce Firestore reads
 const questCache = {
@@ -42,28 +43,29 @@ export function getNextResetTime(type) {
 export async function generateQuests(type) {
   console.log(`📜 Generating new ${type} quests...`);
   
-  let questList, completionBonus, count;
+  let questList, completionBonus, countPerTier;
   
-  // Define how many quests to generate
+  // Quests per level bracket (each hero sees only their tier's subset)
   if (type === 'daily') {
-    count = 10;
+    countPerTier = 10;
   } else if (type === 'weekly') {
-    count = 7;
+    countPerTier = 7;
   } else if (type === 'monthly') {
-    count = 7;
+    countPerTier = 7;
   }
   
-  // Generate dynamic quests with level scaling
-  questList = generateDynamicQuests(type, count);
+  questList = generateDynamicQuests(type, countPerTier);
   completionBonus = generateCompletionBonus(type);
   
   const resetTime = getNextResetTime(type);
+  const periodKey = buildPeriodKey(type);
   
   const questDoc = {
     id: type,
     type,
     resetTime,
     activeUntil: resetTime,
+    periodKey,
     quests: questList,
     completionBonus,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -117,9 +119,7 @@ export async function checkAndResetQuests() {
         
         // Invalidate cache when quests are regenerated
         questCache[type] = { data: null, expiresAt: null };
-        
-        // Reset all player progress for this quest type
-        await resetPlayerQuestProgress(type);
+        // Player progress resets lazily via periodKey on next read/update
       } else {
         // Update cache with current quests if they're still valid
         questCache[type] = {
@@ -137,77 +137,6 @@ export async function checkAndResetQuests() {
       }
     }
   }
-}
-
-// Reset player quest progress for a given type
-async function resetPlayerQuestProgress(type) {
-  console.log(`🔄 Resetting player ${type} quest progress...`);
-  
-  // Use query with limit to process in chunks (Firestore batch limit is 500)
-  const BATCH_SIZE = 500;
-  let lastDoc = null;
-  let totalProcessed = 0;
-  
-  while (true) {
-    let query = db.collection('heroes').limit(BATCH_SIZE);
-    
-    // Use cursor pagination to get next batch
-    if (lastDoc) {
-      query = query.startAfter(lastDoc);
-    }
-    
-    const heroesSnapshot = await query.get();
-    
-    if (heroesSnapshot.empty) {
-      break; // No more heroes to process
-    }
-    
-    // Process this batch
-    const batch = db.batch();
-    let batchCount = 0;
-    
-    heroesSnapshot.forEach(doc => {
-      const updateData = {};
-      updateData[`questProgress.${type}`] = {};
-      updateData[`questProgress.last${capitalize(type)}Reset`] = admin.firestore.FieldValue.serverTimestamp();
-      
-      if (type === 'daily') {
-        updateData['questProgress.dailyBonusClaimed'] = false;
-      } else if (type === 'weekly') {
-        updateData['questProgress.weeklyBonusClaimed'] = false;
-        updateData['questProgress.dailiesCompletedThisWeek'] = 0;
-      } else if (type === 'monthly') {
-        updateData['questProgress.monthlyBonusClaimed'] = false;
-        updateData['questProgress.dailiesCompletedThisMonth'] = 0;
-        updateData['questProgress.weekliesCompletedThisMonth'] = 0;
-      }
-      
-      batch.update(doc.ref, updateData);
-      batchCount++;
-    });
-    
-    // Commit this batch
-    if (batchCount > 0) {
-      await batch.commit();
-      totalProcessed += batchCount;
-      console.log(`  ✅ Processed batch: ${batchCount} heroes (total: ${totalProcessed})`);
-    }
-    
-    // Check if we got fewer than BATCH_SIZE (means we're done)
-    if (heroesSnapshot.size < BATCH_SIZE) {
-      break;
-    }
-    
-    // Set cursor for next iteration
-    lastDoc = heroesSnapshot.docs[heroesSnapshot.docs.length - 1];
-  }
-  
-  console.log(`✅ Reset ${totalProcessed} players' ${type} progress`);
-}
-
-// Helper to capitalize first letter
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // Initialize quest system (call on server start)
