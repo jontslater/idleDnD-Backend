@@ -168,14 +168,22 @@ export function skillPointsSpentInTree(skills) {
 /**
  * Server-authoritative skill point fields from hero level and allocated skills.
  * Client-provided skillPoints / skillPointsEarned are ignored when persisting heroes.
+ * Legacy heroes who spent more than the level rule allows keep their skill tree;
+ * available points clamp to 0 (never negative).
  */
 export function resolveSkillPointFields(level, skills) {
   const skillPointsEarned = calculateSkillPoints(level);
   const spent = skillPointsSpentInTree(skills);
+  const skillPoints = Math.max(0, skillPointsEarned - spent);
   return {
-    skillPoints: Math.max(0, skillPointsEarned - spent),
+    skillPoints,
     skillPointsEarned
   };
+}
+
+/** Alias matching TNEWFE `totalSkillPointsEarnedForLevel` in progression.ts */
+export function totalSkillPointsEarnedForLevel(level) {
+  return calculateSkillPoints(level);
 }
 
 // Get available skills for a hero (unlocked based on level)
